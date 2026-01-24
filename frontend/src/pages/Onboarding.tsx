@@ -238,8 +238,8 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
       <div className="space-y-4">
         <div className="bg-muted/30 rounded-lg p-4 border border-border">
           <Label className="text-sm font-medium text-foreground mb-3 block">Active Sports</Label>
-          <div className="grid grid-cols-4 gap-3">
-            {['nba', 'nfl', 'mlb', 'nhl', 'ncaab', 'ncaaf', 'soccer', 'mma'].map((sport) => (
+          <div className="grid grid-cols-3 gap-3">
+            {['nba', 'nfl', 'mlb', 'nhl', 'ncaabb', 'soccer', 'tennis', 'cricket', 'ufc'].map((sport) => (
               <div
                 key={sport}
                 onClick={() => toggleSport(sport)}
@@ -250,7 +250,7 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
                     : 'bg-muted border-border text-muted-foreground hover:border-primary/20'
                 )}
               >
-                <span className="text-sm font-medium uppercase">{sport}</span>
+                <span className="text-sm font-medium uppercase">{sport === 'ncaabb' ? 'NCAA CBB' : sport}</span>
               </div>
             ))}
           </div>
@@ -266,12 +266,15 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
                 <Input type="number" defaultValue="25" className="bg-muted border-border pl-7" />
               </div>
-              <p className="text-xs text-muted-foreground">Amount per trade</p>
+              <p className="text-xs text-muted-foreground">Max amount per trade</p>
             </div>
             <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Max Open Positions</Label>
-              <Input type="number" defaultValue="5" className="bg-muted border-border" />
-              <p className="text-xs text-muted-foreground">Concurrent trades limit</p>
+              <Label className="text-sm text-muted-foreground">Min Volume Threshold</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                <Input type="number" defaultValue="1000" className="bg-muted border-border pl-7" />
+              </div>
+              <p className="text-xs text-muted-foreground">Min market volume to enter</p>
             </div>
           </div>
         </div>
@@ -314,6 +317,28 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
                 <Input type="number" defaultValue="15" className="bg-muted border-border pr-8" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Time-Based Rules</Label>
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">Latest Entry Time (min)</Label>
+              <div className="relative">
+                <Input type="number" defaultValue="5" className="bg-muted border-border pr-12" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">min</span>
+              </div>
+              <p className="text-xs text-muted-foreground">No buys after X min remaining</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">Latest Exit Time (min)</Label>
+              <div className="relative">
+                <Input type="number" defaultValue="2" className="bg-muted border-border pr-12" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">min</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Must sell once X min remaining</p>
             </div>
           </div>
         </div>

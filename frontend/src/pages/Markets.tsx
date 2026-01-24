@@ -111,10 +111,11 @@ export default function Markets() {
                 <SelectItem value="NFL">NFL</SelectItem>
                 <SelectItem value="MLB">MLB</SelectItem>
                 <SelectItem value="NHL">NHL</SelectItem>
-                <SelectItem value="NCAAB">NCAAB</SelectItem>
-                <SelectItem value="NCAAF">NCAAF</SelectItem>
+                <SelectItem value="NCAAB">NCAA CBB</SelectItem>
                 <SelectItem value="Soccer">Soccer</SelectItem>
-                <SelectItem value="MMA">MMA</SelectItem>
+                <SelectItem value="Tennis">Tennis</SelectItem>
+                <SelectItem value="Cricket">Cricket</SelectItem>
+                <SelectItem value="UFC">UFC</SelectItem>
               </SelectContent>
             </Select>
 

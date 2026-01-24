@@ -110,7 +110,7 @@ export default function Settings() {
           </CardHeader>
           <CardContent>
             <Accordion type="multiple" className="space-y-2">
-              {['NBA', 'NFL', 'MLB', 'NHL', 'NCAAB', 'NCAAF', 'Soccer', 'MMA'].map((sport) => (
+              {['NBA', 'NFL', 'MLB', 'NHL', 'NCAA CBB', 'Soccer', 'Tennis', 'Cricket', 'UFC'].map((sport) => (
                 <AccordionItem key={sport} value={sport} className="border-border">
                   <AccordionTrigger className="hover:no-underline px-4 py-3 bg-muted/30 rounded-md">
                     <div className="flex items-center justify-between w-full pr-4">
@@ -121,12 +121,12 @@ export default function Settings() {
                   <AccordionContent className="pt-4 px-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className="text-muted-foreground text-xs">Entry Threshold %</Label>
+                        <Label className="text-muted-foreground text-xs">Probability Drop %</Label>
                         <Input type="number" defaultValue="5" className="bg-muted border-border" />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-muted-foreground text-xs">Absolute Floor ($)</Label>
-                        <Input type="number" defaultValue="0.15" className="bg-muted border-border" />
+                        <Label className="text-muted-foreground text-xs">Min Volume Threshold ($)</Label>
+                        <Input type="number" defaultValue="1000" className="bg-muted border-border" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-muted-foreground text-xs">Take Profit %</Label>
@@ -136,9 +136,17 @@ export default function Settings() {
                         <Label className="text-muted-foreground text-xs">Stop Loss %</Label>
                         <Input type="number" defaultValue="15" className="bg-muted border-border" />
                       </div>
+                      <div className="space-y-2">
+                        <Label className="text-muted-foreground text-xs">Position Size ($)</Label>
+                        <Input type="number" defaultValue="50" className="bg-muted border-border" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-muted-foreground text-xs">Latest Entry Time (min)</Label>
+                        <Input type="number" defaultValue="5" className="bg-muted border-border" />
+                      </div>
                       <div className="space-y-2 col-span-2">
-                        <Label className="text-muted-foreground text-xs">Max Position Size ($)</Label>
-                        <Input type="number" defaultValue="2000" className="bg-muted border-border" />
+                        <Label className="text-muted-foreground text-xs">Latest Exit Time (min)</Label>
+                        <Input type="number" defaultValue="2" className="bg-muted border-border" />
                       </div>
                     </div>
                   </AccordionContent>

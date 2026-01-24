@@ -84,7 +84,6 @@ export default function History() {
       };
     });
   }, [positions]);
-  const pnlData = useMemo(() => generatePnlData(), []);
 
   return (
     <DashboardLayout>
