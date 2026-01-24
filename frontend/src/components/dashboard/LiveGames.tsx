@@ -1,34 +1,43 @@
+import { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { Loader2 } from 'lucide-react';
+import { apiClient, Market } from '@/api/client';
 
-interface Game {
-  id: string;
-  homeTeam: string;
-  awayTeam: string;
-  homeScore: number;
-  awayScore: number;
-  period: string;
-  probability: number;
-  sport: 'NBA' | 'NFL' | 'MLB' | 'NHL';
-}
-
-const mockGames: Game[] = [
-  { id: '1', homeTeam: 'LAL', awayTeam: 'BOS', homeScore: 112, awayScore: 108, period: 'Q4 2:34', probability: 0.72, sport: 'NBA' },
-  { id: '2', homeTeam: 'GSW', awayTeam: 'MIA', homeScore: 98, awayScore: 95, period: 'Q3 8:12', probability: 0.58, sport: 'NBA' },
-  { id: '3', homeTeam: 'NYK', awayTeam: 'CHI', homeScore: 86, awayScore: 91, period: 'Q3 4:45', probability: 0.34, sport: 'NBA' },
-  { id: '4', homeTeam: 'KC', awayTeam: 'SF', homeScore: 21, awayScore: 17, period: 'Q4 6:02', probability: 0.65, sport: 'NFL' },
-  { id: '5', homeTeam: 'NYY', awayTeam: 'BOS', homeScore: 4, awayScore: 3, period: 'Bot 7', probability: 0.55, sport: 'MLB' },
-  { id: '6', homeTeam: 'TOR', awayTeam: 'MTL', homeScore: 2, awayScore: 2, period: '3rd 15:22', probability: 0.51, sport: 'NHL' },
-];
-
-const sportColors = {
-  NBA: 'text-orange-400',
-  NFL: 'text-green-400',
-  MLB: 'text-red-400',
-  NHL: 'text-blue-400',
+const sportColors: Record<string, string> = {
+  nba: 'text-orange-400',
+  nfl: 'text-green-400',
+  mlb: 'text-red-400',
+  nhl: 'text-blue-400',
+  ncaab: 'text-orange-400',
+  ncaaf: 'text-green-400',
+  soccer: 'text-purple-400',
+  mma: 'text-red-400',
 };
 
 export function LiveGames() {
+  const [markets, setMarkets] = useState<Market[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLiveMarkets = async () => {
+      try {
+        const data = await apiClient.getMarkets();
+        // Filter to only live markets
+        const liveMarkets = data.filter(m => m.is_live);
+        setMarkets(liveMarkets.slice(0, 6)); // Show top 6
+      } catch (err) {
+        console.error('Failed to fetch live markets:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLiveMarkets();
+    const interval = setInterval(fetchLiveMarkets, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <Card className="bg-card border-border h-full">
       <CardHeader className="pb-2">
@@ -38,45 +47,58 @@ export function LiveGames() {
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : markets.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-sm text-muted-foreground">No live games at the moment</p>
+            <p className="text-xs text-muted-foreground mt-1">Games will appear here when live</p>
+          </div>
+        ) : (
         <div className="max-h-[320px] overflow-y-auto scrollbar-thin space-y-2">
-          {mockGames.map((game) => (
+          {markets.map((market) => (
             <div
-              key={game.id}
+              key={market.id}
               className="p-3 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className={cn('text-xs font-medium', sportColors[game.sport])}>
-                    {game.sport}
+                  <span className={cn('text-xs font-medium', sportColors[market.sport.toLowerCase()] || 'text-gray-400')}>
+                    {market.sport.toUpperCase()}
                   </span>
                   <span className="text-sm text-foreground font-medium">
-                    {game.awayTeam} @ {game.homeTeam}
+                    {market.away_team && market.home_team 
+                      ? `${market.away_team} @ ${market.home_team}`
+                      : market.question.slice(0, 30)}
                   </span>
                 </div>
                 <span className="text-xs text-muted-foreground font-mono-numbers">
-                  {game.period}
+                  LIVE
                 </span>
               </div>
               
               <div className="flex items-center justify-between">
-                <span className="text-lg font-mono-numbers text-foreground">
-                  {game.awayScore} - {game.homeScore}
+                <span className="text-sm text-muted-foreground">
+                  {market.is_tracked ? 'Tracked' : 'Not tracked'}
                 </span>
                 <div className="flex items-center gap-2">
                   <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-primary/80 to-primary rounded-full transition-all duration-300"
-                      style={{ width: `${game.probability * 100}%` }}
+                      style={{ width: `${market.current_price_yes * 100}%` }}
                     />
                   </div>
                   <span className="text-sm font-mono-numbers text-primary w-12 text-right">
-                    {(game.probability * 100).toFixed(0)}%
+                    {(market.current_price_yes * 100).toFixed(0)}%
                   </span>
                 </div>
               </div>
             </div>
           ))}
         </div>
+        )}
       </CardContent>
     </Card>
   );

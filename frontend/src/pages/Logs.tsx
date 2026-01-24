@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Search, RefreshCw } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, RefreshCw, Loader2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,27 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-
-interface LogEntry {
-  id: string;
-  timestamp: string;
-  level: 'INFO' | 'WARNING' | 'ERROR';
-  module: string;
-  message: string;
-}
-
-const mockLogs: LogEntry[] = [
-  { id: '1', timestamp: '2024-01-20 14:32:15.234', level: 'INFO', module: 'PriceMonitor', message: 'Price update received for LAL@BOS market: 0.68 → 0.72' },
-  { id: '2', timestamp: '2024-01-20 14:32:14.891', level: 'INFO', module: 'TradeExecutor', message: 'Order filled: BUY 500 YES @ 0.68 for LAL@BOS' },
-  { id: '3', timestamp: '2024-01-20 14:32:12.456', level: 'WARNING', module: 'RiskManager', message: 'Approaching daily loss limit: $423.50 / $500.00' },
-  { id: '4', timestamp: '2024-01-20 14:32:10.123', level: 'INFO', module: 'SSEClient', message: 'Connected to event stream' },
-  { id: '5', timestamp: '2024-01-20 14:31:58.789', level: 'ERROR', module: 'TradeExecutor', message: 'Order rejected: Insufficient balance for position size' },
-  { id: '6', timestamp: '2024-01-20 14:31:45.567', level: 'INFO', module: 'MarketScanner', message: 'New market detected: GSW@MIA - tracking initiated' },
-  { id: '7', timestamp: '2024-01-20 14:31:30.234', level: 'INFO', module: 'PriceMonitor', message: 'Baseline captured for GSW@MIA: 0.52' },
-  { id: '8', timestamp: '2024-01-20 14:31:15.891', level: 'WARNING', module: 'SSEClient', message: 'Connection timeout, attempting reconnect...' },
-  { id: '9', timestamp: '2024-01-20 14:31:00.456', level: 'INFO', module: 'BotEngine', message: 'Bot started successfully with 24 tracked markets' },
-  { id: '10', timestamp: '2024-01-20 14:30:45.123', level: 'INFO', module: 'WalletManager', message: 'Wallet connected: 0x7a23...4f9d' },
-];
+import { apiClient, LogEntry } from '@/api/client';
 
 const levelStyles = {
   INFO: 'bg-primary/10 text-primary border-primary/20',
@@ -42,15 +22,44 @@ const levelStyles = {
 };
 
 export default function Logs() {
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filteredLogs = mockLogs.filter((log) => {
-    const matchesLevel = levelFilter === 'all' || log.level === levelFilter;
+  useEffect(() => {
+    fetchLogs();
+  }, [levelFilter, page]);
+
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      const data = await apiClient.getLogs(levelFilter, page, 50);
+      setLogs(data.items);
+      setTotalPages(data.total_pages);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load logs');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchLogs();
+  };
+
+  const filteredLogs = logs.filter((log) => {
     const matchesSearch = 
       log.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.module.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesLevel && matchesSearch;
+    return matchesSearch;
   });
 
   return (
@@ -89,15 +98,38 @@ export default function Logs() {
               />
             </div>
 
-            <Button variant="outline" size="icon" className="border-border hover:bg-muted">
-              <RefreshCw className="w-4 h-4" />
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className="border-border hover:bg-muted"
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
             </Button>
           </div>
         </Card>
 
+        {/* Error Banner */}
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg">
+            {error}
+          </div>
+        )}
+
         {/* Logs Table */}
         <Card className="bg-card border-border overflow-hidden">
           <div className="max-h-[600px] overflow-y-auto scrollbar-thin">
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredLogs.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-muted-foreground">No logs found</p>
+                <p className="text-sm text-muted-foreground mt-1">Activity logs will appear here as the bot runs</p>
+              </div>
+            ) : (
             <table className="w-full">
               <thead className="sticky top-0 bg-card z-10">
                 <tr className="border-b border-border bg-muted/30">
@@ -134,6 +166,7 @@ export default function Logs() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         </Card>
       </div>

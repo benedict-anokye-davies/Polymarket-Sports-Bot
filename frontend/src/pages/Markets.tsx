@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Search, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, RefreshCw, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,28 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-
-interface Market {
-  id: string;
-  teams: string;
-  sport: 'NBA' | 'NFL' | 'MLB' | 'NHL';
-  volume: number;
-  baseline: number;
-  current: number;
-  status: 'LIVE' | 'UPCOMING' | 'FINISHED';
-  tracked: boolean;
-}
-
-const mockMarkets: Market[] = [
-  { id: '1', teams: 'Lakers vs Celtics', sport: 'NBA', volume: 125400, baseline: 0.52, current: 0.68, status: 'LIVE', tracked: true },
-  { id: '2', teams: 'Warriors vs Heat', sport: 'NBA', volume: 89200, baseline: 0.48, current: 0.55, status: 'LIVE', tracked: true },
-  { id: '3', teams: 'Chiefs vs 49ers', sport: 'NFL', volume: 234500, baseline: 0.55, current: 0.62, status: 'UPCOMING', tracked: false },
-  { id: '4', teams: 'Yankees vs Red Sox', sport: 'MLB', volume: 67800, baseline: 0.50, current: 0.48, status: 'LIVE', tracked: true },
-  { id: '5', teams: 'Maple Leafs vs Canadiens', sport: 'NHL', volume: 45600, baseline: 0.58, current: 0.51, status: 'LIVE', tracked: false },
-  { id: '6', teams: 'Knicks vs Bulls', sport: 'NBA', volume: 78900, baseline: 0.45, current: 0.42, status: 'FINISHED', tracked: false },
-  { id: '7', teams: 'Eagles vs Cowboys', sport: 'NFL', volume: 189000, baseline: 0.52, current: 0.58, status: 'UPCOMING', tracked: true },
-  { id: '8', teams: 'Dodgers vs Giants', sport: 'MLB', volume: 56700, baseline: 0.54, current: 0.61, status: 'UPCOMING', tracked: false },
-];
+import { apiClient, Market } from '@/api/client';
 
 const statusStyles = {
   LIVE: 'bg-primary/10 text-primary border-primary/20',
@@ -43,21 +22,63 @@ const statusStyles = {
 };
 
 export default function Markets() {
-  const [markets, setMarkets] = useState(mockMarkets);
+  const [markets, setMarkets] = useState<Market[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [sportFilter, setSportFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchMarkets();
+  }, [sportFilter]);
+
+  const fetchMarkets = async () => {
+    try {
+      setLoading(true);
+      const sport = sportFilter !== 'all' ? sportFilter.toLowerCase() : undefined;
+      const data = await apiClient.getMarkets(sport);
+      setMarkets(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load markets');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchMarkets();
+  };
+
+  const toggleTracking = async (conditionId: string, currentlyTracked: boolean) => {
+    try {
+      setTogglingId(conditionId);
+      if (currentlyTracked) {
+        await apiClient.untrackMarket(conditionId);
+      } else {
+        await apiClient.trackMarket(conditionId);
+      }
+      setMarkets(markets.map(m => 
+        m.condition_id === conditionId ? { ...m, is_tracked: !m.is_tracked } : m
+      ));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tracking');
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const filteredMarkets = markets.filter((market) => {
-    const matchesSport = sportFilter === 'all' || market.sport === sportFilter;
-    const matchesSearch = market.teams.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSport && matchesSearch;
+    const matchesSearch = 
+      market.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      market.home_team?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      market.away_team?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
   });
-
-  const toggleTracking = (id: string) => {
-    setMarkets(markets.map(m => 
-      m.id === id ? { ...m, tracked: !m.tracked } : m
-    ));
-  };
 
   return (
     <DashboardLayout>
@@ -69,6 +90,13 @@ export default function Markets() {
             Browse and track prediction markets
           </p>
         </div>
+
+        {/* Error Banner */}
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg">
+            {error}
+          </div>
+        )}
 
         {/* Filters */}
         <Card className="p-4 bg-card border-border">
@@ -83,6 +111,10 @@ export default function Markets() {
                 <SelectItem value="NFL">NFL</SelectItem>
                 <SelectItem value="MLB">MLB</SelectItem>
                 <SelectItem value="NHL">NHL</SelectItem>
+                <SelectItem value="NCAAB">NCAAB</SelectItem>
+                <SelectItem value="NCAAF">NCAAF</SelectItem>
+                <SelectItem value="Soccer">Soccer</SelectItem>
+                <SelectItem value="MMA">MMA</SelectItem>
               </SelectContent>
             </Select>
 
@@ -96,8 +128,14 @@ export default function Markets() {
               />
             </div>
 
-            <Button variant="outline" size="icon" className="border-border hover:bg-muted">
-              <RefreshCw className="w-4 h-4" />
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className="border-border hover:bg-muted"
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
             </Button>
           </div>
         </Card>
@@ -105,12 +143,21 @@ export default function Markets() {
         {/* Markets Table */}
         <Card className="bg-card border-border overflow-hidden">
           <div className="overflow-x-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : filteredMarkets.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-muted-foreground">No markets found</p>
+                <p className="text-sm text-muted-foreground mt-1">Markets will appear here when discovered by the bot</p>
+              </div>
+            ) : (
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Market</th>
                   <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Sport</th>
-                  <th className="text-right py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Volume</th>
                   <th className="text-right py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Baseline</th>
                   <th className="text-right py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Current</th>
                   <th className="text-center py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Status</th>
@@ -118,55 +165,59 @@ export default function Markets() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredMarkets.map((market) => (
+                {filteredMarkets.map((market) => {
+                  const status = market.is_live ? 'LIVE' : 'UPCOMING';
+                  return (
                   <tr 
                     key={market.id} 
                     className="hover:bg-muted/20 transition-colors"
                   >
                     <td className="py-3 px-4">
-                      <span className="text-sm font-medium text-foreground">{market.teams}</span>
+                      <span className="text-sm font-medium text-foreground">
+                        {market.away_team && market.home_team 
+                          ? `${market.away_team} @ ${market.home_team}`
+                          : market.question}
+                      </span>
                     </td>
                     <td className="py-3 px-4">
                       <Badge variant="outline" className="border-border text-muted-foreground">
-                        {market.sport}
+                        {market.sport.toUpperCase()}
                       </Badge>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <span className="text-sm font-mono-numbers text-foreground">
-                        ${market.volume.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
                       <span className="text-sm font-mono-numbers text-muted-foreground">
-                        {(market.baseline * 100).toFixed(0)}%
+                        {(market.baseline_price_yes * 100).toFixed(0)}%
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
                       <span className={cn(
                         'text-sm font-mono-numbers font-medium',
-                        market.current > market.baseline ? 'text-profit' : 'text-loss'
+                        market.current_price_yes > market.baseline_price_yes ? 'text-profit' : 'text-loss'
                       )}>
-                        {(market.current * 100).toFixed(0)}%
+                        {(market.current_price_yes * 100).toFixed(0)}%
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <Badge className={cn('border', statusStyles[market.status])}>
-                        {market.status}
+                      <Badge className={cn('border', statusStyles[status])}>
+                        {status}
                       </Badge>
                     </td>
                     <td className="py-3 px-4 text-center">
                       <Button
-                        variant={market.tracked ? 'default' : 'outline'}
+                        variant={market.is_tracked ? 'default' : 'outline'}
                         size="sm"
-                        onClick={() => toggleTracking(market.id)}
+                        onClick={() => toggleTracking(market.condition_id, market.is_tracked)}
+                        disabled={togglingId === market.condition_id}
                         className={cn(
                           'gap-1.5',
-                          market.tracked 
+                          market.is_tracked 
                             ? 'bg-primary hover:bg-primary/90' 
                             : 'border-border hover:bg-muted'
                         )}
                       >
-                        {market.tracked ? (
+                        {togglingId === market.condition_id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : market.is_tracked ? (
                           <>
                             <Eye className="w-3.5 h-3.5" />
                             Tracking
@@ -180,9 +231,11 @@ export default function Markets() {
                       </Button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
+            )}
           </div>
         </Card>
       </div>

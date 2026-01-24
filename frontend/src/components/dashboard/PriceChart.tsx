@@ -10,25 +10,23 @@ import {
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
-// Generate mock price data
-const generateMockData = () => {
+// Generate empty chart data for initial state
+const generateEmptyData = () => {
   const data = [];
   const now = new Date();
-  let price = 0.65;
   
   for (let i = 24; i >= 0; i--) {
     const time = new Date(now.getTime() - i * 60 * 60 * 1000);
-    price = Math.max(0.1, Math.min(0.9, price + (Math.random() - 0.48) * 0.05));
     data.push({
       time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-      probability: parseFloat(price.toFixed(3)),
+      probability: 0.5, // Flat line at 50% to indicate no activity
     });
   }
   return data;
 };
 
 export function PriceChart() {
-  const data = useMemo(() => generateMockData(), []);
+  const data = useMemo(() => generateEmptyData(), []);
 
   return (
     <Card className="bg-card border-border">
@@ -36,6 +34,9 @@ export function PriceChart() {
         <CardTitle className="text-base font-medium text-foreground">
           Win Probability History
         </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Price movements will appear here when trading activity begins
+        </p>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="h-[300px]">

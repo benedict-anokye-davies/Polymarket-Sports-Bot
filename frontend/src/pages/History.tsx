@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Download, Trophy, TrendingUp, Clock, Target } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Download, Trophy, TrendingUp, Clock, Target, Loader2 } from 'lucide-react';
 import { 
   AreaChart, 
   Area, 
@@ -21,52 +21,69 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-
-interface ClosedPosition {
-  id: string;
-  market: string;
-  side: 'YES' | 'NO';
-  entry: number;
-  exit: number;
-  size: number;
-  realizedPnl: number;
-  duration: string;
-  closedAt: string;
-}
-
-const mockHistory: ClosedPosition[] = [
-  { id: '1', market: 'Suns vs Nuggets', side: 'YES', entry: 0.45, exit: 0.72, size: 2000, realizedPnl: 540, duration: '4h 32m', closedAt: 'Jan 20, 2024' },
-  { id: '2', market: 'Bills vs Dolphins', side: 'NO', entry: 0.55, exit: 0.38, size: 1500, realizedPnl: 255, duration: '2h 15m', closedAt: 'Jan 19, 2024' },
-  { id: '3', market: 'Mets vs Braves', side: 'YES', entry: 0.52, exit: 0.48, size: 1000, realizedPnl: -40, duration: '5h 45m', closedAt: 'Jan 19, 2024' },
-  { id: '4', market: 'Bruins vs Rangers', side: 'YES', entry: 0.60, exit: 0.78, size: 800, realizedPnl: 144, duration: '3h 20m', closedAt: 'Jan 18, 2024' },
-  { id: '5', market: 'Packers vs Lions', side: 'NO', entry: 0.42, exit: 0.51, size: 1200, realizedPnl: -108, duration: '6h 10m', closedAt: 'Jan 17, 2024' },
-  { id: '6', market: 'Celtics vs Heat', side: 'YES', entry: 0.58, exit: 0.82, size: 1800, realizedPnl: 432, duration: '1h 55m', closedAt: 'Jan 16, 2024' },
-];
-
-const generatePnlData = () => {
-  const data = [];
-  let cumulative = 0;
-  for (let i = 30; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dailyPnl = (Math.random() - 0.35) * 500;
-    cumulative += dailyPnl;
-    data.push({
-      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      pnl: parseFloat(cumulative.toFixed(2)),
-    });
-  }
-  return data;
-};
-
-const stats = [
-  { label: 'Total Trades', value: '156', icon: Target },
-  { label: 'Win Rate', value: '68.2%', icon: Trophy },
-  { label: 'Total P&L', value: '+$4,823', positive: true, icon: TrendingUp },
-  { label: 'Avg Duration', value: '3h 42m', icon: Clock },
-];
+import { apiClient, Position } from '@/api/client';
 
 export default function History() {
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchClosedPositions();
+  }, []);
+
+  const fetchClosedPositions = async () => {
+    try {
+      setLoading(true);
+      const data = await apiClient.getPositions('closed');
+      setPositions(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load history');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalPnl = positions.reduce((sum, p) => sum + (p.realized_pnl_usdc ?? 0), 0);
+  const winCount = positions.filter(p => (p.realized_pnl_usdc ?? 0) > 0).length;
+  const winRate = positions.length > 0 ? (winCount / positions.length) * 100 : 0;
+
+  const stats = [
+    { label: 'Total Trades', value: String(positions.length), icon: Target },
+    { label: 'Win Rate', value: `${winRate.toFixed(1)}%`, icon: Trophy },
+    { label: 'Total P&L', value: `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`, positive: totalPnl >= 0, icon: TrendingUp },
+    { label: 'Avg Duration', value: '---', icon: Clock },
+  ];
+
+  // Generate P&L chart data from closed positions
+  const pnlData = useMemo(() => {
+    if (positions.length === 0) {
+      // Return empty chart data
+      return Array.from({ length: 7 }, (_, i) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (6 - i));
+        return {
+          date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          pnl: 0,
+        };
+      });
+    }
+    
+    // Group by date and calculate cumulative P&L
+    const sorted = [...positions].sort((a, b) => 
+      new Date(a.closed_at || 0).getTime() - new Date(b.closed_at || 0).getTime()
+    );
+    
+    let cumulative = 0;
+    return sorted.map(p => {
+      cumulative += p.realized_pnl_usdc ?? 0;
+      return {
+        date: new Date(p.closed_at || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        pnl: parseFloat(cumulative.toFixed(2)),
+      };
+    });
+  }, [positions]);
   const pnlData = useMemo(() => generatePnlData(), []);
 
   return (
@@ -212,57 +229,74 @@ export default function History() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {mockHistory.map((position) => {
-                  const isProfitable = position.realizedPnl >= 0;
-                  return (
-                    <tr key={position.id} className="hover:bg-muted/20 transition-colors">
-                      <td className="py-3 px-4">
-                        <span className="text-sm font-medium text-foreground">{position.market}</span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <Badge className={cn(
-                          'border',
-                          position.side === 'YES' 
-                            ? 'bg-primary/10 text-primary border-primary/20' 
-                            : 'bg-destructive/10 text-destructive border-destructive/20'
-                        )}>
-                          {position.side}
-                        </Badge>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-sm font-mono-numbers text-muted-foreground">
-                          ${position.entry.toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-sm font-mono-numbers text-foreground">
-                          ${position.exit.toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-sm font-mono-numbers text-foreground">
-                          ${position.size.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={cn(
-                          'text-sm font-mono-numbers font-medium',
-                          isProfitable ? 'text-profit' : 'text-loss'
-                        )}>
-                          {isProfitable ? '+' : ''}${position.realizedPnl.toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-sm font-mono-numbers text-muted-foreground">
-                          {position.duration}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className="text-sm text-muted-foreground">{position.closedAt}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center">
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto" />
+                    </td>
+                  </tr>
+                ) : positions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center">
+                      <p className="text-muted-foreground">No closed positions yet</p>
+                      <p className="text-sm text-muted-foreground mt-1">Completed trades will appear here</p>
+                    </td>
+                  </tr>
+                ) : (
+                  positions.map((position) => {
+                    const isProfitable = (position.realized_pnl_usdc ?? 0) >= 0;
+                    return (
+                      <tr key={position.id} className="hover:bg-muted/20 transition-colors">
+                        <td className="py-3 px-4">
+                          <span className="text-sm font-medium text-foreground">{position.team || position.token_id.slice(0, 12)}...</span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <Badge className={cn(
+                            'border',
+                            position.side === 'YES' 
+                              ? 'bg-primary/10 text-primary border-primary/20' 
+                              : 'bg-destructive/10 text-destructive border-destructive/20'
+                          )}>
+                            {position.side}
+                          </Badge>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-sm font-mono-numbers text-muted-foreground">
+                            ${position.entry_price.toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-sm font-mono-numbers text-foreground">
+                            ${(position.current_price ?? position.entry_price).toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-sm font-mono-numbers text-foreground">
+                            ${position.entry_cost_usdc.toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={cn(
+                            'text-sm font-mono-numbers font-medium',
+                            isProfitable ? 'text-profit' : 'text-loss'
+                          )}>
+                            {isProfitable ? '+' : ''}${(position.realized_pnl_usdc ?? 0).toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-sm font-mono-numbers text-muted-foreground">
+                            ---
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className="text-sm text-muted-foreground">
+                            {position.closed_at ? new Date(position.closed_at).toLocaleDateString() : '---'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
