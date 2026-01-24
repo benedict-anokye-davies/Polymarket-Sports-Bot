@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Register - Polymarket Trading Bot{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="auth-card">
+        <div class="text-center mb-5">
+            <div class="d-inline-flex align-items-center justify-content-center bg-success bg-opacity-10 rounded-circle mb-3" style="width: 64px; height: 64px;">
+                <i class="bi bi-person-plus text-success" style="font-size: 2rem;"></i>
+            </div>
+            <h2 class="mb-1 text-white">Create Account</h2>
+            <p class="text-secondary">Start automating your prediction market trades</p>
+        </div>
+        
+        <div id="alert-container"></div>
+        
+        <form id="register-form">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="username" name="username" required minlength="3" placeholder="johndoe">
+            </div>
+            
+            <div class="mb-3">
+                <label for="email" class="form-label">Email Address</label>
+                <input type="email" class="form-control" id="email" name="email" required placeholder="name@example.com">
+            </div>
+            
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" name="password" required minlength="8" placeholder="••••••••">
+                <div class="form-text text-secondary" style="font-size: 0.75rem;">Must be at least 8 characters long</div>
+            </div>
+            
+            <div class="mb-4">
+                <label for="confirm-password" class="form-label">Confirm Password</label>
+                <input type="password" class="form-control" id="confirm-password" required placeholder="••••••••">
+            </div>
+            
+            <button type="submit" class="btn btn-primary w-100 py-2.5 mb-3">
+                Create Account
+            </button>
+            
+            <p class="text-center text-secondary small mb-0">
+                Already have an account? <a href="/login" class="text-white fw-medium">Sign in</a>
+            </p>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("register-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector("button[type=submit]");
+    const originalText = btn.innerHTML;
+    
+    const password = document.getElementById("password").value;
+    const confirm = document.getElementById("confirm-password").value;
+    
+    const alertDiv = document.getElementById("alert-container");
+    alertDiv.innerHTML = "";
+    
+    if (password !== confirm) {
+        alertDiv.innerHTML = `<div class="alert alert-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"><i class="bi bi-exclamation-circle me-2"></i> Passwords do not match</div>`;
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Creating account...`;
+
+    try {
+        const response = await fetch("/api/v1/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                username: document.getElementById("username").value,
+                email: document.getElementById("email").value,
+                password: password
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            localStorage.setItem("access_token", data.access_token);
+            window.location.href = "/onboarding";
+        } else {
+            alertDiv.innerHTML = `<div class="alert alert-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"><i class="bi bi-exclamation-circle me-2"></i> ${data.detail || "Registration failed"}</div>`;
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    } catch (error) {
+        console.error("Registration error:", error);
+        alertDiv.innerHTML = `<div class="alert alert-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"><i class="bi bi-exclamation-circle me-2"></i> An unexpected error occurred</div>`;
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+});
+</script>
+{% endblock %}
+

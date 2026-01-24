@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Positions - Polymarket Trading Bot{% endblock %}
+
+{% block content %}
+<div class="wrapper">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-graph-up-arrow text-success me-3" style="font-size: 1.5rem;"></i>
+                <span class="brand-text">Polymarket Bot</span>
+            </div>
+        </div>
+        
+        <div class="sidebar-nav">
+            <a class="nav-link" href="/dashboard">
+                <i class="bi bi-grid-1x2"></i> Dashboard
+            </a>
+            <a class="nav-link" href="/markets">
+                <i class="bi bi-hdd-stack"></i> Markets
+            </a>
+            <a class="nav-link active" href="/positions">
+                <i class="bi bi-briefcase"></i> Positions
+            </a>
+            <a class="nav-link" href="/history">
+                <i class="bi bi-clock-history"></i> History
+            </a>
+            <a class="nav-link" href="/settings">
+                <i class="bi bi-gear"></i> Settings
+            </a>
+            <a class="nav-link" href="/logs">
+                <i class="bi bi-terminal"></i> Activity Logs
+            </a>
+        </div>
+        
+        <div class="sidebar-footer">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="bg-secondary rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                        <i class="bi bi-person-fill text-white"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm fw-medium text-white" id="username-display">User</div>
+                        <div class="text-xs text-secondary" style="font-size: 0.75rem;">Pro Plan</div>
+                    </div>
+                </div>
+                <button class="btn btn-link text-secondary p-0" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <h4 class="page-title m-0">Open Positions</h4>
+            <div class="d-flex align-items-center gap-3">
+                <div class="status-pill status-active">
+                    <span class="status-dot"></span>
+                    <span>System Active</span>
+                </div>
+                <div class="status-pill status-active">
+                    <span class="status-dot"></span>
+                    <span>L2 Connected</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-body">
+            <!-- Stats Row -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-3">
+                    <div class="stat-card p-3">
+                        <div class="d-flex justify-content-between mb-2">
+                             <span class="text-secondary small fw-bold">TOTAL INVESTED</span>
+                             <i class="bi bi-cash-stack text-primary"></i>
+                        </div>
+                         <h3 class="mb-0 font-monospace">$0.00</h3>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card p-3">
+                        <div class="d-flex justify-content-between mb-2">
+                             <span class="text-secondary small fw-bold">Unrealized P&L</span>
+                             <i class="bi bi-graph-up text-success"></i>
+                        </div>
+                         <h3 class="mb-0 font-monospace text-success">+$0.00</h3>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card p-3">
+                        <div class="d-flex justify-content-between mb-2">
+                             <span class="text-secondary small fw-bold">ACTIVE TRADES</span>
+                             <i class="bi bi-briefcase text-info"></i>
+                        </div>
+                         <h3 class="mb-0 font-monospace">0</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Positions Table -->
+            <div class="card bg-surface border-light shadow-sm">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="positions-table">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-4">Market</th>
+                                <th>Side</th>
+                                <th>Size</th>
+                                <th>Entry Price</th>
+                                <th>Current Price</th>
+                                <th>P&L</th>
+                                <th class="text-end pe-4">Action</th>
+                            </tr>
+                        </thead>
+                       <tbody id="positions-table-body">
+                             <!-- Empty State -->
+                             <tr>
+                                <td colspan="7" class="text-center py-5">
+                                    <div class="d-flex flex-column align-items-center">
+                                        <div class="bg-surface-hover rounded-circle p-3 mb-3">
+                                            <i class="bi bi-briefcase text-secondary fs-4"></i>
+                                        </div>
+                                        <h6 class="text-light">No active positions</h6>
+                                        <p class="text-secondary small">Trades will appear here once executed</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/auth.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        checkAuth();
+        // Placeholder
+    });
+</script>
+{% endblock %}
+

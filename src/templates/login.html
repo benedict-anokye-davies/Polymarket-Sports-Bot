@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Polymarket Trading Bot{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="auth-card">
+        <div class="text-center mb-5">
+            <div class="d-inline-flex align-items-center justify-content-center bg-success bg-opacity-10 rounded-circle mb-3" style="width: 64px; height: 64px;">
+                <i class="bi bi-graph-up-arrow text-success" style="font-size: 2rem;"></i>
+            </div>
+            <h2 class="mb-1 text-white">Welcome back</h2>
+            <p class="text-secondary">Enter your credentials to access the bot</p>
+        </div>
+        
+        <div id="alert-container"></div>
+        
+        <form id="login-form">
+            <div class="mb-4">
+                <label for="email" class="form-label">Email Address</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent border-end-0 text-secondary" style="border-color: var(--border-color);">
+                        <i class="bi bi-envelope"></i>
+                    </span>
+                    <input type="email" class="form-control border-start-0 ps-0" id="email" name="email" placeholder="name@example.com" required style="background: var(--bg-body);">
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <div class="d-flex justify-content-between">
+                    <label for="password" class="form-label">Password</label>
+                    <a href="#" class="text-decoration-none text-success small">Forgot password?</a>
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent border-end-0 text-secondary" style="border-color: var(--border-color);">
+                        <i class="bi bi-lock"></i>
+                    </span>
+                    <input type="password" class="form-control border-start-0 ps-0" id="password" name="password" placeholder="••••••••" required style="background: var(--bg-body);">
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary w-100 py-2.5 mb-3">
+                Sign In
+            </button>
+            
+            <p class="text-center text-secondary small mb-0">
+                Don't have an account? <a href="/register" class="text-white fw-medium">Create account</a>
+            </p>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector("button[type=submit]");
+    const originalText = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Signing in...`;
+
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+
+    try {
+        const response = await fetch("/api/v1/auth/login", {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/x-www-form-urlencoded" 
+            },
+            body: new URLSearchParams({ 
+                "username": email, 
+                "password": password 
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            localStorage.setItem("access_token", data.access_token);
+            
+            // Check onboarding status
+            const statusResponse = await fetch("/api/v1/onboarding/status", {
+                headers: { "Authorization": `Bearer ${data.access_token}` }
+            });
+            
+            if (statusResponse.ok) {
+                const status = await statusResponse.json();
+                if (status.current_step < 10) {
+                    window.location.href = "/onboarding";
+                    return;
+                }
+            }
+            window.location.href = "/dashboard";
+        } else {
+            const alertDiv = document.getElementById("alert-container");
+            alertDiv.innerHTML = `<div class="alert alert-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25 d-flex align-items-center"><i class="bi bi-exclamation-circle me-2"></i> ${data.detail || "Login failed"}</div>`;
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    } catch (error) {
+        console.error("Login error:", error);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+});
+</script>
+{% endblock %}
+

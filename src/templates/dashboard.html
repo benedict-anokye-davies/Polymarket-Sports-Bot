@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Polymarket Trading Bot{% endblock %}
+
+{% block content %}
+<div class="wrapper">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-graph-up-arrow text-success me-3" style="font-size: 1.5rem;"></i>
+                <span class="brand-text">Polymarket Bot</span>
+            </div>
+        </div>
+        
+        <div class="sidebar-nav">
+            <a class="nav-link active" href="/dashboard">
+                <i class="bi bi-grid-1x2"></i> Dashboard
+            </a>
+            <a class="nav-link" href="/markets">
+                <i class="bi bi-hdd-stack"></i> Markets
+            </a>
+            <a class="nav-link" href="/positions">
+                <i class="bi bi-briefcase"></i> Positions
+            </a>
+            <a class="nav-link" href="/history">
+                <i class="bi bi-clock-history"></i> History
+            </a>
+            <a class="nav-link" href="/settings">
+                <i class="bi bi-gear"></i> Settings
+            </a>
+            <a class="nav-link" href="/logs">
+                <i class="bi bi-terminal"></i> Activity Logs
+            </a>
+        </div>
+        
+        <div class="sidebar-footer">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="bg-secondary rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                        <i class="bi bi-person-fill text-white"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm fw-medium text-white" id="username-display">User</div>
+                        <div class="text-xs text-secondary" style="font-size: 0.75rem;">Pro Plan</div>
+                    </div>
+                </div>
+                <button class="btn btn-link text-secondary p-0" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <div>
+                <h1 class="page-title">Dashboard</h1>
+                <div class="text-secondary small" id="current-date"></div>
+            </div>
+            
+            <div class="d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center px-3 py-2 rounded-3 bg-surface border border-secondary">
+                    <span class="status-dot" id="bot-status-dot"></span>
+                    <span class="small fw-medium me-3" id="bot-status-text">Checking...</span>
+                    
+                    <button class="btn btn-sm btn-primary py-1 px-3" id="toggle-bot-btn" onclick="toggleBot()">
+                        <span id="toggle-bot-label">Start Bot</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+        
+        <div class="p-4">
+            <!-- Stats Grid -->
+            <div class="row g-4 mb-4">
+                <div class="col-xl-3 col-md-6">
+                    <div class="card stat-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="stat-label">Portfolio Value</div>
+                                    <div class="stat-value" id="portfolio-value">$0.00</div>
+                                    <div class="text-xs text-secondary mt-1">
+                                        <span class="text-success"><i class="bi bi-arrow-up-short"></i> 2.4%</span> vs yesterday
+                                    </div>
+                                </div>
+                                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                                    <i class="bi bi-wallet2"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6">
+                    <div class="card stat-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="stat-label">Daily P&L</div>
+                                    <div class="stat-value" id="daily-pnl">$0.00</div>
+                                    <div class="text-xs text-secondary mt-1">Realized gains today</div>
+                                </div>
+                                <div class="stat-icon bg-info bg-opacity-10 text-info">
+                                    <i class="bi bi-graph-up"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6">
+                    <div class="card stat-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="stat-label">Open Positions</div>
+                                    <div class="stat-value" id="open-positions">0</div>
+                                    <div class="text-xs text-secondary mt-1">Active trades</div>
+                                </div>
+                                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                                    <i class="bi bi-briefcase"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-xl-3 col-md-6">
+                    <div class="card stat-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="stat-label">Tracked Markets</div>
+                                    <div class="stat-value" id="tracked-markets">0</div>
+                                    <div class="text-xs text-secondary mt-1">Monitoring for entry</div>
+                                </div>
+                                <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                                    <i class="bi bi-eye"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Charts Section -->
+            <div class="row g-4 mb-4">
+                <div class="col-lg-8">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="card-title">Performance History</h5>
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-secondary active">1W</button>
+                                <button class="btn btn-outline-secondary">1M</button>
+                                <button class="btn btn-outline-secondary">ALL</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="pnl-chart" height="250"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="card-title">Win Rate</h5>
+                        </div>
+                        <div class="card-body d-flex align-items-center justify-content-center">
+                            <div style="position: relative; width: 200px; height: 200px;">
+                                <canvas id="winrate-chart"></canvas>
+                                <div class="text-center position-absolute top-50 start-50 translate-middle">
+                                    <div class="h3 fw-bold mb-0 text-white" id="win-rate-text">0%</div>
+                                    <div class="text-xs text-secondary">Win Rate</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Live Markets & Activity -->
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="card h-100">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="card-title">Live Markets</h5>
+                            <span class="badge bg-success" id="live-count">0 Active</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Market</th>
+                                        <th>Price (YES)</th>
+                                        <th>Change</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="live-markets-table">
+                                    <tr>
+                                        <td colspan="4" class="text-center text-secondary py-5">
+                                            <i class="bi bi-inbox fs-2 mb-2 d-block"></i>
+                                            No live markets being tracked right now
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="card-title">Recent Activity</h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="list-group list-group-flush" id="recent-activity">
+                                <div class="p-4 text-center text-secondary">
+                                    No recent activity
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/auth.js"></script>
+<script src="/static/js/dashboard.js"></script>
+<script>
+    // Simple date display
+    document.getElementById("current-date").textContent = new Date().toLocaleDateString("en-US", { 
+        weekday: "long", month: "long", day: "numeric" 
+    });
+    
+    // Override toggleBot visuals in dashboard.js
+    const oldUpdateBotStatus = updateBotStatus;
+    updateBotStatus = function(enabled) {
+        const dot = document.getElementById("bot-status-dot");
+        const text = document.getElementById("bot-status-text");
+        const btn = document.getElementById("toggle-bot-btn");
+        const btnLabel = document.getElementById("toggle-bot-label");
+        
+        if (enabled) {
+            dot.className = "status-dot active";
+            text.textContent = "Running";
+            text.className = "small fw-medium me-3 text-success";
+            btn.className = "btn btn-sm btn-outline-secondary py-1 px-3"; // Less prominent stop button
+            btnLabel.textContent = "Stop Bot";
+        } else {
+            dot.className = "status-dot inactive";
+            text.textContent = "Stopped";
+            text.className = "small fw-medium me-3 text-secondary";
+            btn.className = "btn btn-sm btn-primary py-1 px-3"; // Prominent start button
+            btnLabel.textContent = "Start Bot";
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest:*)",
+      "Bash(python -c:*)",
+      "Bash(curl:*)",
+      "Bash(timeout 3 python:*)",
+      "Bash(sqlite3:*)",
+      "Bash(pkill:*)",
+      "Bash(xargs:*)",
+      "Bash(python fix_database.py:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(python test_api.py:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill //F //PID 17872)",
+      "Bash(taskkill //F //PID 29100)",
+      "Bash(python migrate_to_supabase.py:*)",
+      "Bash(findstr:*)",
+      "Bash(ping:*)"
+    ]
+  }
+}

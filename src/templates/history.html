@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Trade History - Polymarket Trading Bot{% endblock %}
+
+{% block content %}
+<div class="wrapper">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-graph-up-arrow text-success me-3" style="font-size: 1.5rem;"></i>
+                <span class="brand-text">Polymarket Bot</span>
+            </div>
+        </div>
+        
+        <div class="sidebar-nav">
+            <a class="nav-link" href="/dashboard">
+                <i class="bi bi-grid-1x2"></i> Dashboard
+            </a>
+            <a class="nav-link" href="/markets">
+                <i class="bi bi-hdd-stack"></i> Markets
+            </a>
+            <a class="nav-link" href="/positions">
+                <i class="bi bi-briefcase"></i> Positions
+            </a>
+            <a class="nav-link active" href="/history">
+                <i class="bi bi-clock-history"></i> History
+            </a>
+            <a class="nav-link" href="/settings">
+                <i class="bi bi-gear"></i> Settings
+            </a>
+            <a class="nav-link" href="/logs">
+                <i class="bi bi-terminal"></i> Activity Logs
+            </a>
+        </div>
+        
+        <div class="sidebar-footer">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="bg-secondary rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                        <i class="bi bi-person-fill text-white"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm fw-medium text-white" id="username-display">User</div>
+                        <div class="text-xs text-secondary" style="font-size: 0.75rem;">Pro Plan</div>
+                    </div>
+                </div>
+                <button class="btn btn-link text-secondary p-0" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Top Bar -->
+        <header class="top-bar">
+            <h4 class="page-title m-0">Trade History</h4>
+            <div class="d-flex align-items-center gap-3">
+                <div class="status-pill status-active">
+                    <span class="status-dot"></span>
+                    <span>System Active</span>
+                </div>
+                <div class="status-pill status-active">
+                    <span class="status-dot"></span>
+                    <span>L2 Connected</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="content-body">
+             <!-- Summary Cards -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-3">
+                    <div class="stat-card p-3">
+                        <div class="d-flex justify-content-between mb-2">
+                             <span class="text-secondary small fw-bold">TOTAL CLOSED P&L</span>
+                             <i class="bi bi-piggy-bank text-warning"></i>
+                        </div>
+                         <h3 class="mb-0 font-monospace text-success">+$0.00</h3>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-card p-3">
+                         <div class="d-flex justify-content-between mb-2">
+                             <span class="text-secondary small fw-bold">WIN RATE</span>
+                             <i class="bi bi-trophy text-primary"></i>
+                        </div>
+                         <div class="d-flex align-items-end">
+                            <h3 class="mb-0 font-monospace me-2">0%</h3>
+                            <small class="text-secondary mb-1">0/0 Trades</small>
+                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Table -->
+            <div class="card bg-surface border-light shadow-sm">
+                <div class="card-header bg-transparent border-light py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Closed Trades</h5>
+                     <button class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-download me-2"></i>Export CSV
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="history-table">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-4">Date</th>
+                                <th>Market</th>
+                                <th>Sport</th>
+                                <th>Entry</th>
+                                <th>Exit</th>
+                                <th>P&L</th>
+                                <th>ROI</th>
+                            </tr>
+                        </thead>
+                       <tbody id="history-table-body">
+                             <!-- Empty State -->
+                             <tr>
+                                <td colspan="7" class="text-center py-5">
+                                    <div class="d-flex flex-column align-items-center">
+                                        <div class="bg-surface-hover rounded-circle p-3 mb-3">
+                                            <i class="bi bi-clock-history text-secondary fs-4"></i>
+                                        </div>
+                                        <h6 class="text-light">No trade history</h6>
+                                        <p class="text-secondary small">Closed positions will be recorded here</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                 <div class="card-footer bg-transparent border-light py-3 d-flex justify-content-between align-items-center">
+                    <span class="text-secondary text-sm">Showing 0-0 of 0 records</span>
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item disabled"><a class="page-link bg-surface border-light" href="#">Previous</a></li>
+                            <li class="page-item disabled"><a class="page-link bg-surface border-light" href="#">Next</a></li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/auth.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        checkAuth();
+        // Placeholder
+    });
+</script>
+{% endblock %}
+

@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+
+{% block title %}Onboarding - Polymarket Trading Bot{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="container py-5" style="max-width: 800px;">
+        <!-- Progress Bar -->
+        <div class="mb-5">
+            <div class="d-flex justify-content-between mb-2">
+                <span class="text-secondary fw-medium">Setup Progress</span>
+                <span class="text-white" id="step-indicator">Step 1 of 5</span>
+            </div>
+            <div class="progress" style="height: 6px; background-color: var(--bg-surface-active);">
+                <div class="progress-bar bg-success" id="progress-bar" style="width: 20%; box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);"></div>
+            </div>
+        </div>
+        
+        <!-- Step Content -->
+        <div class="card bg-surface border-top-0 border-start-0 border-end-0 border-bottom border-light shadow-lg">
+            <div class="card-body p-md-5">
+                <!-- Step 1: Welcome -->
+                <div class="step-content" id="step-1">
+                    <div class="text-center mb-5">
+                        <div class="d-inline-flex align-items-center justify-content-center bg-success bg-opacity-10 rounded-circle mb-4" style="width: 80px; height: 80px;">
+                            <i class="bi bi-graph-up-arrow text-success" style="font-size: 2.5rem;"></i>
+                        </div>
+                        <h2 class="mb-2">Welcome to Polymarket Bot</h2>
+                        <p class="text-secondary">Your automated edge in sports prediction markets</p>
+                    </div>
+                    
+                    <div class="row g-4 mb-5">
+                        <div class="col-md-4">
+                            <div class="text-center p-4 rounded-3 border border-secondary border-opacity-25" style="background: var(--bg-surface-hover);">
+                                <i class="bi bi-lightning text-warning fs-1 mb-3 d-block"></i>
+                                <h6 class="mb-1">Fast Execution</h6>
+                                <small class="text-secondary">Millisecond latency</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center p-4 rounded-3 border border-secondary border-opacity-25" style="background: var(--bg-surface-hover);">
+                                <i class="bi bi-shield-check text-success fs-1 mb-3 d-block"></i>
+                                <h6 class="mb-1">Secure Core</h6>
+                                <small class="text-secondary">Encrypted Vault</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center p-4 rounded-3 border border-secondary border-opacity-25" style="background: var(--bg-surface-hover);">
+                                <i class="bi bi-bar-chart text-info fs-1 mb-3 d-block"></i>
+                                <h6 class="mb-1">Live Analytics</h6>
+                                <small class="text-secondary">Real-time P&L</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info py-3 d-flex align-items-center">
+                        <i class="bi bi-info-circle me-3 fs-5"></i>
+                        <div>
+                            This wizard will guide you through connecting your wallet and configuring your initial risk parameters.
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Step 2: Connect Wallet -->
+                <div class="step-content d-none" id="step-2">
+                    <div class="text-center mb-4">
+                        <h3 class="mb-2">Connect Your Wallet</h3>
+                        <p class="text-secondary">Securely link your Polygon betting account</p>
+                    </div>
+                    
+                    <div class="alert alert-warning py-3 d-flex align-items-center mb-4">
+                        <i class="bi bi-shield-lock me-3 fs-5"></i>
+                        <div>
+                            <strong>Security Notice:</strong> Your private key is encrypted locally before being stored in the database.
+                        </div>
+                    </div>
+                    
+                    <form id="wallet-form">
+                        <div class="mb-4">
+                            <label class="form-label">Polygon Private Key</label>
+                            <input type="password" class="form-control font-monospace" id="private-key" required placeholder="0x...">
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label">Funder Address (USDC Source)</label>
+                            <input type="text" class="form-control font-monospace" id="funder-address" required placeholder="0x...">
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label">Signature Type</label>
+                            <select class="form-select" id="signature-type">
+                                <option value="1" selected>POLY_PROXY (Recommended)</option>
+                                <option value="0">EOA (Standard Wallet)</option>
+                                <option value="2">GNOSIS_SAFE (Multisig)</option>
+                            </select>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary w-100 py-2" onclick="testWalletConnection()">
+                            <i class="bi bi-plug me-2"></i> Test Connection
+                        </button>
+                        <div id="wallet-status" class="mt-3"></div>
+                    </form>
+                </div>
+                
+                <!-- Step 3: Sport Configuration -->
+                <div class="step-content d-none" id="step-3">
+                    <div class="text-center mb-4">
+                        <h3 class="mb-2">Sport Configuration</h3>
+                        <p class="text-secondary">Choose which markets to trade</p>
+                    </div>
+                    
+                    <form id="sport-form">
+                        <div class="p-4 rounded-3 mb-4 border border-secondary border-opacity-25" style="background: var(--bg-surface-hover);">
+                            <label class="form-label fw-bold mb-3">Active Sports</label>
+                            <div class="row g-3">
+                                <div class="col-6 col-md-3">
+                                    <div class="form-check p-3 rounded border border-secondary border-opacity-25 bg-surface">
+                                        <input class="form-check-input" type="checkbox" id="sport-nba" value="nba" checked>
+                                        <label class="form-check-label fw-medium stretched-link" for="sport-nba">NBA</label>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="form-check p-3 rounded border border-secondary border-opacity-25 bg-surface">
+                                        <input class="form-check-input" type="checkbox" id="sport-nfl" value="nfl">
+                                        <label class="form-check-label fw-medium stretched-link" for="sport-nfl">NFL</label>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="form-check p-3 rounded border border-secondary border-opacity-25 bg-surface">
+                                        <input class="form-check-input" type="checkbox" id="sport-mlb" value="mlb">
+                                        <label class="form-check-label fw-medium stretched-link" for="sport-mlb">MLB</label>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="form-check p-3 rounded border border-secondary border-opacity-25 bg-surface">
+                                        <input class="form-check-input" type="checkbox" id="sport-nhl" value="nhl">
+                                        <label class="form-check-label fw-medium stretched-link" for="sport-nhl">NHL</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <h6 class="text-uppercase text-secondary mb-3 small fw-bold mt-4">Entry Thresholds</h6>
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">Price Drop (%)</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="entry-threshold" value="5" min="1" max="50" step="0.5">
+                                    <span class="input-group-text bg-surface border-start-0 text-secondary">%</span>
+                                </div>
+                                <div class="form-text">Trigger entry when price drops by this amount</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Absolute Floor ($)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-surface border-end-0 text-secondary">$</span>
+                                    <input type="number" class="form-control" id="absolute-entry" value="0.35" min="0.01" max="0.99" step="0.01">
+                                </div>
+                                <div class="form-text">Always buy if price falls below this level</div>
+                            </div>
+                        </div>
+                        
+                        <h6 class="text-uppercase text-secondary mb-3 small fw-bold mt-4">Exit Thresholds</h6>
+                        <div class="row g-4">
+                            <div class="col-md-6">
+                                <label class="form-label">Take Profit (%)</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="take-profit" value="10" min="1" max="100" step="0.5">
+                                    <span class="input-group-text bg-surface border-start-0 text-secondary">%</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Stop Loss (%)</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="stop-loss" value="15" min="1" max="100" step="0.5">
+                                    <span class="input-group-text bg-surface border-start-0 text-secondary">%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Step 4: Risk Settings -->
+                <div class="step-content d-none" id="step-4">
+                    <div class="text-center mb-4">
+                        <h3 class="mb-2">Risk Management</h3>
+                        <p class="text-secondary">Protect your capital with hard limits</p>
+                    </div>
+                    
+                    <form id="risk-form">
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">Max Daily Loss</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-surface border-end-0 text-secondary">$</span>
+                                    <input type="number" class="form-control" id="max-daily-loss" value="100" min="10" step="10">
+                                </div>
+                                <div class="form-text">Bot stops trading if loss hits this amount</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Max Exposure</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-surface border-end-0 text-secondary">$</span>
+                                    <input type="number" class="form-control" id="max-exposure" value="500" min="50" step="50">
+                                </div>
+                                <div class="form-text">Total value across all active positions</div>
+                            </div>
+                        </div>
+                        
+                        <div class="p-4 rounded-3 border border-secondary border-opacity-25" style="background: var(--bg-surface-hover);">
+                            <div class="row g-4">
+                                <div class="col-md-6">
+                                    <label class="form-label">Position Size</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-surface border-end-0 text-secondary">$</span>
+                                        <input type="number" class="form-control" id="position-size" value="25" min="5" step="5">
+                                    </div>
+                                    <div class="form-text">Amount to invest per trade</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Max Positions</label>
+                                    <input type="number" class="form-control" id="max-positions" value="5" min="1" max="20">
+                                    <div class="form-text">Concurrent active trades allowed</div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Step 5: Discord & Finish -->
+                <div class="step-content d-none" id="step-5">
+                    <div class="text-center mb-5">
+                        <h3 class="mb-2">Notifications</h3>
+                        <p class="text-secondary">Stay informed about your bot's activity</p>
+                    </div>
+                    
+                    <form id="notification-form">
+                        <div class="mb-4">
+                            <label class="form-label">Discord Webhook URL (Optional)</label>
+                            <input type="url" class="form-control" id="discord-webhook" placeholder="https://discord.com/api/webhooks/...">
+                        </div>
+                        
+                        <div class="form-check mb-4">
+                            <input class="form-check-input" type="checkbox" id="discord-enabled" checked>
+                            <label class="form-check-label text-white" for="discord-enabled">Enable Discord Alerts</label>
+                        </div>
+                        
+                        <button type="button" class="btn btn-outline-secondary mb-5" onclick="testDiscord()">
+                            <i class="bi bi-send me-2"></i>Send Test Message
+                        </button>
+                        
+                        <div class="d-flex align-items-center p-4 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25">
+                            <div class="me-3">
+                                <i class="bi bi-check-circle-fill text-success fs-2"></i>
+                            </div>
+                            <div>
+                                <h5 class="mb-1 text-success">All Set!</h5>
+                                <p class="mb-0 text-secondary">Your configuration is ready. Click Finish to save and launch the dashboard.</p>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Navigation Buttons -->
+                <div class="d-flex justify-content-between mt-5 pt-4 border-top border-secondary border-opacity-25">
+                    <button class="btn btn-outline-secondary px-4" id="prev-btn" onclick="prevStep()" disabled>
+                        Previous
+                    </button>
+                    <button class="btn btn-primary px-4" id="next-btn" onclick="nextStep()">
+                        Next Step <i class="bi bi-chevron-right ms-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="text-center mt-4">
+            <button class="btn btn-link text-secondary text-decoration-none btn-sm" onclick="skipOnboarding()">Skip setup (Developer only)</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/auth.js"></script>
+<script src="/static/js/onboarding.js"></script>
+<script>
+    // Add skip function if missing
+    async function skipOnboarding() {
+        if(!confirm("Are you sure? The bot will not work without configuration.")) return;
+        
+        try {
+            await fetch("/api/v1/onboarding/skip", { method: "POST" });
+            window.location.href = "/dashboard";
+        } catch(e) { console.error(e); }
+    }
+</script>
+{% endblock %}
+
