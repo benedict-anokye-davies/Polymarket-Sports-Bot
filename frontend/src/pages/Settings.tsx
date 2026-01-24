@@ -122,31 +122,31 @@ export default function Settings() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-muted-foreground text-xs">Probability Drop %</Label>
-                        <Input type="number" defaultValue="5" className="bg-muted border-border" />
+                        <Input type="number" placeholder="e.g. 5" className="bg-muted border-border" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-muted-foreground text-xs">Min Volume Threshold ($)</Label>
-                        <Input type="number" defaultValue="1000" className="bg-muted border-border" />
+                        <Input type="number" placeholder="e.g. 1000" className="bg-muted border-border" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-muted-foreground text-xs">Take Profit %</Label>
-                        <Input type="number" defaultValue="25" className="bg-muted border-border" />
+                        <Input type="number" placeholder="e.g. 10" className="bg-muted border-border" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-muted-foreground text-xs">Stop Loss %</Label>
-                        <Input type="number" defaultValue="15" className="bg-muted border-border" />
+                        <Input type="number" placeholder="e.g. 15" className="bg-muted border-border" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-muted-foreground text-xs">Position Size ($)</Label>
-                        <Input type="number" defaultValue="50" className="bg-muted border-border" />
+                        <Input type="number" placeholder="e.g. 50" className="bg-muted border-border" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-muted-foreground text-xs">Latest Entry Time (min)</Label>
-                        <Input type="number" defaultValue="5" className="bg-muted border-border" />
+                        <Input type="number" placeholder="e.g. 5" className="bg-muted border-border" />
                       </div>
                       <div className="space-y-2 col-span-2">
                         <Label className="text-muted-foreground text-xs">Latest Exit Time (min)</Label>
-                        <Input type="number" defaultValue="2" className="bg-muted border-border" />
+                        <Input type="number" placeholder="e.g. 2" className="bg-muted border-border" />
                       </div>
                     </div>
                   </AccordionContent>
@@ -168,19 +168,19 @@ export default function Settings() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-muted-foreground">Max Daily Loss ($)</Label>
-                <Input type="number" defaultValue="500" className="bg-muted border-border" />
+                <Input type="number" placeholder="e.g. 500" className="bg-muted border-border" />
               </div>
               <div className="space-y-2">
                 <Label className="text-muted-foreground">Max Total Exposure ($)</Label>
-                <Input type="number" defaultValue="5000" className="bg-muted border-border" />
+                <Input type="number" placeholder="e.g. 5000" className="bg-muted border-border" />
               </div>
               <div className="space-y-2">
                 <Label className="text-muted-foreground">Max Concurrent Positions</Label>
-                <Input type="number" defaultValue="10" className="bg-muted border-border" />
+                <Input type="number" placeholder="e.g. 10" className="bg-muted border-border" />
               </div>
               <div className="space-y-2">
                 <Label className="text-muted-foreground">Default Position Size ($)</Label>
-                <Input type="number" defaultValue="500" className="bg-muted border-border" />
+                <Input type="number" placeholder="e.g. 50" className="bg-muted border-border" />
               </div>
             </div>
             <Separator className="bg-border" />

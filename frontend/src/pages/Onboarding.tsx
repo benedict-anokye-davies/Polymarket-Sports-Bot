@@ -264,7 +264,7 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
               <Label className="text-sm text-muted-foreground">Position Size ($)</Label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                <Input type="number" defaultValue="25" className="bg-muted border-border pl-7" />
+                <Input type="number" placeholder="e.g. 50" className="bg-muted border-border pl-7" />
               </div>
               <p className="text-xs text-muted-foreground">Max amount per trade</p>
             </div>
@@ -272,7 +272,7 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
               <Label className="text-sm text-muted-foreground">Min Volume Threshold</Label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                <Input type="number" defaultValue="1000" className="bg-muted border-border pl-7" />
+                <Input type="number" placeholder="e.g. 1000" className="bg-muted border-border pl-7" />
               </div>
               <p className="text-xs text-muted-foreground">Min market volume to enter</p>
             </div>
@@ -283,9 +283,9 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
           <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Entry Thresholds</Label>
           <div className="grid grid-cols-2 gap-4 mt-3">
             <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Price Drop (%)</Label>
+              <Label className="text-sm text-muted-foreground">Probability Drop (%)</Label>
               <div className="relative">
-                <Input type="number" defaultValue="5" className="bg-muted border-border pr-8" />
+                <Input type="number" placeholder="e.g. 5" className="bg-muted border-border pr-8" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
               </div>
               <p className="text-xs text-muted-foreground">Trigger entry when price drops</p>
@@ -294,7 +294,7 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
               <Label className="text-sm text-muted-foreground">Absolute Floor ($)</Label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                <Input type="number" defaultValue="0.35" step="0.01" className="bg-muted border-border pl-7" />
+                <Input type="number" placeholder="e.g. 0.35" step="0.01" className="bg-muted border-border pl-7" />
               </div>
               <p className="text-xs text-muted-foreground">Buy if price falls below</p>
             </div>
@@ -307,14 +307,14 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Take Profit (%)</Label>
               <div className="relative">
-                <Input type="number" defaultValue="10" className="bg-muted border-border pr-8" />
+                <Input type="number" placeholder="e.g. 10" className="bg-muted border-border pr-8" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
               </div>
             </div>
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Stop Loss (%)</Label>
               <div className="relative">
-                <Input type="number" defaultValue="15" className="bg-muted border-border pr-8" />
+                <Input type="number" placeholder="e.g. 15" className="bg-muted border-border pr-8" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
               </div>
             </div>
@@ -327,7 +327,7 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Latest Entry Time (min)</Label>
               <div className="relative">
-                <Input type="number" defaultValue="5" className="bg-muted border-border pr-12" />
+                <Input type="number" placeholder="e.g. 5" className="bg-muted border-border pr-12" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">min</span>
               </div>
               <p className="text-xs text-muted-foreground">No buys after X min remaining</p>
@@ -335,7 +335,7 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
             <div className="space-y-2">
               <Label className="text-sm text-muted-foreground">Latest Exit Time (min)</Label>
               <div className="relative">
-                <Input type="number" defaultValue="2" className="bg-muted border-border pr-12" />
+                <Input type="number" placeholder="e.g. 2" className="bg-muted border-border pr-12" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">min</span>
               </div>
               <p className="text-xs text-muted-foreground">Must sell once X min remaining</p>
@@ -381,7 +381,7 @@ function RiskStep({ onNext, onBack }: StepProps) {
             <Label className="text-sm text-muted-foreground">Max Daily Loss ($)</Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-              <Input type="number" defaultValue="100" className="bg-muted border-border pl-7" />
+              <Input type="number" placeholder="e.g. 100" className="bg-muted border-border pl-7" />
             </div>
             <p className="text-xs text-muted-foreground">Bot stops if loss hits this amount</p>
           </div>
@@ -389,7 +389,7 @@ function RiskStep({ onNext, onBack }: StepProps) {
             <Label className="text-sm text-muted-foreground">Max Exposure ($)</Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-              <Input type="number" defaultValue="500" className="bg-muted border-border pl-7" />
+              <Input type="number" placeholder="e.g. 500" className="bg-muted border-border pl-7" />
             </div>
             <p className="text-xs text-muted-foreground">Total capital at risk limit</p>
           </div>
@@ -400,12 +400,12 @@ function RiskStep({ onNext, onBack }: StepProps) {
             <Label className="text-sm text-muted-foreground">Default Position Size ($)</Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-              <Input type="number" defaultValue="50" className="bg-muted border-border pl-7" />
+              <Input type="number" placeholder="e.g. 50" className="bg-muted border-border pl-7" />
             </div>
           </div>
           <div className="space-y-2">
             <Label className="text-sm text-muted-foreground">Max Concurrent Positions</Label>
-            <Input type="number" defaultValue="10" className="bg-muted border-border" />
+            <Input type="number" placeholder="e.g. 10" className="bg-muted border-border" />
           </div>
         </div>
 
