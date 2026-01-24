@@ -1,14 +1,20 @@
 """
 ESPN API service for fetching live game data.
 Polls scoreboard and summary endpoints for game state.
+Includes retry logic with circuit breakers for resilience.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
 from src.core.exceptions import ESPNAPIError
+from src.core.retry import retry_async, espn_circuit
+
+
+logger = logging.getLogger(__name__)
 
 
 class ESPNService:
@@ -58,6 +64,7 @@ class ESPNService:
     async def get_scoreboard(self, sport: str) -> list[dict[str, Any]]:
         """
         Fetches the current scoreboard for a sport.
+        Uses retry logic with circuit breaker for resilience.
         
         Args:
             sport: Sport identifier (nba, nfl, mlb, nhl)
@@ -69,20 +76,29 @@ class ESPNService:
             client = await self._get_client()
             endpoint = self._get_sport_endpoint(sport)
             
-            response = await client.get(f"{self.BASE_URL}/{endpoint}/scoreboard")
+            response = await retry_async(
+                client.get,
+                f"{self.BASE_URL}/{endpoint}/scoreboard",
+                max_retries=3,
+                base_delay=0.5,
+                circuit_breaker=espn_circuit
+            )
             response.raise_for_status()
             
             data = response.json()
             events = data.get("events", [])
             
+            logger.debug(f"Fetched {len(events)} {sport.upper()} events from ESPN")
             return events
             
         except httpx.HTTPError as e:
+            logger.warning(f"Failed to fetch {sport} scoreboard: {e}")
             raise ESPNAPIError(f"Failed to fetch scoreboard: {str(e)}")
     
     async def get_game_summary(self, sport: str, event_id: str) -> dict[str, Any]:
         """
         Fetches detailed summary for a specific game.
+        Uses retry logic with circuit breaker for resilience.
         
         Args:
             sport: Sport identifier
@@ -95,15 +111,20 @@ class ESPNService:
             client = await self._get_client()
             endpoint = self._get_sport_endpoint(sport)
             
-            response = await client.get(
+            response = await retry_async(
+                client.get,
                 f"{self.BASE_URL}/{endpoint}/summary",
-                params={"event": event_id}
+                params={"event": event_id},
+                max_retries=3,
+                base_delay=0.5,
+                circuit_breaker=espn_circuit
             )
             response.raise_for_status()
             
             return response.json()
             
         except httpx.HTTPError as e:
+            logger.warning(f"Failed to fetch summary for event {event_id}: {e}")
             raise ESPNAPIError(f"Failed to fetch game summary: {str(e)}")
     
     def parse_game_state(self, game: dict[str, Any], sport: str) -> dict[str, Any]:

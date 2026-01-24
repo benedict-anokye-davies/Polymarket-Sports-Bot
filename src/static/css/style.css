@@ -404,3 +404,205 @@ a {
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
+/* --- Status Bar & Header Updates --- */
+
+.top-bar {
+    height: auto !important; /* Override fixed height */
+    padding: 0 !important;   /* Reset padding */
+}
+
+.status-bar {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    padding: 12px 24px;
+    font-size: 13px;
+    font-weight: 500;
+    flex-wrap: wrap;
+    background-color: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.status-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: all 200ms ease;
+  border: 1px solid transparent;
+}
+
+.status-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-indicator.connected {
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.status-indicator.running {
+  background: var(--info);
+  animation: pulse-running 2s infinite;
+}
+
+.status-indicator.error {
+  background: var(--danger);
+  animation: pulse-error 1.5s infinite;
+}
+
+.status-indicator.paused {
+  background: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+@keyframes pulse-running {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+  50% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0); }
+}
+
+@keyframes pulse-error {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); transform: scale(1); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); transform: scale(1.1); }
+}
+
+.status-label {
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.status-value {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;  /* Monospace for details */
+  font-size: 0.8rem;
+}
+
+.status-action {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 14px;
+  opacity: 0.6;
+  transition: opacity 200ms ease;
+  line-height: 1;
+}
+
+.status-action:hover { opacity: 1; color: var(--text-primary); }
+
+.status-item.critical {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.status-item.critical .status-label { color: var(--danger); }
+.status-item.critical .status-value { color: var(--danger); }
+
+
+/* --- Order Book & Flash Animations --- */
+
+.orderbook-table td {
+    padding: 4px 12px !important;
+    font-size: 0.8rem !important;
+    border-bottom: 1px solid rgba(255,255,255,0.03) !important;
+}
+
+.text-ask { color: #f87171 !important; }
+.text-bid { color: #10b981 !important; }
+
+/* CSS Variables for flash colors */
+:root {
+  --flash-up-bg: rgba(34, 197, 94, 0.15);
+  --flash-down-bg: rgba(239, 68, 68, 0.15);
+  --flash-up-border: #22c55e;
+  --flash-down-border: #ef4444;
+  --flash-duration: 300ms;
+}
+
+@keyframes flash-up {
+  0% { background-color: var(--flash-up-bg); border-left-color: var(--flash-up-border); }
+  100% { background-color: transparent; border-left-color: transparent; }
+}
+
+@keyframes flash-down {
+  0% { background-color: var(--flash-down-bg); border-left-color: var(--flash-down-border); }
+  100% { background-color: transparent; border-left-color: transparent; }
+}
+
+.cell-flash-up {
+  position: relative;
+  border-left: 2px solid transparent;
+  animation: flash-up var(--flash-duration) ease-out forwards;
+}
+
+.cell-flash-down {
+  position: relative;
+  border-left: 2px solid transparent;
+  animation: flash-down var(--flash-duration) ease-out forwards;
+}
+
+/* --- Mobile Responsiveness (Card Stack) --- */
+
+@media (max-width: 1023px) {
+  .positions-container-responsive {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .positions-container-responsive .position-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+  
+  .positions-container-responsive .card-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .positions-container-responsive .label {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  
+  .positions-container-responsive .value {
+    font-weight: 500;
+    font-size: 0.9rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .show-on-mobile-only { display: none; }
+}
+
+

@@ -328,6 +328,18 @@ class BotRunner:
                     str(e),
                     "discovery_loop"
                 )
+                # Log to activity database
+                if self.user_id:
+                    try:
+                        await ActivityLogCRUD.error(
+                            db,
+                            self.user_id,
+                            "DISCOVERY",
+                            f"Market discovery failed: {str(e)[:200]}",
+                            {"error_type": type(e).__name__, "loop": "discovery"}
+                        )
+                    except Exception:
+                        pass  # Don't let logging failures crash the bot
             
             await asyncio.sleep(self.DISCOVERY_INTERVAL)
     
@@ -373,6 +385,18 @@ class BotRunner:
                 break
             except Exception as e:
                 logger.error(f"Error in ESPN poll loop: {e}")
+                # Log to activity database
+                if self.user_id:
+                    try:
+                        await ActivityLogCRUD.warning(
+                            db,
+                            self.user_id,
+                            "ESPN",
+                            f"ESPN polling error: {str(e)[:200]}",
+                            {"error_type": type(e).__name__, "loop": "espn_poll"}
+                        )
+                    except Exception:
+                        pass
             
             await asyncio.sleep(self.ESPN_POLL_INTERVAL)
     
@@ -472,6 +496,18 @@ class BotRunner:
                     str(e),
                     "trading_loop"
                 )
+                # Log to activity database
+                if self.user_id:
+                    try:
+                        await ActivityLogCRUD.error(
+                            db,
+                            self.user_id,
+                            "TRADING",
+                            f"Trading loop error: {str(e)[:200]}",
+                            {"error_type": type(e).__name__, "loop": "trading"}
+                        )
+                    except Exception:
+                        pass
             
             await asyncio.sleep(1)  # Check every second
     
@@ -551,7 +587,24 @@ class BotRunner:
         except Exception as e:
             logger.error(f"Failed to execute entry: {e}")
             await discord_notifier.notify_error("Entry Failed", str(e), "entry_execution")
-    
+            # Log to activity database
+            if self.user_id:
+                try:
+                    await ActivityLogCRUD.error(
+                        db,
+                        self.user_id,
+                        "TRADE",
+                        f"Entry order failed for {game.home_team} vs {game.away_team}",
+                        {
+                            "error": str(e)[:200],
+                            "token_id": game.market.token_id_yes[:20],
+                            "attempted_price": game.current_price,
+                            "attempted_size": position_size
+                        }
+                    )
+                except Exception:
+                    pass
+
     async def _evaluate_exit(self, db: AsyncSession, game: TrackedGame) -> None:
         """
         Evaluate exit conditions for an open position.
@@ -637,7 +690,24 @@ class BotRunner:
         except Exception as e:
             logger.error(f"Failed to execute exit: {e}")
             await discord_notifier.notify_error("Exit Failed", str(e), "exit_execution")
-    
+            # Log to activity database
+            if self.user_id:
+                try:
+                    await ActivityLogCRUD.error(
+                        db,
+                        self.user_id,
+                        "TRADE",
+                        f"Exit order failed for {game.home_team} vs {game.away_team}",
+                        {
+                            "error": str(e)[:200],
+                            "position_id": str(game.position_id),
+                            "exit_reason": exit_reason,
+                            "current_price": current_price
+                        }
+                    )
+                except Exception:
+                    pass
+
     async def _health_check_loop(self, db: AsyncSession) -> None:
         """
         Periodic health checks and stats logging.

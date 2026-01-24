@@ -1,9 +1,11 @@
 """
 Polymarket CLOB API client implementation.
 Handles L1/L2 authentication and all trading operations.
+Includes retry logic with circuit breakers for resilience.
 """
 
 import asyncio
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -12,6 +14,10 @@ from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import OrderArgs, OrderType
 
 from src.core.exceptions import PolymarketAPIError, InsufficientBalanceError
+from src.core.retry import retry_async, polymarket_circuit
+
+
+logger = logging.getLogger(__name__)
 
 
 class PolymarketClient:
@@ -114,6 +120,7 @@ class PolymarketClient:
     async def get_balance(self) -> Decimal:
         """
         Fetches USDC balance for the funder address.
+        Uses retry logic with circuit breaker for resilience.
         
         Returns:
             Balance in USDC as Decimal
@@ -121,21 +128,27 @@ class PolymarketClient:
         try:
             http = await self._get_http_client()
             
-            response = await http.get(
+            response = await retry_async(
+                http.get,
                 f"{self.CLOB_HOST}/balance",
-                params={"address": self.funder_address}
+                params={"address": self.funder_address},
+                max_retries=3,
+                circuit_breaker=polymarket_circuit
             )
             response.raise_for_status()
             
             data = response.json()
+            logger.debug(f"Balance fetched: {data.get('balance', 0)} USDC")
             return Decimal(str(data.get("balance", 0)))
             
         except httpx.HTTPError as e:
+            logger.error(f"Failed to fetch balance: {e}")
             raise PolymarketAPIError(f"Failed to fetch balance: {str(e)}")
     
     async def get_midpoint_price(self, token_id: str) -> float:
         """
         Fetches current midpoint price for a token.
+        Uses retry logic with circuit breaker for resilience.
         
         Args:
             token_id: The token ID to get price for
@@ -146,9 +159,12 @@ class PolymarketClient:
         try:
             http = await self._get_http_client()
             
-            response = await http.get(
+            response = await retry_async(
+                http.get,
                 f"{self.CLOB_HOST}/midpoint",
-                params={"token_id": token_id}
+                params={"token_id": token_id},
+                max_retries=3,
+                circuit_breaker=polymarket_circuit
             )
             response.raise_for_status()
             
@@ -156,11 +172,13 @@ class PolymarketClient:
             return float(data.get("mid", 0))
             
         except httpx.HTTPError as e:
+            logger.warning(f"Failed to fetch midpoint for {token_id}: {e}")
             raise PolymarketAPIError(f"Failed to fetch midpoint: {str(e)}")
     
     async def get_orderbook(self, token_id: str) -> dict[str, Any]:
         """
         Fetches full orderbook for a token.
+        Uses retry logic with circuit breaker for resilience.
         
         Returns:
             Dictionary with bids and asks arrays
@@ -168,15 +186,19 @@ class PolymarketClient:
         try:
             http = await self._get_http_client()
             
-            response = await http.get(
+            response = await retry_async(
+                http.get,
                 f"{self.CLOB_HOST}/book",
-                params={"token_id": token_id}
+                params={"token_id": token_id},
+                max_retries=3,
+                circuit_breaker=polymarket_circuit
             )
             response.raise_for_status()
             
             return response.json()
             
         except httpx.HTTPError as e:
+            logger.warning(f"Failed to fetch orderbook for {token_id}: {e}")
             raise PolymarketAPIError(f"Failed to fetch orderbook: {str(e)}")
     
     async def place_order(
@@ -226,10 +248,14 @@ class PolymarketClient:
                     lambda: client.create_and_post_order(order_args)
                 )
             
+            logger.info(
+                f"Order placed: {side} {size} @ {price} for token {token_id[:16]}..."
+            )
             return {"id": result.get("orderID"), "status": "created", "raw": result}
             
         except Exception as e:
             error_str = str(e).lower()
+            logger.error(f"Order placement failed: {e}")
             if "insufficient" in error_str or "balance" in error_str:
                 raise InsufficientBalanceError(f"Insufficient balance: {str(e)}")
             raise PolymarketAPIError(f"Failed to place order: {str(e)}")
@@ -282,6 +308,7 @@ class PolymarketClient:
     async def get_positions(self) -> list[dict[str, Any]]:
         """
         Fetches all positions for the user.
+        Uses retry logic with circuit breaker for resilience.
         
         Returns:
             List of positions with token_id and size
@@ -289,20 +316,25 @@ class PolymarketClient:
         try:
             http = await self._get_http_client()
             
-            response = await http.get(
+            response = await retry_async(
+                http.get,
                 f"{self.GAMMA_HOST}/positions",
-                params={"user": self.funder_address}
+                params={"user": self.funder_address},
+                max_retries=3,
+                circuit_breaker=polymarket_circuit
             )
             response.raise_for_status()
             
             return response.json()
             
         except httpx.HTTPError as e:
+            logger.warning(f"Failed to fetch positions: {e}")
             raise PolymarketAPIError(f"Failed to fetch positions: {str(e)}")
     
     async def get_sports_markets(self, sport: str | None = None) -> list[dict[str, Any]]:
         """
         Fetches active sports markets from Gamma API.
+        Uses retry logic with circuit breaker for resilience.
         
         Args:
             sport: Optional sport filter (e.g., "nba", "nfl")
@@ -317,15 +349,20 @@ class PolymarketClient:
             if sport:
                 params["tag"] = sport.upper()
             
-            response = await http.get(
+            response = await retry_async(
+                http.get,
                 f"{self.GAMMA_HOST}/markets",
-                params=params
+                params=params,
+                max_retries=3,
+                circuit_breaker=polymarket_circuit
             )
             response.raise_for_status()
             
+            logger.debug(f"Fetched sports markets, sport={sport}")
             return response.json()
             
         except httpx.HTTPError as e:
+            logger.warning(f"Failed to fetch markets: {e}")
             raise PolymarketAPIError(f"Failed to fetch markets: {str(e)}")
     
     async def close(self) -> None:

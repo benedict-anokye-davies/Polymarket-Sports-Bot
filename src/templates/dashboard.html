@@ -2,6 +2,11 @@
 
 {% block title %}Dashboard - Polymarket Trading Bot{% endblock %}
 
+{% block head %}
+<!-- Lightweight Charts -->
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="wrapper">
     <!-- Sidebar -->
@@ -54,26 +59,35 @@
     
     <!-- Main Content -->
     <main class="main-content">
-        <!-- Top Bar -->
-        <header class="top-bar">
-            <div>
-                <h1 class="page-title">Dashboard</h1>
-                <div class="text-secondary small" id="current-date"></div>
-            </div>
-            
-            <div class="d-flex align-items-center gap-3">
-                <div class="d-flex align-items-center px-3 py-2 rounded-3 bg-surface border border-secondary">
-                    <span class="status-dot" id="bot-status-dot"></span>
-                    <span class="small fw-medium me-3" id="bot-status-text">Checking...</span>
-                    
-                    <button class="btn btn-sm btn-primary py-1 px-3" id="toggle-bot-btn" onclick="toggleBot()">
-                        <span id="toggle-bot-label">Start Bot</span>
-                    </button>
+        <!-- Status Bar (Replaces Top Bar) -->
+        <div class="status-bar">
+            <!-- Wallet Section -->
+            <div class="status-section wallet-section">
+                <div class="status-item" id="wallet-status">
+                     <span class="status-indicator" id="wallet-indicator"></span>
+                     <span class="status-label">Wallet</span>
+                     <span class="status-value" id="wallet-address">Disconnected</span>
+                     <button class="status-action" onclick="toggleWallet()" aria-label="Toggle wallet">⊗</button>
                 </div>
             </div>
-        </header>
+
+            <!-- Bot Status Section -->
+            <div class="status-section bot-section">
+                <div class="status-item" id="bot-status">
+                    <span class="status-indicator" id="bot-indicator"></span>
+                    <span class="status-label">Bot</span>
+                    <span class="status-value" id="bot-status-text">Stopped</span>
+                    <button class="status-action" onclick="toggleBot()" aria-label="Toggle bot">⏹</button>
+                </div>
+            </div>
+
+            <!-- Alert Section (Dynamic) -->
+            <div class="status-section alert-section ms-auto" id="alerts" style="display: none;"></div>
+            
+             <div class="text-secondary small ms-3" id="current-date"></div>
+        </div>
         
-        <div class="p-4">
+        <div class="content-body p-4">
             <!-- Stats Grid -->
             <div class="row g-4 mb-4">
                 <div class="col-xl-3 col-md-6">
@@ -136,7 +150,7 @@
                                 <div>
                                     <div class="stat-label">Tracked Markets</div>
                                     <div class="stat-value" id="tracked-markets">0</div>
-                                    <div class="text-xs text-secondary mt-1">Monitoring for entry</div>
+                                    <div class="text-xs text-secondary mt-1">Monitoring active events</div>
                                 </div>
                                 <div class="stat-icon bg-danger bg-opacity-10 text-danger">
                                     <i class="bi bi-eye"></i>
@@ -147,87 +161,89 @@
                 </div>
             </div>
             
-            <!-- Charts Section -->
+            <!-- Live Analysis Section (Chart + Order Book) -->
             <div class="row g-4 mb-4">
+                <!-- Main Chart -->
                 <div class="col-lg-8">
                     <div class="card h-100">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="card-title">Performance History</h5>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-secondary active">1W</button>
-                                <button class="btn btn-outline-secondary">1M</button>
-                                <button class="btn btn-outline-secondary">ALL</button>
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <canvas id="pnl-chart" height="250"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-4">
-                    <div class="card h-100">
-                        <div class="card-header">
-                            <h5 class="card-title">Win Rate</h5>
-                        </div>
-                        <div class="card-body d-flex align-items-center justify-content-center">
-                            <div style="position: relative; width: 200px; height: 200px;">
-                                <canvas id="winrate-chart"></canvas>
-                                <div class="text-center position-absolute top-50 start-50 translate-middle">
-                                    <div class="h3 fw-bold mb-0 text-white" id="win-rate-text">0%</div>
-                                    <div class="text-xs text-secondary">Win Rate</div>
+                        <div class="card-header border-bottom-0 pb-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="card-title">Live Market Action</h5>
+                                <div class="d-flex gap-2">
+                                    <span class="badge bg-secondary bg-opacity-10 text-white border border-secondary border-opacity-25">BTC/USD (Simulated)</span>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Live Markets & Activity -->
-            <div class="row g-4">
-                <div class="col-lg-8">
-                    <div class="card h-100">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="card-title">Live Markets</h5>
-                            <span class="badge bg-success" id="live-count">0 Active</span>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Market</th>
-                                        <th>Price (YES)</th>
-                                        <th>Change</th>
-                                        <th>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="live-markets-table">
-                                    <tr>
-                                        <td colspan="4" class="text-center text-secondary py-5">
-                                            <i class="bi bi-inbox fs-2 mb-2 d-block"></i>
-                                            No live markets being tracked right now
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div class="card-body p-0 position-relative">
+                            <div id="chart-container" style="width: 100%; height: 350px;"></div>
                         </div>
                     </div>
                 </div>
-                
+
+                <!-- Order Book -->
                 <div class="col-lg-4">
                     <div class="card h-100">
-                        <div class="card-header">
-                            <h5 class="card-title">Recent Activity</h5>
+                        <div class="card-header border-bottom-0 pb-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="card-title">Order Book</h5>
+                                <div class="text-xs text-success"><i class="bi bi-circle-fill" style="font-size: 6px;"></i> Live</div>
+                            </div>
                         </div>
                         <div class="card-body p-0">
-                            <div class="list-group list-group-flush" id="recent-activity">
-                                <div class="p-4 text-center text-secondary">
-                                    No recent activity
-                                </div>
+                            <div class="table-responsive border-0" style="max-height: 350px; overflow-y: auto;">
+                                <table class="table table-sm orderbook-table m-0" id="orderbook">
+                                    <thead>
+                                        <tr class="text-secondary" style="font-size: 0.7rem;">
+                                            <th>Price</th>
+                                            <th class="text-end">Size</th>
+                                            <th class="text-end">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="orderbook-body">
+                                        <!-- Populated by JS -->
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Positions (Responsive) -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title">Active Positions</h5>
+                </div>
+                <div class="card-body p-0">
+                     <!-- Desktop View -->
+                    <div class="table-responsive border-0 d-none d-lg-block">
+                        <table class="table table-hover align-middle mb-0" id="positions-table">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th class="ps-4">Market</th>
+                                    <th>Side</th>
+                                    <th>Entry Price</th>
+                                    <th>Current</th>
+                                    <th>Size</th>
+                                    <th>P&L</th>
+                                    <th class="text-end pe-4">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positions-table-body">
+                                <tr>
+                                    <td colspan="7" class="text-center text-secondary py-4">No active positions</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Mobile View (Card Stack) -->
+                    <div class="p-3 d-lg-none positions-container-responsive" id="positions-mobile-stack">
+                        <div class="text-center text-secondary py-4">No active positions</div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </main>
 </div>
@@ -237,32 +253,12 @@
 <script src="/static/js/auth.js"></script>
 <script src="/static/js/dashboard.js"></script>
 <script>
-    // Simple date display
-    document.getElementById("current-date").textContent = new Date().toLocaleDateString("en-US", { 
-        weekday: "long", month: "long", day: "numeric" 
+    document.addEventListener("DOMContentLoaded", function() {
+        checkAuth();
+        // Simple date display
+        document.getElementById("current-date").textContent = new Date().toLocaleDateString("en-US", { 
+            weekday: "long", month: "long", day: "numeric" 
+        });
     });
-    
-    // Override toggleBot visuals in dashboard.js
-    const oldUpdateBotStatus = updateBotStatus;
-    updateBotStatus = function(enabled) {
-        const dot = document.getElementById("bot-status-dot");
-        const text = document.getElementById("bot-status-text");
-        const btn = document.getElementById("toggle-bot-btn");
-        const btnLabel = document.getElementById("toggle-bot-label");
-        
-        if (enabled) {
-            dot.className = "status-dot active";
-            text.textContent = "Running";
-            text.className = "small fw-medium me-3 text-success";
-            btn.className = "btn btn-sm btn-outline-secondary py-1 px-3"; // Less prominent stop button
-            btnLabel.textContent = "Stop Bot";
-        } else {
-            dot.className = "status-dot inactive";
-            text.textContent = "Stopped";
-            text.className = "small fw-medium me-3 text-secondary";
-            btn.className = "btn btn-sm btn-primary py-1 px-3"; // Prominent start button
-            btnLabel.textContent = "Start Bot";
-        }
-    }
 </script>
 {% endblock %}
