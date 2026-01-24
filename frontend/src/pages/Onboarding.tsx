@@ -14,29 +14,52 @@ import {
   Check,
   TestTube2,
   Eye,
-  EyeOff
+  EyeOff,
+  Loader2
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
+import { apiClient } from '@/api/client';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 const TOTAL_STEPS = 5;
+
+// Shared state interface for all form data
+interface OnboardingData {
+  // Wallet
+  apiKey: string;
+  apiSecret: string;
+  apiPassphrase: string;
+  funderAddress: string;
+  // Sport config
+  activeSports: string[];
+  positionSize: number;
+  entryThresholdDrop: number;
+  entryThresholdAbsolute: number;
+  takeProfitPct: number;
+  stopLossPct: number;
+  minTimeRemaining: number;
+  // Risk
+  maxDailyLoss: number;
+  maxExposure: number;
+  maxConcurrentPositions: number;
+  // Discord
+  discordWebhookUrl: string;
+  discordAlertsEnabled: boolean;
+}
 
 interface StepProps {
   onNext: () => void;
   onBack: () => void;
+  data: OnboardingData;
+  setData: React.Dispatch<React.SetStateAction<OnboardingData>>;
+  loading: boolean;
 }
 
 // Step 1: Welcome
@@ -91,14 +114,37 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
 }
 
 // Step 2: Connect Wallet
-function WalletStep({ onNext, onBack }: StepProps) {
+function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
   const [showKey, setShowKey] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const { toast } = useToast();
 
   const testConnection = async () => {
+    if (!data.apiKey || !data.funderAddress) {
+      toast({
+        title: 'Error',
+        description: 'Please enter API Key and Wallet Address.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
     setConnectionStatus('testing');
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setConnectionStatus('success');
+    try {
+      await apiClient.connectWallet(data.apiKey, data.funderAddress, 1);
+      setConnectionStatus('success');
+      toast({
+        title: 'Success',
+        description: 'Wallet connected successfully.',
+      });
+    } catch (error) {
+      setConnectionStatus('error');
+      toast({
+        title: 'Error',
+        description: 'Connection failed. Please check your credentials.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -121,7 +167,7 @@ function WalletStep({ onNext, onBack }: StepProps) {
         <div>
           <p className="text-sm font-medium text-foreground">Security Notice</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Your private key is encrypted locally before being stored in the database.
+            Your credentials are encrypted before being stored in the database.
           </p>
         </div>
       </div>
@@ -133,6 +179,8 @@ function WalletStep({ onNext, onBack }: StepProps) {
             type="text"
             placeholder="Your Polymarket API Key"
             className="bg-muted border-border font-mono"
+            value={data.apiKey}
+            onChange={(e) => setData(prev => ({ ...prev, apiKey: e.target.value }))}
           />
           <p className="text-xs text-muted-foreground">From Polymarket Settings &gt; API Keys</p>
         </div>
@@ -144,6 +192,8 @@ function WalletStep({ onNext, onBack }: StepProps) {
               type={showKey ? 'text' : 'password'}
               placeholder="Your API Secret"
               className="bg-muted border-border font-mono pr-10"
+              value={data.apiSecret}
+              onChange={(e) => setData(prev => ({ ...prev, apiSecret: e.target.value }))}
             />
             <Button
               type="button"
@@ -163,6 +213,8 @@ function WalletStep({ onNext, onBack }: StepProps) {
             type="password"
             placeholder="Your API Passphrase"
             className="bg-muted border-border font-mono"
+            value={data.apiPassphrase}
+            onChange={(e) => setData(prev => ({ ...prev, apiPassphrase: e.target.value }))}
           />
         </div>
 
@@ -172,6 +224,8 @@ function WalletStep({ onNext, onBack }: StepProps) {
             type="text"
             placeholder="0x..."
             className="bg-muted border-border font-mono"
+            value={data.funderAddress}
+            onChange={(e) => setData(prev => ({ ...prev, funderAddress: e.target.value }))}
           />
           <p className="text-xs text-muted-foreground">Your Polygon wallet holding USDC</p>
         </div>
@@ -182,7 +236,11 @@ function WalletStep({ onNext, onBack }: StepProps) {
           onClick={testConnection}
           disabled={connectionStatus === 'testing'}
         >
-          <TestTube2 className="w-4 h-4" />
+          {connectionStatus === 'testing' ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <TestTube2 className="w-4 h-4" />
+          )}
           {connectionStatus === 'testing' ? 'Testing...' : 'Test Connection'}
         </Button>
 
@@ -192,6 +250,11 @@ function WalletStep({ onNext, onBack }: StepProps) {
             Connection successful
           </div>
         )}
+        {connectionStatus === 'error' && (
+          <div className="flex items-center gap-2 text-sm text-destructive">
+            Connection failed. Please check credentials.
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3">
@@ -199,7 +262,12 @@ function WalletStep({ onNext, onBack }: StepProps) {
           <ChevronLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <Button onClick={onNext} className="flex-1 bg-primary hover:bg-primary/90">
+        <Button 
+          onClick={onNext} 
+          className="flex-1 bg-primary hover:bg-primary/90"
+          disabled={loading || connectionStatus !== 'success'}
+        >
+          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
           Continue
           <ChevronRight className="w-4 h-4 ml-2" />
         </Button>
@@ -209,15 +277,14 @@ function WalletStep({ onNext, onBack }: StepProps) {
 }
 
 // Step 3: Sport Configuration
-function SportConfigStep({ onNext, onBack }: StepProps) {
-  const [activeSports, setActiveSports] = useState<string[]>(['nba']);
-
+function SportConfigStep({ onNext, onBack, data, setData, loading }: StepProps) {
   const toggleSport = (sport: string) => {
-    setActiveSports(prev => 
-      prev.includes(sport) 
-        ? prev.filter(s => s !== sport)
-        : [...prev, sport]
-    );
+    setData(prev => ({
+      ...prev,
+      activeSports: prev.activeSports.includes(sport) 
+        ? prev.activeSports.filter(s => s !== sport)
+        : [...prev.activeSports, sport]
+    }));
   };
 
   return (
@@ -238,108 +305,103 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
       <div className="space-y-4">
         <div className="bg-muted/30 rounded-lg p-4 border border-border">
           <Label className="text-sm font-medium text-foreground mb-3 block">Active Sports</Label>
-          <div className="grid grid-cols-3 gap-3">
-            {['nba', 'nfl', 'mlb', 'nhl', 'ncaabb', 'soccer', 'tennis', 'cricket', 'ufc'].map((sport) => (
+          <div className="grid grid-cols-2 gap-3">
+            {['nba', 'nfl', 'mlb', 'nhl'].map((sport) => (
               <div
                 key={sport}
                 onClick={() => toggleSport(sport)}
                 className={cn(
                   'p-3 rounded-md border text-center cursor-pointer transition-all',
-                  activeSports.includes(sport)
+                  data.activeSports.includes(sport)
                     ? 'bg-primary/10 border-primary/30 text-primary'
                     : 'bg-muted border-border text-muted-foreground hover:border-primary/20'
                 )}
               >
-                <span className="text-sm font-medium uppercase">{sport === 'ncaabb' ? 'NCAA CBB' : sport}</span>
+                <span className="text-sm font-medium uppercase">{sport}</span>
               </div>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground mt-3">Select multiple sports to diversify</p>
+          <p className="text-xs text-muted-foreground mt-3">Select the sports you want to trade</p>
         </div>
 
-        <div>
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Position Sizing</Label>
-          <div className="grid grid-cols-2 gap-4 mt-3">
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Position Size ($)</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                <Input type="number" placeholder="e.g. 50" className="bg-muted border-border pl-7" />
-              </div>
-              <p className="text-xs text-muted-foreground">Max amount per trade</p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Min Volume Threshold</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                <Input type="number" placeholder="e.g. 1000" className="bg-muted border-border pl-7" />
-              </div>
-              <p className="text-xs text-muted-foreground">Min market volume to enter</p>
-            </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Position Size (USDC)</Label>
+            <Input 
+              type="number" 
+              min="1"
+              placeholder="e.g. 50" 
+              className="bg-muted border-border"
+              value={data.positionSize || ''}
+              onChange={(e) => setData(prev => ({ ...prev, positionSize: parseFloat(e.target.value) || 0 }))}
+            />
           </div>
-        </div>
-
-        <div>
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Entry Thresholds</Label>
-          <div className="grid grid-cols-2 gap-4 mt-3">
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Probability Drop (%)</Label>
-              <div className="relative">
-                <Input type="number" placeholder="e.g. 5" className="bg-muted border-border pr-8" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
-              </div>
-              <p className="text-xs text-muted-foreground">Trigger entry when price drops</p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Absolute Floor ($)</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                <Input type="number" placeholder="e.g. 0.35" step="0.01" className="bg-muted border-border pl-7" />
-              </div>
-              <p className="text-xs text-muted-foreground">Buy if price falls below</p>
-            </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Entry Drop Threshold</Label>
+            <Input 
+              type="number" 
+              step="0.01"
+              min="0"
+              max="1"
+              placeholder="e.g. 0.15" 
+              className="bg-muted border-border"
+              value={data.entryThresholdDrop || ''}
+              onChange={(e) => setData(prev => ({ ...prev, entryThresholdDrop: parseFloat(e.target.value) || 0 }))}
+            />
+            <p className="text-xs text-muted-foreground">15% = 0.15</p>
           </div>
-        </div>
-
-        <div>
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Exit Thresholds</Label>
-          <div className="grid grid-cols-2 gap-4 mt-3">
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Take Profit (%)</Label>
-              <div className="relative">
-                <Input type="number" placeholder="e.g. 10" className="bg-muted border-border pr-8" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Stop Loss (%)</Label>
-              <div className="relative">
-                <Input type="number" placeholder="e.g. 15" className="bg-muted border-border pr-8" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
-              </div>
-            </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Absolute Entry Price</Label>
+            <Input 
+              type="number" 
+              step="0.01"
+              min="0"
+              max="1"
+              placeholder="e.g. 0.50" 
+              className="bg-muted border-border"
+              value={data.entryThresholdAbsolute || ''}
+              onChange={(e) => setData(prev => ({ ...prev, entryThresholdAbsolute: parseFloat(e.target.value) || 0 }))}
+            />
           </div>
-        </div>
-
-        <div>
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Time-Based Rules</Label>
-          <div className="grid grid-cols-2 gap-4 mt-3">
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Latest Entry Time (min)</Label>
-              <div className="relative">
-                <Input type="number" placeholder="e.g. 5" className="bg-muted border-border pr-12" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">min</span>
-              </div>
-              <p className="text-xs text-muted-foreground">No buys after X min remaining</p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Latest Exit Time (min)</Label>
-              <div className="relative">
-                <Input type="number" placeholder="e.g. 2" className="bg-muted border-border pr-12" />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">min</span>
-              </div>
-              <p className="text-xs text-muted-foreground">Must sell once X min remaining</p>
-            </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Take Profit (%)</Label>
+            <Input 
+              type="number" 
+              step="0.01"
+              min="0"
+              max="1"
+              placeholder="e.g. 0.20" 
+              className="bg-muted border-border"
+              value={data.takeProfitPct || ''}
+              onChange={(e) => setData(prev => ({ ...prev, takeProfitPct: parseFloat(e.target.value) || 0 }))}
+            />
+            <p className="text-xs text-muted-foreground">20% = 0.20</p>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Stop Loss (%)</Label>
+            <Input 
+              type="number" 
+              step="0.01"
+              min="0"
+              max="1"
+              placeholder="e.g. 0.10" 
+              className="bg-muted border-border"
+              value={data.stopLossPct || ''}
+              onChange={(e) => setData(prev => ({ ...prev, stopLossPct: parseFloat(e.target.value) || 0 }))}
+            />
+            <p className="text-xs text-muted-foreground">10% = 0.10</p>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Min Time Remaining (sec)</Label>
+            <Input 
+              type="number" 
+              min="0"
+              placeholder="e.g. 300" 
+              className="bg-muted border-border"
+              value={data.minTimeRemaining || ''}
+              onChange={(e) => setData(prev => ({ ...prev, minTimeRemaining: parseInt(e.target.value) || 0 }))}
+            />
+            <p className="text-xs text-muted-foreground">300 = 5 minutes</p>
           </div>
         </div>
       </div>
@@ -349,7 +411,12 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
           <ChevronLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <Button onClick={onNext} className="flex-1 bg-primary hover:bg-primary/90">
+        <Button 
+          onClick={onNext} 
+          className="flex-1 bg-primary hover:bg-primary/90"
+          disabled={loading || data.activeSports.length === 0}
+        >
+          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
           Continue
           <ChevronRight className="w-4 h-4 ml-2" />
         </Button>
@@ -359,7 +426,7 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
 }
 
 // Step 4: Risk Management
-function RiskStep({ onNext, onBack }: StepProps) {
+function RiskStep({ onNext, onBack, data, setData, loading }: StepProps) {
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -378,34 +445,39 @@ function RiskStep({ onNext, onBack }: StepProps) {
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Max Daily Loss ($)</Label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-              <Input type="number" placeholder="e.g. 100" className="bg-muted border-border pl-7" />
-            </div>
+            <Label className="text-sm text-muted-foreground">Max Daily Loss (USDC)</Label>
+            <Input 
+              type="number" 
+              min="0"
+              placeholder="e.g. 100" 
+              className="bg-muted border-border"
+              value={data.maxDailyLoss || ''}
+              onChange={(e) => setData(prev => ({ ...prev, maxDailyLoss: parseFloat(e.target.value) || 0 }))}
+            />
             <p className="text-xs text-muted-foreground">Bot stops if loss hits this amount</p>
           </div>
           <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Max Exposure ($)</Label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-              <Input type="number" placeholder="e.g. 500" className="bg-muted border-border pl-7" />
-            </div>
+            <Label className="text-sm text-muted-foreground">Max Exposure (USDC)</Label>
+            <Input 
+              type="number" 
+              min="0"
+              placeholder="e.g. 500" 
+              className="bg-muted border-border"
+              value={data.maxExposure || ''}
+              onChange={(e) => setData(prev => ({ ...prev, maxExposure: parseFloat(e.target.value) || 0 }))}
+            />
             <p className="text-xs text-muted-foreground">Total capital at risk limit</p>
           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Default Position Size ($)</Label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-              <Input type="number" placeholder="e.g. 50" className="bg-muted border-border pl-7" />
-            </div>
-          </div>
-          <div className="space-y-2">
+          <div className="space-y-2 col-span-2">
             <Label className="text-sm text-muted-foreground">Max Concurrent Positions</Label>
-            <Input type="number" placeholder="e.g. 10" className="bg-muted border-border" />
+            <Input 
+              type="number" 
+              min="1"
+              placeholder="e.g. 10" 
+              className="bg-muted border-border"
+              value={data.maxConcurrentPositions || ''}
+              onChange={(e) => setData(prev => ({ ...prev, maxConcurrentPositions: parseInt(e.target.value) || 0 }))}
+            />
           </div>
         </div>
 
@@ -414,10 +486,9 @@ function RiskStep({ onNext, onBack }: StepProps) {
             <div>
               <p className="text-sm font-medium text-foreground">Emergency Stop</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Instantly halt all trading activity
+                You can instantly halt all trading activity from the dashboard
               </p>
             </div>
-            <Switch />
           </div>
         </div>
       </div>
@@ -427,7 +498,12 @@ function RiskStep({ onNext, onBack }: StepProps) {
           <ChevronLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <Button onClick={onNext} className="flex-1 bg-primary hover:bg-primary/90">
+        <Button 
+          onClick={onNext} 
+          className="flex-1 bg-primary hover:bg-primary/90"
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
           Continue
           <ChevronRight className="w-4 h-4 ml-2" />
         </Button>
@@ -437,15 +513,28 @@ function RiskStep({ onNext, onBack }: StepProps) {
 }
 
 // Step 5: Discord Alerts
-function AlertsStep({ onNext, onBack }: StepProps) {
-  const [webhookUrl, setWebhookUrl] = useState('');
+function AlertsStep({ onNext, onBack, data, setData, loading }: StepProps) {
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const { toast } = useToast();
 
   const testWebhook = async () => {
-    if (!webhookUrl) return;
+    if (!data.discordWebhookUrl) return;
     setTestStatus('testing');
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setTestStatus('success');
+    try {
+      await apiClient.testDiscordWebhook();
+      setTestStatus('success');
+      toast({
+        title: 'Success',
+        description: 'Test message sent to Discord.',
+      });
+    } catch (error) {
+      setTestStatus('error');
+      toast({
+        title: 'Error',
+        description: 'Failed to send test message.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -470,8 +559,8 @@ function AlertsStep({ onNext, onBack }: StepProps) {
             type="url"
             placeholder="https://discord.com/api/webhooks/..."
             className="bg-muted border-border font-mono text-sm"
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
+            value={data.discordWebhookUrl}
+            onChange={(e) => setData(prev => ({ ...prev, discordWebhookUrl: e.target.value }))}
           />
         </div>
 
@@ -479,9 +568,13 @@ function AlertsStep({ onNext, onBack }: StepProps) {
           variant="outline" 
           className="w-full border-border hover:bg-muted gap-2"
           onClick={testWebhook}
-          disabled={!webhookUrl || testStatus === 'testing'}
+          disabled={!data.discordWebhookUrl || testStatus === 'testing'}
         >
-          <TestTube2 className="w-4 h-4" />
+          {testStatus === 'testing' ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <TestTube2 className="w-4 h-4" />
+          )}
           {testStatus === 'testing' ? 'Testing...' : 'Test Webhook'}
         </Button>
 
@@ -492,23 +585,15 @@ function AlertsStep({ onNext, onBack }: StepProps) {
           </div>
         )}
 
-        <div className="space-y-3 bg-muted/30 rounded-lg p-4 border border-border">
-          <Label className="text-sm font-medium text-foreground">Notification Types</Label>
-          <div className="space-y-3">
-            {[
-              { id: 'trade', label: 'Trade Executed', desc: 'When orders are filled' },
-              { id: 'position', label: 'Position Closed', desc: 'When positions are closed' },
-              { id: 'error', label: 'Error Alerts', desc: 'When errors occur' },
-            ].map((item) => (
-              <div key={item.id} className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-foreground">{item.label}</p>
-                  <p className="text-xs text-muted-foreground">{item.desc}</p>
-                </div>
-                <Switch defaultChecked />
-              </div>
-            ))}
+        <div className="flex items-center justify-between bg-muted/30 rounded-lg p-4 border border-border">
+          <div>
+            <p className="text-sm font-medium text-foreground">Enable Discord Alerts</p>
+            <p className="text-xs text-muted-foreground mt-1">Receive notifications for trades and errors</p>
           </div>
+          <Switch 
+            checked={data.discordAlertsEnabled}
+            onCheckedChange={(checked) => setData(prev => ({ ...prev, discordAlertsEnabled: checked }))}
+          />
         </div>
       </div>
 
@@ -517,7 +602,12 @@ function AlertsStep({ onNext, onBack }: StepProps) {
           <ChevronLeft className="w-4 h-4 mr-2" />
           Back
         </Button>
-        <Button onClick={onNext} className="flex-1 bg-primary hover:bg-primary/90">
+        <Button 
+          onClick={onNext} 
+          className="flex-1 bg-primary hover:bg-primary/90"
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
           Launch Dashboard
           <ChevronRight className="w-4 h-4 ml-2" />
         </Button>
@@ -527,6 +617,7 @@ function AlertsStep({ onNext, onBack }: StepProps) {
         variant="ghost" 
         className="w-full text-muted-foreground hover:text-foreground"
         onClick={onNext}
+        disabled={loading}
       >
         Skip for now
       </Button>
@@ -536,13 +627,99 @@ function AlertsStep({ onNext, onBack }: StepProps) {
 
 export default function Onboarding() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { refreshUser } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  
+  // Centralized form data
+  const [data, setData] = useState<OnboardingData>({
+    apiKey: '',
+    apiSecret: '',
+    apiPassphrase: '',
+    funderAddress: '',
+    activeSports: ['nba'],
+    positionSize: 50,
+    entryThresholdDrop: 0.15,
+    entryThresholdAbsolute: 0.50,
+    takeProfitPct: 0.20,
+    stopLossPct: 0.10,
+    minTimeRemaining: 300,
+    maxDailyLoss: 100,
+    maxExposure: 500,
+    maxConcurrentPositions: 10,
+    discordWebhookUrl: '',
+    discordAlertsEnabled: true,
+  });
 
-  const handleNext = () => {
+  const saveDataToBackend = async () => {
+    setLoading(true);
+    try {
+      // Save sport configs for each active sport
+      for (const sport of data.activeSports) {
+        try {
+          await apiClient.createSportConfig({
+            sport,
+            enabled: true,
+            entry_threshold_drop: data.entryThresholdDrop,
+            entry_threshold_absolute: data.entryThresholdAbsolute,
+            take_profit_pct: data.takeProfitPct,
+            stop_loss_pct: data.stopLossPct,
+            position_size_usdc: data.positionSize,
+            min_time_remaining_seconds: data.minTimeRemaining,
+          });
+        } catch (error) {
+          // Config might already exist, try updating instead
+          await apiClient.updateSportConfig(sport, {
+            enabled: true,
+            entry_threshold_drop: data.entryThresholdDrop,
+            entry_threshold_absolute: data.entryThresholdAbsolute,
+            take_profit_pct: data.takeProfitPct,
+            stop_loss_pct: data.stopLossPct,
+            position_size_usdc: data.positionSize,
+            min_time_remaining_seconds: data.minTimeRemaining,
+          });
+        }
+      }
+      
+      // Save global settings
+      await apiClient.updateGlobalSettings({
+        max_daily_loss_usdc: data.maxDailyLoss,
+        max_portfolio_exposure_usdc: data.maxExposure,
+        discord_webhook_url: data.discordWebhookUrl || null,
+        discord_alerts_enabled: data.discordAlertsEnabled,
+        bot_enabled: true,
+      });
+      
+      // Complete onboarding - mark user as onboarded
+      await apiClient.completeOnboardingStep(5, {});
+      
+      // Refresh user state
+      await refreshUser();
+      
+      toast({
+        title: 'Success',
+        description: 'Onboarding complete! Welcome to your dashboard.',
+      });
+      
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Failed to save onboarding data:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save settings. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNext = async () => {
     if (currentStep < TOTAL_STEPS) {
       setCurrentStep(currentStep + 1);
     } else {
-      navigate('/dashboard');
+      await saveDataToBackend();
     }
   };
 
@@ -576,10 +753,10 @@ export default function Onboarding() {
           <CardContent className="p-6 md:p-8">
             <AnimatePresence mode="wait">
               {currentStep === 1 && <WelcomeStep key="welcome" onNext={handleNext} />}
-              {currentStep === 2 && <WalletStep key="wallet" onNext={handleNext} onBack={handleBack} />}
-              {currentStep === 3 && <SportConfigStep key="sport" onNext={handleNext} onBack={handleBack} />}
-              {currentStep === 4 && <RiskStep key="risk" onNext={handleNext} onBack={handleBack} />}
-              {currentStep === 5 && <AlertsStep key="alerts" onNext={handleNext} onBack={handleBack} />}
+              {currentStep === 2 && <WalletStep key="wallet" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
+              {currentStep === 3 && <SportConfigStep key="sport" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
+              {currentStep === 4 && <RiskStep key="risk" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
+              {currentStep === 5 && <AlertsStep key="alerts" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
             </AnimatePresence>
           </CardContent>
         </Card>

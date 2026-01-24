@@ -10,6 +10,8 @@ from src.api.deps import DbSession, OnboardedUser
 from src.db.crud.global_settings import GlobalSettingsCRUD
 from src.db.crud.polymarket_account import PolymarketAccountCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
+from src.db.crud.sport_config import SportConfigCRUD
+from src.db.crud.market_config import MarketConfigCRUD
 from src.schemas.common import MessageResponse
 from src.services.bot_runner import get_bot_runner, get_bot_status, BotState
 from src.services.polymarket_client import PolymarketClient
@@ -44,13 +46,25 @@ async def _create_bot_dependencies(db, user_id: int, credentials: dict):
     
     espn_service = ESPNService()
     
-    # TradingEngine needs db and config - simplified initialization
+    # Load global settings
+    global_settings = await GlobalSettingsCRUD.get_or_create(db, user_id)
+    
+    # Load sport configs into a dictionary keyed by sport
+    sport_configs_list = await SportConfigCRUD.get_all_for_user(db, user_id)
+    sport_configs = {config.sport: config for config in sport_configs_list}
+    
+    # Load market-specific configs into a dictionary keyed by condition_id
+    market_configs_list = await MarketConfigCRUD.get_all_for_user(db, user_id, enabled_only=True)
+    market_configs = {config.condition_id: config for config in market_configs_list}
+    
+    # Create trading engine with all configs
     trading_engine = TradingEngine(
         db=db,
         user_id=str(user_id),
         polymarket_client=polymarket_client,
-        global_settings=None,  # Will be loaded by bot_runner
-        sport_configs={}  # Will be loaded by bot_runner
+        global_settings=global_settings,
+        sport_configs=sport_configs,
+        market_configs=market_configs
     )
     
     return polymarket_client, trading_engine, espn_service

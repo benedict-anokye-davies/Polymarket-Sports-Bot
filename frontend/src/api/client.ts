@@ -136,7 +136,47 @@ class ApiClient {
     return this.request(`/trading/positions/${positionId}/close`, { method: 'POST' });
   }
 
-  // Settings endpoints
+  // Sport Config endpoints
+  async getSportConfigs(): Promise<SportConfigResponse[]> {
+    return this.request('/settings/sports');
+  }
+
+  async getSportConfig(sport: string): Promise<SportConfigResponse> {
+    return this.request(`/settings/sports/${sport}`);
+  }
+
+  async updateSportConfig(sport: string, config: SportConfigUpdate): Promise<SportConfigResponse> {
+    return this.request(`/settings/sports/${sport}`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  }
+
+  async createSportConfig(config: SportConfigCreate): Promise<SportConfigResponse> {
+    return this.request('/settings/sports', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  // Global Settings endpoints
+  async getGlobalSettings(): Promise<GlobalSettingsResponse> {
+    return this.request('/settings/global');
+  }
+
+  async updateGlobalSettings(settings: GlobalSettingsUpdate): Promise<GlobalSettingsResponse> {
+    return this.request('/settings/global', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  }
+
+  // Discord webhook test
+  async testDiscordWebhook(): Promise<{ message: string }> {
+    return this.request('/settings/discord/test', { method: 'POST' });
+  }
+
+  // Legacy Settings endpoints (for backwards compatibility)
   async getSettings(): Promise<Settings> {
     return this.request('/settings');
   }
@@ -256,6 +296,68 @@ export interface DashboardStats {
   bot_status: 'running' | 'stopped';
   open_positions: PositionSummary[];
   recent_activity: ActivityLog[];
+}
+
+// Sport Config Types (matches backend schema)
+export interface SportConfigResponse {
+  id: string;
+  sport: string;
+  enabled: boolean;
+  entry_threshold_drop: number;
+  entry_threshold_absolute: number;
+  take_profit_pct: number;
+  stop_loss_pct: number;
+  position_size_usdc: number;
+  max_positions_per_game: number;
+  max_total_positions: number;
+  min_time_remaining_seconds: number;
+  updated_at: string;
+}
+
+export interface SportConfigUpdate {
+  enabled?: boolean;
+  entry_threshold_drop?: number;
+  entry_threshold_absolute?: number;
+  take_profit_pct?: number;
+  stop_loss_pct?: number;
+  position_size_usdc?: number;
+  max_positions_per_game?: number;
+  max_total_positions?: number;
+  min_time_remaining_seconds?: number;
+}
+
+export interface SportConfigCreate {
+  sport: string;
+  enabled?: boolean;
+  entry_threshold_drop?: number;
+  entry_threshold_absolute?: number;
+  take_profit_pct?: number;
+  stop_loss_pct?: number;
+  position_size_usdc?: number;
+  max_positions_per_game?: number;
+  max_total_positions?: number;
+  min_time_remaining_seconds?: number;
+}
+
+// Global Settings Types (matches backend schema)
+export interface GlobalSettingsResponse {
+  id: string;
+  bot_enabled: boolean;
+  max_daily_loss_usdc: number;
+  max_portfolio_exposure_usdc: number;
+  discord_webhook_url: string | null;
+  discord_alerts_enabled: boolean;
+  poll_interval_seconds: number;
+  updated_at: string;
+}
+
+export interface GlobalSettingsUpdate {
+  bot_enabled?: boolean;
+  max_daily_loss_usdc?: number;
+  max_portfolio_exposure_usdc?: number;
+  discord_webhook_url?: string | null;
+  discord_alerts_enabled?: boolean;
+  poll_interval_seconds?: number;
 }
 
 export interface PositionSummary {

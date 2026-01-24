@@ -22,12 +22,13 @@ interface AuthState {
   register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   clearError: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       user: null,
       token: null,
       isAuthenticated: false,
@@ -68,8 +69,18 @@ export const useAuthStore = create<AuthState>()(
         try {
           await apiClient.register(username, email, password);
           
-          // Auto-login after registration
-          await get().login(email, password);
+          // Auto-login after registration - need to use the store's login method differently
+          const response = await apiClient.login(email, password);
+          const token = response.access_token;
+          localStorage.setItem('auth_token', token);
+          const user = await apiClient.getCurrentUser();
+          
+          set({
+            token,
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+          });
         } catch (error) {
           set({
             error: error instanceof Error ? error.message : 'Registration failed',
@@ -109,6 +120,15 @@ export const useAuthStore = create<AuthState>()(
             token: null,
             isAuthenticated: false,
           });
+        }
+      },
+
+      refreshUser: async () => {
+        try {
+          const user = await apiClient.getCurrentUser();
+          set({ user });
+        } catch (error) {
+          console.error('Failed to refresh user:', error);
         }
       },
 
