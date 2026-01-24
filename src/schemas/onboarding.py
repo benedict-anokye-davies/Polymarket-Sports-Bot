@@ -10,7 +10,7 @@ class OnboardingStatus(BaseModel):
     Current state of user's onboarding progress.
     """
     current_step: int
-    total_steps: int = 9
+    total_steps: int = 5  # Frontend has 5 onboarding steps
     completed_steps: list[int]
     can_proceed: bool
     wallet_connected: bool

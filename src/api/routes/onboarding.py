@@ -30,62 +30,32 @@ ONBOARDING_STEPS = [
     ),
     OnboardingStepData(
         step_number=2,
-        title="How It Works",
-        description="Review trading logic and strategy explanation",
+        title="Connect Wallet",
+        description="Enter your Polymarket API credentials",
         is_completed=False,
-        requires_input=False
+        requires_input=True,
+        input_fields=["api_key", "api_secret", "api_passphrase", "funder_address"]
     ),
     OnboardingStepData(
         step_number=3,
-        title="Connect Wallet",
-        description="Enter your Polymarket wallet credentials",
+        title="Sport & Strategy",
+        description="Select sports and configure trading parameters",
         is_completed=False,
         requires_input=True,
-        input_fields=["private_key", "funder_address"]
+        input_fields=["sport", "entry_threshold", "position_size", "take_profit", "stop_loss"]
     ),
     OnboardingStepData(
         step_number=4,
-        title="Configure Sport",
-        description="Select your primary sport and set trading thresholds",
+        title="Risk Management",
+        description="Set daily loss limits, max exposure, and notifications",
         is_completed=False,
         requires_input=True,
-        input_fields=["sport", "entry_threshold", "position_size"]
+        input_fields=["max_daily_loss", "max_exposure", "discord_webhook"]
     ),
     OnboardingStepData(
         step_number=5,
-        title="Risk Settings",
-        description="Set daily loss limits and maximum exposure",
-        is_completed=False,
-        requires_input=True,
-        input_fields=["max_daily_loss", "max_exposure"]
-    ),
-    OnboardingStepData(
-        step_number=6,
-        title="Position Sizing",
-        description="Configure default position size",
-        is_completed=False,
-        requires_input=True,
-        input_fields=["default_position_size"]
-    ),
-    OnboardingStepData(
-        step_number=7,
-        title="Discord Alerts",
-        description="Optional Discord webhook for notifications",
-        is_completed=False,
-        requires_input=True,
-        input_fields=["discord_webhook_url"]
-    ),
-    OnboardingStepData(
-        step_number=8,
-        title="Review Settings",
-        description="Confirm all configuration settings",
-        is_completed=False,
-        requires_input=False
-    ),
-    OnboardingStepData(
-        step_number=9,
-        title="Dashboard Tour",
-        description="Interactive walkthrough of dashboard features",
+        title="Review & Complete",
+        description="Confirm settings and complete onboarding",
         is_completed=False,
         requires_input=False
     ),
@@ -114,7 +84,7 @@ async def get_step_details(step_number: int, current_user: CurrentUser) -> Onboa
     """
     Returns details for a specific onboarding step.
     """
-    if step_number < 1 or step_number > 9:
+    if step_number < 1 or step_number > 5:  # Frontend has 5 onboarding steps
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid step number"
@@ -134,6 +104,7 @@ async def complete_step(
 ) -> MessageResponse:
     """
     Marks an onboarding step as complete and advances to the next step.
+    Frontend has 5 steps, so step > 5 means onboarding is complete.
     """
     if step_number != current_user.onboarding_step:
         raise HTTPException(
@@ -142,7 +113,7 @@ async def complete_step(
         )
     
     next_step = step_number + 1
-    completed = next_step > 9
+    completed = next_step > 5  # Frontend has 5 onboarding steps
     
     await UserCRUD.update_onboarding_step(db, current_user.id, next_step, completed)
     
