@@ -300,3 +300,7 @@ class DiscordNotifier:
         }
         
         return await self._send_webhook({"embeds": [embed]})
+
+
+# Global instance
+discord_notifier = DiscordNotifier()

@@ -4,9 +4,9 @@ Provides reusable dependencies for database sessions and authentication.
 """
 
 import uuid
-from typing import Annotated, AsyncGenerator, TypeAlias
+from typing import Annotated, AsyncGenerator, Optional, TypeAlias
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,7 @@ from src.db.crud.user import UserCRUD
 
 
 security = HTTPBearer(auto_error=True)
+security_optional = HTTPBearer(auto_error=False)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -91,6 +92,68 @@ async def get_current_active_user(
     return current_user
 
 
+async def get_user_from_token(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    token: Optional[str] = Query(None, description="JWT token for SSE auth"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
+) -> User:
+    """
+    Validates JWT token from query param or Authorization header.
+    Designed for SSE endpoints where headers cannot be sent by EventSource.
+    
+    Args:
+        db: Database session
+        token: Optional JWT token from query parameter
+        credentials: Optional Bearer token from Authorization header
+    
+    Returns:
+        Authenticated User instance
+    
+    Raises:
+        HTTPException: If no valid token or user not found
+    """
+    # Try query param first, then header
+    jwt_token = token or (credentials.credentials if credentials else None)
+    
+    if not jwt_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    
+    try:
+        payload = verify_token(jwt_token)
+        user_id = payload.get("sub")
+        
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload"
+            )
+        
+        user = await UserCRUD.get_by_id(db, uuid.UUID(user_id))
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found"
+            )
+        
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is deactivated"
+            )
+        
+        return user
+        
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+
+
 async def require_onboarding_complete(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:
@@ -112,14 +175,17 @@ async def require_onboarding_complete(
 DbSession: TypeAlias = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser: TypeAlias = Annotated[User, Depends(get_current_user)]
 OnboardedUser: TypeAlias = Annotated[User, Depends(require_onboarding_complete)]
+SSEUser: TypeAlias = Annotated[User, Depends(get_user_from_token)]
 
 
 __all__ = [
     "get_db",
     "get_current_user",
     "get_current_active_user",
+    "get_user_from_token",
     "require_onboarding_complete",
     "DbSession",
     "CurrentUser",
     "OnboardedUser",
+    "SSEUser",
 ]

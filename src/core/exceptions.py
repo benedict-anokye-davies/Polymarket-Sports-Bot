@@ -17,6 +17,7 @@ __all__ = [
     "InsufficientBalanceError",
     "RateLimitError",
     "WebSocketError",
+    "TradingError",
 ]
 
 
@@ -50,12 +51,13 @@ class AuthorizationError(AppException):
     Valid auth but insufficient privileges.
     """
     status_code = 403
-    default_message = "Access denied"
+    default_message = "Permission denied"
 
 
 class NotFoundError(AppException):
     """
-    Raised when a requested resource does not exist.
+    Raised when a requested resource is not found.
+    Database records, API endpoints, etc.
     """
     status_code = 404
     default_message = "Resource not found"
@@ -64,16 +66,16 @@ class NotFoundError(AppException):
 class ValidationError(AppException):
     """
     Raised when input validation fails.
-    Invalid data format, missing required fields, constraint violations.
+    Invalid parameters, malformed data.
     """
-    status_code = 422
-    default_message = "Validation error"
+    status_code = 400
+    default_message = "Validation failed"
 
 
 class PolymarketAPIError(AppException):
     """
-    Raised when Polymarket API requests fail.
-    Network errors, invalid responses, API errors.
+    Raised when Polymarket API returns an error or fails.
+    5xx responses, timeouts, connection errors.
     """
     status_code = 502
     default_message = "Polymarket API error"
@@ -81,8 +83,8 @@ class PolymarketAPIError(AppException):
 
 class ESPNAPIError(AppException):
     """
-    Raised when ESPN API requests fail.
-    Network errors, invalid responses, rate limiting.
+    Raised when ESPN API returns an error or fails.
+    Parse errors, timeouts, connection errors.
     """
     status_code = 502
     default_message = "ESPN API error"
@@ -90,10 +92,10 @@ class ESPNAPIError(AppException):
 
 class InsufficientBalanceError(AppException):
     """
-    Raised when account balance is too low for an operation.
+    Raised when attempting a trade without sufficient funds.
     """
     status_code = 400
-    default_message = "Insufficient balance"
+    default_message = "Insufficient balance for operation"
 
 
 class RateLimitError(AppException):
@@ -106,15 +108,16 @@ class RateLimitError(AppException):
 
 class WebSocketError(AppException):
     """
-    Raised when WebSocket connection or communication fails.
+    Raised when WebSocket connection fails or drops.
     """
     status_code = 503
     default_message = "WebSocket connection error"
 
 
-class ConfigurationError(AppException):
+class TradingError(AppException):
     """
-    Raised when required configuration is missing or invalid.
+    Raised when a trading operation fails.
+    General trading errors that don't fit other categories.
     """
-    status_code = 500
-    default_message = "Configuration error"
+    status_code = 400
+    default_message = "Trading operation failed"

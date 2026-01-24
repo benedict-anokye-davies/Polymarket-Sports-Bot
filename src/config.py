@@ -56,3 +56,7 @@ def get_settings() -> Settings:
     Uses lru_cache to avoid reading .env file on every call.
     """
     return Settings()
+
+
+# Global settings instance
+settings = get_settings()

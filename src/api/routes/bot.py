@@ -15,7 +15,6 @@ from src.services.bot_runner import get_bot_runner, get_bot_status, BotState
 from src.services.polymarket_client import PolymarketClient
 from src.services.trading_engine import TradingEngine
 from src.services.espn_service import ESPNService
-from src.core.encryption import decrypt_value
 from src.config import settings as app_settings
 
 

@@ -1,20 +1,29 @@
 """
 Dashboard routes for overview and statistics.
+Includes SSE streaming for real-time updates.
 """
 
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
+from typing import AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 
-from src.api.deps import DbSession, OnboardedUser
+from src.api.deps import DbSession, OnboardedUser, SSEUser
 from src.db.crud.position import PositionCRUD
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.global_settings import GlobalSettingsCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
 from src.db.crud.polymarket_account import PolymarketAccountCRUD
 from src.schemas.dashboard import DashboardStats, PositionSummary, RecentActivity
+from src.services.bot_runner import get_bot_status
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
@@ -99,3 +108,179 @@ async def get_dashboard_stats(db: DbSession, current_user: OnboardedUser) -> Das
         open_positions=position_summaries,
         recent_activity=activity_items
     )
+
+
+@router.get("/stream")
+async def stream_dashboard(request: Request, db: DbSession, current_user: SSEUser):
+    """
+    Server-Sent Events endpoint for real-time dashboard updates.
+    Streams bot status, tracked games, and price updates every 2 seconds.
+    
+    Supports token auth via query param for EventSource compatibility:
+    GET /dashboard/stream?token=<jwt>
+    
+    Event types:
+    - status: Bot running state and stats
+    - games: Currently tracked games with prices
+    - positions: Open positions with unrealized P&L
+    - heartbeat: Keep-alive ping
+    """
+    
+    async def event_generator() -> AsyncGenerator[str, None]:
+        """Generates SSE events for dashboard updates."""
+        try:
+            while True:
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    logger.debug(f"SSE client disconnected: user {current_user.id}")
+                    break
+                
+                try:
+                    # Get bot status
+                    bot_status = get_bot_status(current_user.id)
+                    
+                    if bot_status:
+                        # Send status event
+                        status_data = {
+                            "type": "status",
+                            "data": {
+                                "state": bot_status.get("state", "stopped"),
+                                "tracked_games": bot_status.get("tracked_games", 0),
+                                "trades_today": bot_status.get("trades_today", 0),
+                                "daily_pnl": bot_status.get("daily_pnl", 0),
+                                "websocket_status": bot_status.get("websocket_status", "disconnected"),
+                                "runtime": bot_status.get("runtime"),
+                            }
+                        }
+                        yield f"event: status\ndata: {json.dumps(status_data)}\n\n"
+                        
+                        # Send games event
+                        games = bot_status.get("games", [])
+                        if games:
+                            games_data = {
+                                "type": "games",
+                                "data": games
+                            }
+                            yield f"event: games\ndata: {json.dumps(games_data)}\n\n"
+                    else:
+                        # Bot not running - send stopped status
+                        yield f"event: status\ndata: {json.dumps({'type': 'status', 'data': {'state': 'stopped'}})}\n\n"
+                    
+                    # Get open positions
+                    positions = await PositionCRUD.get_open_for_user(db, current_user.id)
+                    if positions:
+                        positions_data = {
+                            "type": "positions",
+                            "data": [
+                                {
+                                    "id": str(p.id),
+                                    "condition_id": p.condition_id,
+                                    "side": p.side,
+                                    "entry_price": float(p.entry_price),
+                                    "entry_size": float(p.entry_size),
+                                    "team": p.team,
+                                }
+                                for p in positions
+                            ]
+                        }
+                        yield f"event: positions\ndata: {json.dumps(positions_data)}\n\n"
+                    
+                    # Heartbeat
+                    yield f"event: heartbeat\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
+                    
+                except Exception as e:
+                    logger.warning(f"SSE event generation error: {e}")
+                    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                
+                # Wait before next update
+                await asyncio.sleep(2)
+                
+        except asyncio.CancelledError:
+            logger.debug(f"SSE stream cancelled: user {current_user.id}")
+        except Exception as e:
+            logger.error(f"SSE stream error: {e}")
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@router.get("/performance")
+async def get_performance_history(
+    db: DbSession,
+    current_user: OnboardedUser,
+    days: int = 30
+) -> dict:
+    """
+    Returns daily P&L history for performance charts.
+    
+    Args:
+        days: Number of days of history to return (default 30)
+    
+    Returns:
+        Dict with daily P&L data points and summary statistics
+    """
+    # Get all closed positions within the date range
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    
+    positions = await PositionCRUD.get_all_for_user(
+        db, current_user.id, status="closed", limit=1000
+    )
+    
+    # Group by date and calculate daily P&L
+    daily_pnl: dict[str, float] = {}
+    total_trades = 0
+    winning_trades = 0
+    total_pnl = Decimal("0")
+    
+    for pos in positions:
+        if pos.closed_at and pos.closed_at >= cutoff:
+            date_key = pos.closed_at.strftime("%Y-%m-%d")
+            pnl = float(pos.realized_pnl_usdc or 0)
+            
+            if date_key not in daily_pnl:
+                daily_pnl[date_key] = 0
+            daily_pnl[date_key] += pnl
+            
+            total_trades += 1
+            total_pnl += pos.realized_pnl_usdc or Decimal("0")
+            if pos.realized_pnl_usdc and pos.realized_pnl_usdc > 0:
+                winning_trades += 1
+    
+    # Fill in missing dates with 0
+    chart_data = []
+    current = datetime.now(timezone.utc).date()
+    for i in range(days):
+        date = current - timedelta(days=i)
+        date_str = date.strftime("%Y-%m-%d")
+        chart_data.append({
+            "date": date_str,
+            "pnl": daily_pnl.get(date_str, 0),
+            "cumulative": 0  # Will be calculated below
+        })
+    
+    # Reverse to chronological order and calculate cumulative
+    chart_data.reverse()
+    cumulative = 0
+    for point in chart_data:
+        cumulative += point["pnl"]
+        point["cumulative"] = round(cumulative, 2)
+    
+    return {
+        "chart_data": chart_data,
+        "summary": {
+            "total_trades": total_trades,
+            "winning_trades": winning_trades,
+            "win_rate": round(winning_trades / total_trades * 100, 1) if total_trades > 0 else 0,
+            "total_pnl": float(total_pnl),
+            "avg_trade_pnl": float(total_pnl / total_trades) if total_trades > 0 else 0,
+            "best_day": max(daily_pnl.values()) if daily_pnl else 0,
+            "worst_day": min(daily_pnl.values()) if daily_pnl else 0,
+        }
+    }
