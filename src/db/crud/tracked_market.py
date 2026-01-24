@@ -210,3 +210,37 @@ class TrackedMarketCRUD:
             .options(selectinload(TrackedMarket.positions))
         )
         return result.scalar_one_or_none()
+    
+    @staticmethod
+    async def deactivate(
+        db: AsyncSession,
+        condition_id: str
+    ) -> bool:
+        """
+        Deactivates a market by condition ID (sets is_finished=True).
+        
+        Args:
+            db: Database session
+            condition_id: Market condition ID
+        
+        Returns:
+            True if market was found and deactivated
+        """
+        result = await db.execute(
+            select(TrackedMarket).where(
+                TrackedMarket.condition_id == condition_id
+            )
+        )
+        market = result.scalar_one_or_none()
+        
+        if not market:
+            return False
+        
+        market.is_finished = True
+        market.is_live = False
+        await db.commit()
+        return True
+
+
+# Singleton instance for simplified imports
+tracked_market = TrackedMarketCRUD()

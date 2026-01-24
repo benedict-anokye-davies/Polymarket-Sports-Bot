@@ -104,3 +104,7 @@ class GlobalSettingsCRUD:
         """
         settings = await GlobalSettingsCRUD.get_by_user_id(db, user_id)
         return settings.bot_enabled if settings else False
+
+
+# Singleton instance for simplified imports
+global_settings = GlobalSettingsCRUD()

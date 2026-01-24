@@ -271,6 +271,29 @@ class ESPNService:
         
         return upcoming
     
+    async def get_game_details(self, sport: str, event_id: str) -> dict[str, Any] | None:
+        """
+        Fetches current state for a specific game by event ID.
+        
+        Args:
+            sport: Sport identifier (nba, nfl, etc.)
+            event_id: ESPN event ID
+        
+        Returns:
+            Game data dictionary or None if not found
+        """
+        try:
+            events = await self.get_scoreboard(sport)
+            
+            for event in events:
+                if event.get("id") == event_id:
+                    return event
+            
+            return None
+            
+        except ESPNAPIError:
+            return None
+    
     async def close(self) -> None:
         """
         Closes HTTP client connections.

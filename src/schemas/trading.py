@@ -103,3 +103,34 @@ class OrderResponse(BaseModel):
     message: str
     price: Decimal | None = None
     size: Decimal | None = None
+
+
+class MarketCreate(BaseModel):
+    """
+    Schema for creating a tracked market entry.
+    Used by bot_runner when discovering new markets.
+    """
+    user_id: int
+    condition_id: str
+    token_id: str
+    question: str
+    sport: str
+    espn_event_id: str
+    home_team: str
+    away_team: str
+    baseline_price: float
+    is_active: bool = True
+
+
+class PositionCreate(BaseModel):
+    """
+    Schema for creating a new position.
+    Used by bot_runner when entering trades.
+    """
+    user_id: int
+    market_id: str  # condition_id
+    token_id: str
+    side: str
+    entry_price: float
+    size: float
+    status: str = "open"

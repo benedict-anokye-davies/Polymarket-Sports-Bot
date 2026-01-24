@@ -8,4 +8,5 @@ __all__ = [
     "security",
     "encryption",
     "exceptions",
+    "retry",
 ]

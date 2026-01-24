@@ -161,3 +161,14 @@ class SportConfigCRUD:
             await db.refresh(config)
         
         return configs
+    
+    @staticmethod
+    async def get_by_user_id(db: AsyncSession, user_id: uuid.UUID) -> list[SportConfig]:
+        """
+        Alias for get_all_for_user for compatibility with bot_runner.
+        """
+        return await SportConfigCRUD.get_all_for_user(db, user_id)
+
+
+# Singleton instance for simplified imports
+sport_config = SportConfigCRUD()

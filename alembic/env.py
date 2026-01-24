@@ -39,7 +39,7 @@ def get_url() -> str:
     """
     Returns the database URL from settings.
     """
-    return settings.DATABASE_URL
+    return settings.database_url
 
 
 def run_migrations_offline() -> None:

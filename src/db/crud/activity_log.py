@@ -174,3 +174,7 @@ class ActivityLogCRUD:
         )
         await db.commit()
         return result.rowcount
+
+
+# Singleton instance for simplified imports
+activity_log = ActivityLogCRUD()

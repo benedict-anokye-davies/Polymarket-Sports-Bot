@@ -236,3 +236,7 @@ class PositionCRUD:
             .options(selectinload(Position.trades))
         )
         return result.scalar_one_or_none()
+
+
+# Singleton instance for simplified imports
+position = PositionCRUD()
