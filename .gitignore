@@ -48,3 +48,5 @@ Thumbs.db
 *.pem
 *.key
 private_key*
+.vercel
+.env*.local
