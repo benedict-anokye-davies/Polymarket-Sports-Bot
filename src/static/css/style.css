@@ -606,3 +606,256 @@ a {
 }
 
 
+
+
+/* ============================================================================
+   TOAST NOTIFICATION SYSTEM
+   ============================================================================ */
+
+.toast-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    min-width: 280px;
+    max-width: 400px;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-item.toast-visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.toast-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.toast-message {
+    flex: 1;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 4px;
+    font-size: 1rem;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.toast-close:hover { opacity: 1; }
+
+.toast-success { border-left: 3px solid var(--success); }
+.toast-success .toast-icon { color: var(--success); }
+
+.toast-error { border-left: 3px solid var(--danger); }
+.toast-error .toast-icon { color: var(--danger); }
+
+.toast-warning { border-left: 3px solid var(--warning); }
+.toast-warning .toast-icon { color: var(--warning); }
+
+.toast-info { border-left: 3px solid var(--info); }
+.toast-info .toast-icon { color: var(--info); }
+
+
+/* ============================================================================
+   SKELETON LOADING ANIMATIONS
+   ============================================================================ */
+
+@keyframes skeleton-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--bg-surface-hover) 25%,
+        var(--bg-surface-active) 50%,
+        var(--bg-surface-hover) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite ease-in-out;
+    border-radius: 4px;
+}
+
+.skeleton-text {
+    height: 16px;
+    width: 80%;
+}
+
+.skeleton-chart {
+    border-radius: var(--radius-lg);
+}
+
+.skeleton-row td {
+    padding: 1rem 1.5rem !important;
+}
+
+.fade-out {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+
+/* ============================================================================
+   PROBABILITY BAR (Sports Analytics Style)
+   ============================================================================ */
+
+.prob-display {
+    font-size: 1.25rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-primary);
+}
+
+.prob-change {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.prob-change.text-success {
+    background: var(--success-bg);
+}
+
+.prob-change.text-danger {
+    background: var(--danger-bg);
+}
+
+.prob-bar {
+    height: 4px;
+    background: var(--bg-surface-active);
+    border-radius: 2px;
+    margin-top: 6px;
+    overflow: hidden;
+}
+
+.prob-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--success), var(--brand-primary));
+    border-radius: 2px;
+    transition: width 0.5s ease;
+}
+
+
+/* ============================================================================
+   ENHANCED STAT CARDS
+   ============================================================================ */
+
+.stat-card .stat-value {
+    transition: color 0.3s ease;
+}
+
+.stat-card:hover .stat-icon {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+
+
+/* ============================================================================
+   CONNECTION STATUS PILLS
+   ============================================================================ */
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-pill.status-active {
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.status-pill.status-inactive {
+    background: var(--danger-bg);
+    color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.status-pill .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+
+.status-pill.status-active .status-dot {
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success);
+}
+
+.status-pill.status-inactive .status-dot {
+    background: var(--danger);
+}
+
+
+/* ============================================================================
+   GAMES TABLE ENHANCEMENTS
+   ============================================================================ */
+
+#games-table-body tr {
+    transition: all 0.2s ease;
+}
+
+#games-table-body tr:hover {
+    background: var(--bg-surface-hover);
+}
+
+.text-xs {
+    font-size: 0.75rem;
+}
+
+.fw-semibold {
+    font-weight: 600;
+}
+
+
+/* ============================================================================
+   SIDEBAR MOBILE TOGGLE
+   ============================================================================ */
+
+@media (max-width: 768px) {
+    .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+    
+    .sidebar.open {
+        transform: translateX(0);
+    }
+    
+    .main-content {
+        margin-left: 0;
+    }
+    
+    .status-bar {
+        padding: 10px 16px;
+        gap: 12px;
+    }
+    
+    .content-body {
+        padding: 1rem !important;
+    }
+}

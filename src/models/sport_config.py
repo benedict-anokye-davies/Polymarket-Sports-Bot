@@ -92,10 +92,12 @@ class SportConfig(Base):
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=func.now(),
         server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=func.now(),
         server_default=func.now(),
         onupdate=func.now()
     )
@@ -104,6 +106,52 @@ class SportConfig(Base):
         "User",
         back_populates="sport_configs"
     )
+    
+    # Property aliases to match code expectations
+    @property
+    def is_enabled(self) -> bool:
+        """Alias for enabled field to match code expectations."""
+        return self.enabled
+    
+    @property
+    def sport_type(self) -> str:
+        """Alias for sport field to match code expectations."""
+        return self.sport
+    
+    @property
+    def entry_threshold_pct(self) -> Decimal:
+        """Alias for entry_threshold_drop to match code expectations."""
+        return self.entry_threshold_drop
+    
+    @property
+    def absolute_entry_price(self) -> Decimal:
+        """Alias for entry_threshold_absolute to match code expectations."""
+        return self.entry_threshold_absolute
+    
+    @property
+    def default_position_size_usdc(self) -> Decimal:
+        """Alias for position_size_usdc to match code expectations."""
+        return self.position_size_usdc
+    
+    @property
+    def allowed_entry_segments(self) -> list[str]:
+        """
+        Generate list of allowed entry segments based on max_entry_segment.
+        For NBA/NFL: q1, q2, q3 if max is q3
+        For NHL: p1, p2 if max is p2
+        """
+        segment_orders = {
+            "q1": ["q1"],
+            "q2": ["q1", "q2"],
+            "q3": ["q1", "q2", "q3"],
+            "q4": ["q1", "q2", "q3", "q4"],
+            "p1": ["p1"],
+            "p2": ["p1", "p2"],
+            "p3": ["p1", "p2", "p3"],
+            "h1": ["h1"],
+            "h2": ["h1", "h2"],
+        }
+        return segment_orders.get(self.max_entry_segment, ["q1", "q2", "q3"])
     
     def __repr__(self) -> str:
         return f"<SportConfig(user_id={self.user_id}, sport={self.sport}, enabled={self.enabled})>"

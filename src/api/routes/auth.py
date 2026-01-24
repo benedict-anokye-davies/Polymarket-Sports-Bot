@@ -3,9 +3,10 @@ Authentication routes for user registration and login.
 """
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Form
+from fastapi.security import OAuth2PasswordRequestForm
 
 from src.api.deps import DbSession, get_current_user
 from src.config import get_settings
@@ -67,18 +68,22 @@ async def register(user_data: UserCreate, db: DbSession) -> TokenResponse:
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(credentials: UserLogin, db: DbSession) -> TokenResponse:
+async def login(
+    db: DbSession,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
+) -> TokenResponse:
     """
     Authenticates user and returns access token.
+    Accepts OAuth2 form data (username field contains email).
     
     Args:
-        credentials: Login details (email, password)
         db: Database session
+        form_data: OAuth2 form with username (email) and password
     
     Returns:
         JWT access token and user data
     """
-    user = await UserCRUD.authenticate(db, credentials.email, credentials.password)
+    user = await UserCRUD.authenticate(db, form_data.username, form_data.password)
     
     if not user:
         raise HTTPException(

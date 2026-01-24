@@ -81,10 +81,19 @@
                 </div>
             </div>
 
+            <!-- Connection Status -->
+            <div class="status-section ms-auto">
+                <div class="status-pill status-inactive" id="sse-indicator">
+                    <span class="status-dot"></span>
+                    <span>Offline</span>
+                </div>
+            </div>
+
             <!-- Alert Section (Dynamic) -->
-            <div class="status-section alert-section ms-auto" id="alerts" style="display: none;"></div>
+            <div class="status-section alert-section" id="alerts" style="display: none;"></div>
             
-             <div class="text-secondary small ms-3" id="current-date"></div>
+            <div class="text-secondary small ms-3" id="current-date"></div>
+            <div class="text-secondary small ms-2" id="last-update"></div>
         </div>
         
         <div class="content-body p-4">
@@ -168,10 +177,8 @@
                     <div class="card h-100">
                         <div class="card-header border-bottom-0 pb-0">
                             <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="card-title">Live Market Action</h5>
-                                <div class="d-flex gap-2">
-                                    <span class="badge bg-secondary bg-opacity-10 text-white border border-secondary border-opacity-25">BTC/USD (Simulated)</span>
-                                </div>
+                                <h5 class="card-title">Win Probability History</h5>
+                                <div id="performance-summary" class="text-secondary text-sm"></div>
                             </div>
                         </div>
                         <div class="card-body p-0 position-relative">
@@ -180,26 +187,28 @@
                     </div>
                 </div>
 
-                <!-- Order Book -->
+                <!-- Live Games Feed -->
                 <div class="col-lg-4">
                     <div class="card h-100">
                         <div class="card-header border-bottom-0 pb-2">
                             <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="card-title">Order Book</h5>
-                                <div class="text-xs text-success"><i class="bi bi-circle-fill" style="font-size: 6px;"></i> Live</div>
+                                <h5 class="card-title">Live Games</h5>
+                                <div class="text-xs text-success"><i class="bi bi-circle-fill" style="font-size: 6px;"></i> Tracking</div>
                             </div>
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive border-0" style="max-height: 350px; overflow-y: auto;">
-                                <table class="table table-sm orderbook-table m-0" id="orderbook">
+                                <table class="table table-sm m-0" id="games-table">
                                     <thead>
                                         <tr class="text-secondary" style="font-size: 0.7rem;">
-                                            <th>Price</th>
-                                            <th class="text-end">Size</th>
-                                            <th class="text-end">Total</th>
+                                            <th class="ps-3">Sport</th>
+                                            <th>Matchup</th>
+                                            <th class="text-center">Score</th>
+                                            <th>Probability</th>
+                                            <th class="text-end pe-3">Status</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="orderbook-body">
+                                    <tbody id="games-table-body">
                                         <!-- Populated by JS -->
                                     </tbody>
                                 </table>

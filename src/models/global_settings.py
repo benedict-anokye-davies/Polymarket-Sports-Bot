@@ -63,11 +63,13 @@ class GlobalSettings(Base):
     
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=func.now(),
         server_default=func.now(),
         onupdate=func.now()
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=func.now(),
         server_default=func.now()
     )
     
@@ -75,6 +77,17 @@ class GlobalSettings(Base):
         "User",
         back_populates="global_settings"
     )
+    
+    # Property aliases to match code expectations
+    @property
+    def daily_loss_limit(self) -> Decimal:
+        """Alias for max_daily_loss_usdc to match code expectations."""
+        return self.max_daily_loss_usdc
+    
+    @property
+    def default_position_size(self) -> Decimal:
+        """Default position size - returns 10 USDC as default."""
+        return Decimal("10.00")
     
     def __repr__(self) -> str:
         return f"<GlobalSettings(user_id={self.user_id}, bot_enabled={self.bot_enabled})>"

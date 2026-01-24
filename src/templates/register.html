@@ -63,7 +63,7 @@ document.getElementById("register-form").addEventListener("submit", async (e) =>
     alertDiv.innerHTML = "";
     
     if (password !== confirm) {
-        alertDiv.innerHTML = `<div class="alert alert-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"><i class="bi bi-exclamation-circle me-2"></i> Passwords do not match</div>`;
+        alertDiv.innerHTML = `<div class="alert alert-danger" style="background: #dc3545; color: white; border: none;"><i class="bi bi-exclamation-circle me-2"></i> Passwords do not match</div>`;
         return;
     }
     
@@ -87,13 +87,24 @@ document.getElementById("register-form").addEventListener("submit", async (e) =>
             localStorage.setItem("access_token", data.access_token);
             window.location.href = "/onboarding";
         } else {
-            alertDiv.innerHTML = `<div class="alert alert-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"><i class="bi bi-exclamation-circle me-2"></i> ${data.detail || "Registration failed"}</div>`;
+            // Handle error message - could be string or object
+            let errorMessage = "Registration failed";
+            if (data.detail) {
+                if (typeof data.detail === "string") {
+                    errorMessage = data.detail;
+                } else if (Array.isArray(data.detail)) {
+                    errorMessage = data.detail.map(err => err.msg || err.message || JSON.stringify(err)).join(", ");
+                } else if (typeof data.detail === "object") {
+                    errorMessage = data.detail.msg || data.detail.message || JSON.stringify(data.detail);
+                }
+            }
+            alertDiv.innerHTML = `<div class="alert alert-danger" style="background: #dc3545; color: white; border: none;"><i class="bi bi-exclamation-circle me-2"></i> ${errorMessage}</div>`;
             btn.disabled = false;
             btn.innerHTML = originalText;
         }
     } catch (error) {
         console.error("Registration error:", error);
-        alertDiv.innerHTML = `<div class="alert alert-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"><i class="bi bi-exclamation-circle me-2"></i> An unexpected error occurred</div>`;
+        alertDiv.innerHTML = `<div class="alert alert-danger" style="background: #dc3545; color: white; border: none;"><i class="bi bi-exclamation-circle me-2"></i> An unexpected error occurred</div>`;
         btn.disabled = false;
         btn.innerHTML = originalText;
     }

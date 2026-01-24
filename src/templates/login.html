@@ -57,6 +57,10 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector("button[type=submit]");
     const originalText = btn.innerHTML;
+    const alertDiv = document.getElementById("alert-container");
+    
+    // Clear previous errors
+    alertDiv.innerHTML = "";
     
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Signing in...`;
@@ -95,13 +99,25 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
             }
             window.location.href = "/dashboard";
         } else {
-            const alertDiv = document.getElementById("alert-container");
-            alertDiv.innerHTML = `<div class="alert alert-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25 d-flex align-items-center"><i class="bi bi-exclamation-circle me-2"></i> ${data.detail || "Login failed"}</div>`;
+            // Handle error message - could be string or object
+            let errorMessage = "Login failed";
+            if (data.detail) {
+                if (typeof data.detail === "string") {
+                    errorMessage = data.detail;
+                } else if (Array.isArray(data.detail)) {
+                    // Pydantic validation errors come as array
+                    errorMessage = data.detail.map(err => err.msg || err.message || JSON.stringify(err)).join(", ");
+                } else if (typeof data.detail === "object") {
+                    errorMessage = data.detail.msg || data.detail.message || JSON.stringify(data.detail);
+                }
+            }
+            alertDiv.innerHTML = `<div class="alert alert-danger" style="background: #dc3545; color: white; border: none;"><i class="bi bi-exclamation-circle me-2"></i> ${errorMessage}</div>`;
             btn.disabled = false;
             btn.innerHTML = originalText;
         }
     } catch (error) {
         console.error("Login error:", error);
+        alertDiv.innerHTML = `<div class="alert alert-danger" style="background: #dc3545; color: white; border: none;"><i class="bi bi-exclamation-circle me-2"></i> Connection error. Please try again.</div>`;
         btn.disabled = false;
         btn.innerHTML = originalText;
     }

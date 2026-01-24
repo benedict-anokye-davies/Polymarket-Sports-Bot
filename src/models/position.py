@@ -108,6 +108,7 @@ class Position(Base):
     
     opened_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=func.now(),
         server_default=func.now()
     )
     closed_at: Mapped[datetime | None] = mapped_column(
@@ -117,10 +118,12 @@ class Position(Base):
     
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=func.now(),
         server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=func.now(),
         server_default=func.now(),
         onupdate=func.now()
     )
