@@ -128,11 +128,21 @@ function WalletStep({ onNext, onBack }: StepProps) {
 
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label className="text-muted-foreground">Polygon Private Key</Label>
+          <Label className="text-muted-foreground">API Key</Label>
+          <Input
+            type="text"
+            placeholder="Your Polymarket API Key"
+            className="bg-muted border-border font-mono"
+          />
+          <p className="text-xs text-muted-foreground">From Polymarket Settings &gt; API Keys</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-muted-foreground">API Secret</Label>
           <div className="relative">
             <Input
               type={showKey ? 'text' : 'password'}
-              placeholder="0x..."
+              placeholder="Your API Secret"
               className="bg-muted border-border font-mono pr-10"
             />
             <Button
@@ -148,26 +158,22 @@ function WalletStep({ onNext, onBack }: StepProps) {
         </div>
 
         <div className="space-y-2">
-          <Label className="text-muted-foreground">Funder Address (USDC Source)</Label>
+          <Label className="text-muted-foreground">API Passphrase</Label>
           <Input
-            type="text"
-            placeholder="0x..."
+            type="password"
+            placeholder="Your API Passphrase"
             className="bg-muted border-border font-mono"
           />
         </div>
 
         <div className="space-y-2">
-          <Label className="text-muted-foreground">Signature Type</Label>
-          <Select defaultValue="1">
-            <SelectTrigger className="bg-muted border-border">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">POLY_PROXY (Recommended)</SelectItem>
-              <SelectItem value="0">EOA (Standard Wallet)</SelectItem>
-              <SelectItem value="2">GNOSIS_SAFE (Multisig)</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label className="text-muted-foreground">Wallet Address</Label>
+          <Input
+            type="text"
+            placeholder="0x..."
+            className="bg-muted border-border font-mono"
+          />
+          <p className="text-xs text-muted-foreground">Your Polygon wallet holding USDC</p>
         </div>
 
         <Button 
@@ -233,7 +239,7 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
         <div className="bg-muted/30 rounded-lg p-4 border border-border">
           <Label className="text-sm font-medium text-foreground mb-3 block">Active Sports</Label>
           <div className="grid grid-cols-4 gap-3">
-            {['nba', 'nfl', 'mlb', 'nhl'].map((sport) => (
+            {['nba', 'nfl', 'mlb', 'nhl', 'ncaab', 'ncaaf', 'soccer', 'mma'].map((sport) => (
               <div
                 key={sport}
                 onClick={() => toggleSport(sport)}
@@ -247,6 +253,26 @@ function SportConfigStep({ onNext, onBack }: StepProps) {
                 <span className="text-sm font-medium uppercase">{sport}</span>
               </div>
             ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">Select multiple sports to diversify</p>
+        </div>
+
+        <div>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Position Sizing</Label>
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">Position Size ($)</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                <Input type="number" defaultValue="25" className="bg-muted border-border pl-7" />
+              </div>
+              <p className="text-xs text-muted-foreground">Amount per trade</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm text-muted-foreground">Max Open Positions</Label>
+              <Input type="number" defaultValue="5" className="bg-muted border-border" />
+              <p className="text-xs text-muted-foreground">Concurrent trades limit</p>
+            </div>
           </div>
         </div>
 

@@ -38,17 +38,26 @@ export default function Settings() {
           <CardHeader>
             <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
               <Wallet className="w-5 h-5 text-primary" />
-              Wallet Configuration
+              API Configuration
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="privateKey" className="text-muted-foreground">Private Key</Label>
+              <Label htmlFor="apiKey" className="text-muted-foreground">API Key</Label>
+              <Input
+                id="apiKey"
+                type="text"
+                placeholder="Your Polymarket API Key"
+                className="bg-muted border-border font-mono"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="apiSecret" className="text-muted-foreground">API Secret</Label>
               <div className="relative">
                 <Input
-                  id="privateKey"
+                  id="apiSecret"
                   type={showPrivateKey ? 'text' : 'password'}
-                  defaultValue="0x1234...abcd...efgh...5678"
+                  placeholder="Your API Secret"
                   className="bg-muted border-border pr-10 font-mono"
                 />
                 <Button
@@ -66,13 +75,22 @@ export default function Settings() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="funderAddress" className="text-muted-foreground">Funder Address</Label>
+              <Label htmlFor="apiPassphrase" className="text-muted-foreground">API Passphrase</Label>
               <Input
-                id="funderAddress"
-                defaultValue="0x7a23...4f9d"
+                id="apiPassphrase"
+                type="password"
+                placeholder="Your API Passphrase"
                 className="bg-muted border-border font-mono"
-                readOnly
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="walletAddress" className="text-muted-foreground">Wallet Address</Label>
+              <Input
+                id="walletAddress"
+                placeholder="0x..."
+                className="bg-muted border-border font-mono"
+              />
+              <p className="text-xs text-muted-foreground">Your Polygon wallet holding USDC</p>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-primary" />
@@ -80,7 +98,7 @@ export default function Settings() {
             </div>
             <Button variant="outline" className="border-border hover:bg-muted gap-2">
               <TestTube2 className="w-4 h-4" />
-              Re-test Connection
+              Test Connection
             </Button>
           </CardContent>
         </Card>
@@ -92,7 +110,7 @@ export default function Settings() {
           </CardHeader>
           <CardContent>
             <Accordion type="multiple" className="space-y-2">
-              {['NBA', 'NFL', 'MLB', 'NHL'].map((sport) => (
+              {['NBA', 'NFL', 'MLB', 'NHL', 'NCAAB', 'NCAAF', 'Soccer', 'MMA'].map((sport) => (
                 <AccordionItem key={sport} value={sport} className="border-border">
                   <AccordionTrigger className="hover:no-underline px-4 py-3 bg-muted/30 rounded-md">
                     <div className="flex items-center justify-between w-full pr-4">
