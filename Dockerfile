@@ -17,4 +17,5 @@ RUN mkdir -p /app/logs
 EXPOSE 8000
 
 # Railway uses PORT env variable, fallback to 8000 for local dev
-CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Run Alembic migrations before starting the server
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

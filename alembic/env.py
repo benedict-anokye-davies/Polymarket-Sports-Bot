@@ -24,6 +24,7 @@ from src.models import (
     Trade,
     GlobalSettings,
     ActivityLog,
+    MarketConfig,
 )
 
 
