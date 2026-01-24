@@ -3,7 +3,7 @@
  * Handles all HTTP requests with authentication and error handling
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sports-bot-production.up.railway.app/api/v1';
 
 interface ApiError {
   detail: string;
