@@ -132,21 +132,20 @@ class BotRunner:
         # Load global settings
         settings = await GlobalSettingsCRUD.get_by_user_id(db, user_id)
         if settings:
-            self.max_daily_loss = float(settings.daily_loss_limit or 100)
-            self.risk_per_trade = float(settings.default_position_size or 10) / 1000
+            self.max_daily_loss = float(settings.max_daily_loss_usdc or 100)
         
         # Load sport configs
         configs = await SportConfigCRUD.get_by_user_id(db, user_id)
         for config in configs:
-            if config.is_enabled:
-                self.enabled_sports.append(config.sport_type.lower())
+            if config.enabled:
+                self.enabled_sports.append(config.sport.lower())
                 # Use config thresholds
-                if config.entry_threshold_pct:
-                    self.entry_threshold = config.entry_threshold_pct / 100
+                if config.entry_threshold_drop:
+                    self.entry_threshold = float(config.entry_threshold_drop)
                 if config.take_profit_pct:
-                    self.take_profit = config.take_profit_pct / 100
+                    self.take_profit = float(config.take_profit_pct)
                 if config.stop_loss_pct:
-                    self.stop_loss = config.stop_loss_pct / 100
+                    self.stop_loss = float(config.stop_loss_pct)
         
         # Default to NBA if no sports configured
         if not self.enabled_sports:
