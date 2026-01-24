@@ -35,18 +35,18 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   wallet: {
-    address: '0x7a23...4f9d',
-    connected: true,
-    balance: 12847.52,
+    address: null,
+    connected: false,
+    balance: 0,
   },
   bot: {
-    running: true,
-    activeMarkets: 24,
-    lastUpdate: new Date(),
+    running: false,
+    activeMarkets: 0,
+    lastUpdate: null,
   },
   connection: {
-    sseConnected: true,
-    lastHeartbeat: new Date(),
+    sseConnected: false,
+    lastHeartbeat: null,
   },
   sidebarCollapsed: false,
 

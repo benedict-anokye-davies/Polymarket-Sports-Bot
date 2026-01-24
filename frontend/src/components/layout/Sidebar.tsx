@@ -107,7 +107,7 @@ export function Sidebar() {
           </div>
           {!sidebarCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">John Doe</p>
+              <p className="text-sm font-medium text-foreground truncate">User</p>
               <p className="text-xs text-primary">Pro Plan</p>
             </div>
           )}
