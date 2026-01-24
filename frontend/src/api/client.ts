@@ -187,6 +187,55 @@ class ApiClient {
     return this.request(`/logs?${params.toString()}`);
   }
 
+  // Market Configuration endpoints (per-market overrides)
+  async getMarketConfigs(sport?: string, enabledOnly: boolean = false): Promise<MarketConfig[]> {
+    const params = new URLSearchParams();
+    if (sport) params.append('sport', sport);
+    if (enabledOnly) params.append('enabled_only', 'true');
+    return this.request(`/market-configs?${params.toString()}`);
+  }
+
+  async getMarketConfig(configId: string): Promise<MarketConfigWithDefaults> {
+    return this.request(`/market-configs/${configId}`);
+  }
+
+  async getMarketConfigByCondition(conditionId: string): Promise<MarketConfig | null> {
+    return this.request(`/market-configs/by-market/${conditionId}`);
+  }
+
+  async createMarketConfig(config: MarketConfigCreate): Promise<MarketConfig> {
+    return this.request('/market-configs', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  async updateMarketConfig(configId: string, config: MarketConfigUpdate): Promise<MarketConfig> {
+    return this.request(`/market-configs/${configId}`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  }
+
+  async upsertMarketConfig(conditionId: string, config: MarketConfigUpdate): Promise<MarketConfig> {
+    return this.request(`/market-configs/by-market/${conditionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    });
+  }
+
+  async deleteMarketConfig(configId: string): Promise<void> {
+    return this.request(`/market-configs/${configId}`, { method: 'DELETE' });
+  }
+
+  async deleteMarketConfigByCondition(conditionId: string): Promise<void> {
+    return this.request(`/market-configs/by-market/${conditionId}`, { method: 'DELETE' });
+  }
+
+  async toggleMarketConfig(configId: string): Promise<MarketConfig> {
+    return this.request(`/market-configs/${configId}/toggle`, { method: 'POST' });
+  }
+
   // SSE Stream
   createSSEConnection(): EventSource {
     const token = this.getToken();
@@ -323,6 +372,76 @@ export interface LogEntry {
   level: 'INFO' | 'WARNING' | 'ERROR';
   module: string;
   message: string;
+}
+
+// Market Configuration Types (Per-Market Overrides)
+export interface MarketConfig {
+  id: string;
+  condition_id: string;
+  market_question: string | null;
+  sport: string | null;
+  home_team: string | null;
+  away_team: string | null;
+  
+  // Entry conditions (null = use sport default)
+  entry_threshold_drop: number | null;
+  entry_threshold_absolute: number | null;
+  min_time_remaining_seconds: number | null;
+  
+  // Exit conditions
+  take_profit_pct: number | null;
+  stop_loss_pct: number | null;
+  
+  // Position sizing
+  position_size_usdc: number | null;
+  max_positions: number | null;
+  
+  // Control flags
+  enabled: boolean;
+  auto_trade: boolean;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MarketConfigWithDefaults extends MarketConfig {
+  // Effective values (override or default)
+  effective_entry_threshold_drop: number;
+  effective_entry_threshold_absolute: number;
+  effective_take_profit_pct: number;
+  effective_stop_loss_pct: number;
+  effective_position_size_usdc: number;
+  effective_min_time_remaining_seconds: number;
+  effective_max_positions: number;
+}
+
+export interface MarketConfigCreate {
+  condition_id: string;
+  market_question?: string;
+  sport?: string;
+  home_team?: string;
+  away_team?: string;
+  entry_threshold_drop?: number;
+  entry_threshold_absolute?: number;
+  min_time_remaining_seconds?: number;
+  take_profit_pct?: number;
+  stop_loss_pct?: number;
+  position_size_usdc?: number;
+  max_positions?: number;
+  enabled?: boolean;
+  auto_trade?: boolean;
+}
+
+export interface MarketConfigUpdate {
+  entry_threshold_drop?: number | null;
+  entry_threshold_absolute?: number | null;
+  min_time_remaining_seconds?: number | null;
+  take_profit_pct?: number | null;
+  stop_loss_pct?: number | null;
+  position_size_usdc?: number | null;
+  max_positions?: number | null;
+  enabled?: boolean;
+  auto_trade?: boolean;
 }
 
 // Export singleton instance

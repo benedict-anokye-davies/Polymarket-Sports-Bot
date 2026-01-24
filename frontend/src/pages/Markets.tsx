@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { apiClient, Market } from '@/api/client';
+import { MarketConfigDialog } from '@/components/MarketConfigDialog';
 
 const statusStyles = {
   LIVE: 'bg-primary/10 text-primary border-primary/20',
@@ -162,7 +163,8 @@ export default function Markets() {
                   <th className="text-right py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Baseline</th>
                   <th className="text-right py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Current</th>
                   <th className="text-center py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Status</th>
-                  <th className="text-center py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Action</th>
+                  <th className="text-center py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Settings</th>
+                  <th className="text-center py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Track</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -202,6 +204,9 @@ export default function Markets() {
                       <Badge className={cn('border', statusStyles[status])}>
                         {status}
                       </Badge>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <MarketConfigDialog market={market} onSave={() => fetchMarkets()} />
                     </td>
                     <td className="py-3 px-4 text-center">
                       <Button

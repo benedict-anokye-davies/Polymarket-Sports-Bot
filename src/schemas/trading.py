@@ -105,6 +105,136 @@ class OrderResponse(BaseModel):
     size: Decimal | None = None
 
 
+# ============================================================================
+# Market Configuration Schemas (Per-Market Overrides)
+# ============================================================================
+
+class MarketConfigBase(BaseModel):
+    """
+    Base schema with common market configuration fields.
+    All fields are optional as they represent overrides.
+    """
+    # Entry conditions
+    entry_threshold_drop: Decimal | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Required price drop percentage to enter (0.15 = 15%)"
+    )
+    entry_threshold_absolute: Decimal | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Enter if price drops below this value"
+    )
+    min_time_remaining_seconds: int | None = Field(
+        None,
+        ge=0,
+        description="Minimum seconds remaining in period to enter"
+    )
+    
+    # Exit conditions
+    take_profit_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Take profit at this percentage gain (0.20 = 20%)"
+    )
+    stop_loss_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=1,
+        description="Stop loss at this percentage loss (0.10 = 10%)"
+    )
+    
+    # Position sizing
+    position_size_usdc: Decimal | None = Field(
+        None,
+        ge=0,
+        description="Override position size for this market"
+    )
+    max_positions: int | None = Field(
+        None,
+        ge=0,
+        description="Max concurrent positions in this market"
+    )
+    
+    # Control flags
+    enabled: bool = Field(True, description="Enable/disable trading on this market")
+    auto_trade: bool = Field(True, description="Allow bot to auto-trade")
+
+
+class MarketConfigCreate(MarketConfigBase):
+    """
+    Schema for creating a new market configuration.
+    """
+    condition_id: str = Field(..., description="Polymarket condition_id")
+    market_question: str | None = Field(None, description="Human-readable market question")
+    sport: str | None = Field(None, description="Sport category")
+    home_team: str | None = None
+    away_team: str | None = None
+
+
+class MarketConfigUpdate(MarketConfigBase):
+    """
+    Schema for updating an existing market configuration.
+    All fields optional - only provided fields are updated.
+    """
+    market_question: str | None = None
+    enabled: bool | None = None
+    auto_trade: bool | None = None
+
+
+class MarketConfigResponse(BaseModel):
+    """
+    Schema for market configuration in API responses.
+    """
+    id: uuid.UUID
+    condition_id: str
+    market_question: str | None
+    sport: str | None
+    home_team: str | None
+    away_team: str | None
+    
+    # Entry conditions
+    entry_threshold_drop: Decimal | None
+    entry_threshold_absolute: Decimal | None
+    min_time_remaining_seconds: int | None
+    
+    # Exit conditions
+    take_profit_pct: Decimal | None
+    stop_loss_pct: Decimal | None
+    
+    # Position sizing
+    position_size_usdc: Decimal | None
+    max_positions: int | None
+    
+    # Control flags
+    enabled: bool
+    auto_trade: bool
+    
+    # Timestamps
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = {"from_attributes": True}
+
+
+class MarketConfigWithDefaults(MarketConfigResponse):
+    """
+    Extended response that includes effective values.
+    Shows both the override value and the default from sport config.
+    """
+    # Effective values (override or default)
+    effective_entry_threshold_drop: Decimal
+    effective_entry_threshold_absolute: Decimal
+    effective_take_profit_pct: Decimal
+    effective_stop_loss_pct: Decimal
+    effective_position_size_usdc: Decimal
+    effective_min_time_remaining_seconds: int
+    effective_max_positions: int
+
+
 class MarketCreate(BaseModel):
     """
     Schema for creating a tracked market entry.

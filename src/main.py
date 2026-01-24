@@ -21,6 +21,7 @@ from src.api.routes.settings import router as settings_router
 from src.api.routes.bot import router as bot_router
 from src.api.routes.trading import router as trading_router
 from src.api.routes.logs import router as logs_router
+from src.api.routes.market_config import router as market_config_router
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -69,6 +70,7 @@ app.include_router(settings_router, prefix="/api/v1")
 app.include_router(bot_router, prefix="/api/v1")
 app.include_router(trading_router, prefix="/api/v1")
 app.include_router(logs_router, prefix="/api/v1")
+app.include_router(market_config_router, prefix="/api/v1")
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 

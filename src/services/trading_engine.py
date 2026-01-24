@@ -11,21 +11,109 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.sport_config import SportConfig
+from src.models.market_config import MarketConfig
 from src.models.tracked_market import TrackedMarket
 from src.models.global_settings import GlobalSettings
 from src.db.crud.position import PositionCRUD
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
+from src.db.crud.market_config import MarketConfigCRUD
 from src.services.polymarket_client import PolymarketClient
 
 
 logger = logging.getLogger(__name__)
 
 
+class EffectiveConfig:
+    """
+    Holds effective trading configuration for a market.
+    Combines market-specific overrides with sport defaults.
+    """
+    
+    def __init__(
+        self,
+        sport_config: SportConfig,
+        market_config: MarketConfig | None = None
+    ):
+        self.sport_config = sport_config
+        self.market_config = market_config
+    
+    @property
+    def is_enabled(self) -> bool:
+        """Check if trading is enabled for this market."""
+        if self.market_config and not self.market_config.enabled:
+            return False
+        return self.sport_config.is_enabled
+    
+    @property
+    def auto_trade(self) -> bool:
+        """Check if auto-trading is enabled for this market."""
+        if self.market_config:
+            return self.market_config.auto_trade
+        return True
+    
+    @property
+    def entry_threshold_pct(self) -> Decimal:
+        """Get entry threshold percentage (market override or sport default)."""
+        if self.market_config and self.market_config.entry_threshold_drop is not None:
+            return self.market_config.entry_threshold_drop
+        return self.sport_config.entry_threshold_pct
+    
+    @property
+    def absolute_entry_price(self) -> Decimal:
+        """Get absolute entry price threshold."""
+        if self.market_config and self.market_config.entry_threshold_absolute is not None:
+            return self.market_config.entry_threshold_absolute
+        return self.sport_config.absolute_entry_price
+    
+    @property
+    def min_time_remaining_seconds(self) -> int:
+        """Get minimum time remaining requirement."""
+        if self.market_config and self.market_config.min_time_remaining_seconds is not None:
+            return self.market_config.min_time_remaining_seconds
+        return self.sport_config.min_time_remaining_seconds
+    
+    @property
+    def take_profit_pct(self) -> Decimal:
+        """Get take profit percentage."""
+        if self.market_config and self.market_config.take_profit_pct is not None:
+            return self.market_config.take_profit_pct
+        return self.sport_config.take_profit_pct
+    
+    @property
+    def stop_loss_pct(self) -> Decimal:
+        """Get stop loss percentage."""
+        if self.market_config and self.market_config.stop_loss_pct is not None:
+            return self.market_config.stop_loss_pct
+        return self.sport_config.stop_loss_pct
+    
+    @property
+    def default_position_size_usdc(self) -> Decimal:
+        """Get position size in USDC."""
+        if self.market_config and self.market_config.position_size_usdc is not None:
+            return self.market_config.position_size_usdc
+        return self.sport_config.default_position_size_usdc
+    
+    @property
+    def max_positions_per_game(self) -> int:
+        """Get max positions allowed for this market."""
+        if self.market_config and self.market_config.max_positions is not None:
+            return self.market_config.max_positions
+        return self.sport_config.max_positions_per_game
+    
+    @property
+    def allowed_entry_segments(self) -> list[str]:
+        """Get allowed entry segments from sport config."""
+        return self.sport_config.allowed_entry_segments
+
+
 class TradingEngine:
     """
     Evaluates trading conditions and executes trades based on
     configured thresholds and current market state.
+    
+    Supports per-market configuration overrides that take precedence
+    over sport-level defaults.
     """
     
     def __init__(
@@ -34,7 +122,8 @@ class TradingEngine:
         user_id: str,
         polymarket_client: PolymarketClient,
         global_settings: GlobalSettings,
-        sport_configs: dict[str, SportConfig]
+        sport_configs: dict[str, SportConfig],
+        market_configs: dict[str, MarketConfig] | None = None
     ):
         """
         Initializes the trading engine.
@@ -45,12 +134,32 @@ class TradingEngine:
             polymarket_client: Initialized Polymarket client
             global_settings: User's global settings
             sport_configs: Dictionary of sport -> config mappings
+            market_configs: Dictionary of condition_id -> market config overrides
         """
         self.db = db
         self.user_id = user_id
         self.client = polymarket_client
         self.settings = global_settings
         self.sport_configs = sport_configs
+        self.market_configs = market_configs or {}
+    
+    def _get_effective_config(self, market: TrackedMarket) -> EffectiveConfig | None:
+        """
+        Gets effective configuration for a market.
+        Combines sport config with any market-specific overrides.
+        
+        Args:
+            market: The tracked market to get config for
+        
+        Returns:
+            EffectiveConfig combining sport and market configs, or None if no sport config
+        """
+        sport_config = self.sport_configs.get(market.sport)
+        if not sport_config:
+            return None
+        
+        market_config = self.market_configs.get(market.condition_id)
+        return EffectiveConfig(sport_config, market_config)
     
     async def evaluate_entry(
         self,
@@ -59,6 +168,7 @@ class TradingEngine:
     ) -> dict[str, Any] | None:
         """
         Evaluates whether entry conditions are met for a market.
+        Uses market-specific config if available, otherwise sport defaults.
         
         Args:
             market: Tracked market to evaluate
@@ -67,8 +177,13 @@ class TradingEngine:
         Returns:
             Entry signal dictionary if conditions met, None otherwise
         """
-        config = self.sport_configs.get(market.sport)
+        config = self._get_effective_config(market)
         if not config or not config.is_enabled:
+            return None
+        
+        # Check if auto-trading is enabled for this market
+        if not config.auto_trade:
+            logger.debug(f"Auto-trade disabled for market {market.condition_id}")
             return None
         
         if not game_state.get("is_live"):
@@ -103,10 +218,11 @@ class TradingEngine:
     def _check_price_conditions(
         self,
         market: TrackedMarket,
-        config: SportConfig
+        config: EffectiveConfig
     ) -> dict[str, Any] | None:
         """
         Checks if price conditions warrant an entry.
+        Uses effective config which may include market-specific overrides.
         
         Returns entry signal if either:
         1. Price dropped from baseline by threshold percentage
@@ -154,6 +270,7 @@ class TradingEngine:
     ) -> dict[str, Any] | None:
         """
         Evaluates whether exit conditions are met for a position.
+        Uses market-specific config if available, otherwise sport defaults.
         
         Args:
             position: Position to evaluate
@@ -163,7 +280,7 @@ class TradingEngine:
         Returns:
             Exit signal dictionary if conditions met, None otherwise
         """
-        config = self.sport_configs.get(market.sport)
+        config = self._get_effective_config(market)
         if not config:
             return None
         

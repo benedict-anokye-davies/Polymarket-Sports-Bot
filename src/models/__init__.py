@@ -7,6 +7,7 @@ from src.models.position import Position
 from src.models.trade import Trade
 from src.models.global_settings import GlobalSettings
 from src.models.activity_log import ActivityLog
+from src.models.market_config import MarketConfig
 
 __all__ = [
     "User",
@@ -17,4 +18,5 @@ __all__ = [
     "Trade",
     "GlobalSettings",
     "ActivityLog",
+    "MarketConfig",
 ]
