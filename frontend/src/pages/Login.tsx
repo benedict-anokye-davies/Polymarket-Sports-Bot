@@ -22,9 +22,14 @@ export default function Login() {
     clearError();
     
     try {
-      await login(email, password);
+      const user = await login(email, password);
       toast.success('Welcome back!');
-      navigate('/dashboard');
+      // Redirect to onboarding if not completed, otherwise dashboard
+      if (user && !user.onboarding_completed) {
+        navigate('/onboarding');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Login failed');
     }

@@ -26,11 +26,16 @@ const queryClient = new QueryClient({
 });
 
 // Protected route wrapper
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
+function ProtectedRoute({ children, requireOnboarding = true }: { children: React.ReactNode; requireOnboarding?: boolean }) {
+  const { isAuthenticated, user } = useAuthStore();
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+  
+  // Redirect to onboarding if not completed (except for onboarding page itself)
+  if (requireOnboarding && user && !user.onboarding_completed) {
+    return <Navigate to="/onboarding" replace />;
   }
   
   return <>{children}</>;
@@ -57,7 +62,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-          <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+          <Route path="/onboarding" element={<ProtectedRoute requireOnboarding={false}><Onboarding /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
           <Route path="/positions" element={<ProtectedRoute><Positions /></ProtectedRoute>} />

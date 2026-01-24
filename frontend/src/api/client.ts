@@ -91,7 +91,7 @@ class ApiClient {
     });
   }
 
-  async getCurrentUser(): Promise<{ id: string; username: string; email: string }> {
+  async getCurrentUser(): Promise<{ id: string; username: string; email: string; onboarding_completed: boolean; onboarding_step: number }> {
     return this.request('/auth/me');
   }
 

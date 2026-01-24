@@ -6,6 +6,8 @@ interface User {
   id: string;
   username: string;
   email: string;
+  onboarding_completed: boolean;
+  onboarding_step: number;
 }
 
 interface AuthState {
@@ -16,7 +18,7 @@ interface AuthState {
   error: string | null;
 
   // Actions
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User | undefined>;
   register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<void>;
@@ -50,6 +52,8 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
+          
+          return user;
         } catch (error) {
           set({
             error: error instanceof Error ? error.message : 'Login failed',
