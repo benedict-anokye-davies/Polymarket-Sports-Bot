@@ -1,0 +1,202 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Core backgrounds - Deep zinc/slate */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
+
+    /* Card surfaces */
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+
+    /* Elevated surfaces */
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 98%;
+
+    /* Primary - Emerald green for actions */
+    --primary: 160 84% 39%;
+    --primary-foreground: 0 0% 98%;
+
+    /* Secondary - Subtle zinc */
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 70%;
+
+    /* Muted elements */
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 50%;
+
+    /* Accent - Brighter highlight */
+    --accent: 160 84% 39%;
+    --accent-foreground: 0 0% 98%;
+
+    /* Status colors */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --success: 160 84% 39%;
+    --success-foreground: 0 0% 98%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 7%;
+    
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 98%;
+
+    /* Borders and inputs */
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 160 84% 39%;
+
+    /* Border radius */
+    --radius: 0.5rem;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 5%;
+    --sidebar-foreground: 0 0% 70%;
+    --sidebar-primary: 160 84% 39%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 12%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 12%;
+    --sidebar-ring: 160 84% 39%;
+
+    /* Custom trading colors */
+    --profit: 160 84% 39%;
+    --loss: 0 72% 51%;
+    --bid: 160 84% 39%;
+    --ask: 0 72% 51%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(160 84% 39%) 0%, hsl(160 84% 30%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 9%) 0%, hsl(0 0% 7%) 100%);
+    --gradient-glow: radial-gradient(ellipse at center, hsl(160 84% 39% / 0.15) 0%, transparent 70%);
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.3);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.4), 0 2px 4px -2px hsl(0 0% 0% / 0.4);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.5), 0 4px 6px -4px hsl(0 0% 0% / 0.5);
+    --shadow-glow: 0 0 20px hsl(160 84% 39% / 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: 'kern' 1, 'liga' 1;
+    letter-spacing: -0.015em;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.025em;
+    @apply font-semibold;
+  }
+}
+
+@layer utilities {
+  .font-mono-numbers {
+    font-family: 'JetBrains Mono', monospace;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  .text-profit {
+    @apply text-emerald-400;
+  }
+
+  .text-loss {
+    @apply text-red-400;
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 20px hsl(160 84% 39% / 0.3);
+  }
+
+  .card-hover {
+    @apply transition-all duration-200 hover:border-primary/30 hover:shadow-lg;
+  }
+
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-dot-pulse {
+    @apply animate-pulse;
+  }
+
+  .skeleton-shimmer {
+    @apply animate-pulse bg-gradient-to-r from-muted via-muted/50 to-muted bg-[length:200%_100%];
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(0 0% 20%) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(0 0% 25%);
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(0 0% 35%);
+  }
+}
+
+/* Animations */
+@keyframes flash-green {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: hsl(160 84% 39% / 0.2); }
+}
+
+@keyframes flash-red {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: hsl(0 72% 51% / 0.2); }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.flash-green {
+  animation: flash-green 0.3s ease-out;
+}
+
+.flash-red {
+  animation: flash-red 0.3s ease-out;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
