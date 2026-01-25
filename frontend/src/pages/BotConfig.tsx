@@ -131,6 +131,23 @@ export default function BotConfig() {
 
   // Simulation mode - test bot without real money
   const [simulationMode, setSimulationMode] = useState(true);
+  
+  // Wallet/credentials connected status
+  const [walletConnected, setWalletConnected] = useState<boolean | null>(null);
+
+  // Check wallet status on mount
+  useEffect(() => {
+    const checkWalletStatus = async () => {
+      try {
+        const status = await apiClient.getOnboardingStatus();
+        setWalletConnected(status.wallet_connected);
+      } catch (err) {
+        console.log('Failed to check wallet status:', err);
+        setWalletConnected(false);
+      }
+    };
+    checkWalletStatus();
+  }, []);
 
   // Load existing bot config on mount
   useEffect(() => {
@@ -424,7 +441,7 @@ export default function BotConfig() {
             <Button
               onClick={handleToggleBot}
               variant={botEnabled ? 'destructive' : 'default'}
-              disabled={isLoading || selectedGames.size === 0}
+              disabled={isLoading || selectedGames.size === 0 || walletConnected === false}
               className="gap-2"
             >
               {isLoading ? (
@@ -439,7 +456,27 @@ export default function BotConfig() {
           </div>
         </div>
 
-        {/* Error/Success Messages */}
+        {/* Wallet Not Connected Warning */}
+        {walletConnected === false && (
+          <div className="p-4 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-orange-400 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-orange-400">Credentials Not Connected</h3>
+                <p className="text-sm text-orange-400/80 mt-1">
+                  Please connect your Kalshi API credentials or Polymarket wallet in Settings before starting the bot.
+                </p>
+                <a 
+                  href="/settings"
+                  className="mt-2 text-xs text-orange-400 underline hover:no-underline inline-block"
+                >
+                  Go to Settings
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Simulation Mode Banner */}
         {simulationMode && (
           <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">

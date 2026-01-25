@@ -262,6 +262,7 @@ class BotRunner:
         
         This determines which specific games the bot will track and trade.
         Games not in this list will be ignored during discovery.
+        Also updates enabled_sports to include all sports from selected games.
         
         Args:
             user_id: User ID to load config for
@@ -278,19 +279,33 @@ class BotRunner:
         if not games and config.get("game"):
             games = [config["game"]]
         
-        # Build lookup by game_id
+        # Build lookup by game_id and collect sports
         self.user_selected_games.clear()
+        selected_sports: set[str] = set()
+        
         for game in games:
             game_id = game.get("game_id")
             if game_id:
                 self.user_selected_games[game_id] = game
+                sport = game.get("sport", "").lower()
+                if sport:
+                    selected_sports.add(sport)
                 logger.info(
                     f"Loaded user-selected game: {game.get('away_team', '?')} @ "
-                    f"{game.get('home_team', '?')} ({game.get('sport', '?').upper()}), "
+                    f"{game.get('home_team', '?')} ({sport.upper()}), "
                     f"side: {game.get('selected_side', 'home')}"
                 )
         
-        logger.info(f"Loaded {len(self.user_selected_games)} user-selected games")
+        # Ensure all selected sports are in enabled_sports
+        for sport in selected_sports:
+            if sport not in self.enabled_sports:
+                self.enabled_sports.append(sport)
+                # Create stats tracker if not exists
+                if sport not in self.sport_stats:
+                    self.sport_stats[sport] = SportStats(sport=sport, enabled=True)
+                logger.info(f"Auto-enabled sport {sport.upper()} based on game selection")
+        
+        logger.info(f"Loaded {len(self.user_selected_games)} user-selected games across sports: {list(selected_sports)}")
     
     async def start(self, db: AsyncSession) -> None:
         """
