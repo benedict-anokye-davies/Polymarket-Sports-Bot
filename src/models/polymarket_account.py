@@ -1,5 +1,6 @@
 """
-Polymarket account model for storing wallet credentials.
+Trading account model for storing wallet/API credentials.
+Supports both Polymarket and Kalshi platforms.
 All sensitive data is encrypted at rest using Fernet encryption.
 """
 
@@ -15,13 +16,14 @@ from src.db.database import Base
 
 class PolymarketAccount(Base):
     """
-    Stores encrypted Polymarket wallet credentials for a user.
-    The private key and API credentials are encrypted before storage
+    Stores encrypted trading platform credentials for a user.
+    Supports both Polymarket and Kalshi platforms.
+    The API credentials are encrypted before storage
     and decrypted only when needed for API calls.
     """
-    
+
     __tablename__ = "polymarket_accounts"
-    
+
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
@@ -33,16 +35,24 @@ class PolymarketAccount(Base):
         unique=True,
         nullable=False
     )
-    
-    private_key_encrypted: Mapped[str] = mapped_column(
+
+    # Platform selection: 'polymarket' or 'kalshi'
+    platform: Mapped[str] = mapped_column(
+        String(20),
+        default="polymarket",
+        nullable=False
+    )
+
+    private_key_encrypted: Mapped[str | None] = mapped_column(
         Text,
-        nullable=False
+        nullable=True  # Only needed for Polymarket
     )
-    funder_address: Mapped[str] = mapped_column(
+    # Wallet address (for Polymarket) - nullable for Kalshi
+    funder_address: Mapped[str | None] = mapped_column(
         String(42),
-        nullable=False
+        nullable=True
     )
-    
+
     api_key_encrypted: Mapped[str | None] = mapped_column(
         Text,
         nullable=True
@@ -55,7 +65,7 @@ class PolymarketAccount(Base):
         Text,
         nullable=True
     )
-    
+
     signature_type: Mapped[int] = mapped_column(
         Integer,
         default=1
@@ -63,6 +73,10 @@ class PolymarketAccount(Base):
     is_connected: Mapped[bool] = mapped_column(
         Boolean,
         default=False
+    )
+    connection_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
     )
     last_balance_usdc: Mapped[Decimal | None] = mapped_column(
         Numeric(18, 6),
@@ -91,4 +105,4 @@ class PolymarketAccount(Base):
     )
     
     def __repr__(self) -> str:
-        return f"<PolymarketAccount(user_id={self.user_id}, connected={self.is_connected})>"
+        return f"<TradingAccount(user_id={self.user_id}, platform={self.platform}, connected={self.is_connected})>"

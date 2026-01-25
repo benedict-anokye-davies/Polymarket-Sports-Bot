@@ -61,6 +61,30 @@ class GlobalSettings(Base):
         default=10
     )
     
+    # Paper Trading Mode - simulate trades without real money
+    dry_run_mode: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True  # Default to safe mode
+    )
+    
+    # Emergency stop flag - halts all trading immediately
+    emergency_stop: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False
+    )
+    
+    # Slippage protection - max acceptable slippage percentage
+    max_slippage_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 4),
+        default=Decimal("0.02")  # 2% default
+    )
+    
+    # Order fill timeout in seconds
+    order_fill_timeout_seconds: Mapped[int] = mapped_column(
+        Integer,
+        default=60
+    )
+    
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=func.now(),

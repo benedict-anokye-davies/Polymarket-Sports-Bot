@@ -39,8 +39,9 @@ target_metadata = Base.metadata
 def get_url() -> str:
     """
     Returns the database URL from settings.
+    Uses async_database_url to ensure asyncpg driver is used.
     """
-    return settings.database_url
+    return settings.async_database_url
 
 
 def run_migrations_offline() -> None:

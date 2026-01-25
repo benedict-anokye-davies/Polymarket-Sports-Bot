@@ -30,9 +30,31 @@ import { useAuthStore } from '@/stores/useAuthStore';
 
 const TOTAL_STEPS = 5;
 
+// Supported platforms
+const PLATFORMS = [
+  { id: 'kalshi', name: 'Kalshi', desc: 'US-regulated prediction market' },
+  { id: 'polymarket', name: 'Polymarket', desc: 'Crypto-based prediction market' },
+] as const;
+
+// Expanded sports list
+const SPORTS = [
+  { id: 'nba', name: 'NBA', icon: '🏀' },
+  { id: 'nfl', name: 'NFL', icon: '🏈' },
+  { id: 'mlb', name: 'MLB', icon: '⚾' },
+  { id: 'nhl', name: 'NHL', icon: '🏒' },
+  { id: 'soccer', name: 'Soccer', icon: '⚽' },
+  { id: 'mma', name: 'MMA/UFC', icon: '🥊' },
+  { id: 'tennis', name: 'Tennis', icon: '🎾' },
+  { id: 'golf', name: 'Golf', icon: '⛳' },
+  { id: 'ncaab', name: 'NCAA BB', icon: '🏀' },
+  { id: 'ncaaf', name: 'NCAA FB', icon: '🏈' },
+] as const;
+
 // Shared state interface for all form data
 interface OnboardingData {
-  // Wallet
+  // Platform selection
+  platform: 'kalshi' | 'polymarket';
+  // API credentials
   apiKey: string;
   apiSecret: string;
   apiPassphrase: string;
@@ -45,6 +67,8 @@ interface OnboardingData {
   takeProfitPct: number;
   stopLossPct: number;
   minTimeRemaining: number;
+  exitTimeRemaining: number;
+  minVolumeThreshold: number;
   // Risk
   maxDailyLoss: number;
   maxExposure: number;
@@ -113,17 +137,17 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
   );
 }
 
-// Step 2: Connect Wallet
+// Step 2: Connect Trading Account
 function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
   const [showKey, setShowKey] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const { toast } = useToast();
 
   const testConnection = async () => {
-    if (!data.apiKey || !data.funderAddress) {
+    if (!data.apiKey || !data.apiSecret) {
       toast({
         title: 'Error',
-        description: 'Please enter API Key and Wallet Address.',
+        description: 'Please enter API Key and API Secret.',
         variant: 'destructive',
       });
       return;
@@ -131,11 +155,11 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
 
     setConnectionStatus('testing');
     try {
-      await apiClient.connectWallet(data.apiKey, data.funderAddress, 1);
+      await apiClient.connectWallet(data.apiKey, data.funderAddress || '', 1);
       setConnectionStatus('success');
       toast({
         title: 'Success',
-        description: 'Wallet connected successfully.',
+        description: 'Account connected successfully.',
       });
     } catch (error) {
       setConnectionStatus('error');
@@ -147,8 +171,9 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
     }
   };
 
-  // Allow proceeding if credentials are filled (test is optional)
-  const canProceed = data.apiKey.trim() && data.funderAddress.trim();
+  // Allow proceeding if required credentials are filled (test is optional)
+  const canProceed = data.apiKey.trim() && data.apiSecret.trim();
+  const isKalshi = data.platform === 'kalshi';
 
   return (
     <motion.div
@@ -161,8 +186,35 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
         <div className="w-16 h-16 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
           <Wallet className="w-8 h-8 text-primary" />
         </div>
-        <h2 className="text-xl font-semibold text-foreground mb-1">Connect Your Wallet</h2>
-        <p className="text-sm text-muted-foreground">Securely link your Kalshi trading account</p>
+        <h2 className="text-xl font-semibold text-foreground mb-1">Connect Your Account</h2>
+        <p className="text-sm text-muted-foreground">Choose your platform and enter credentials</p>
+      </div>
+
+      {/* Platform Selection */}
+      <div className="bg-muted/30 rounded-lg p-4 border border-border">
+        <Label className="text-sm font-medium text-foreground mb-3 block">Trading Platform</Label>
+        <div className="grid grid-cols-2 gap-3">
+          {PLATFORMS.map((platform) => (
+            <div
+              key={platform.id}
+              onClick={() => setData(prev => ({ ...prev, platform: platform.id as 'kalshi' | 'polymarket' }))}
+              className={cn(
+                'p-4 rounded-md border cursor-pointer transition-all',
+                data.platform === platform.id
+                  ? 'bg-primary/10 border-primary/30'
+                  : 'bg-muted border-border hover:border-primary/20'
+              )}
+            >
+              <span className={cn(
+                'text-sm font-semibold block',
+                data.platform === platform.id ? 'text-primary' : 'text-foreground'
+              )}>
+                {platform.name}
+              </span>
+              <span className="text-xs text-muted-foreground">{platform.desc}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="bg-warning/10 border border-warning/20 rounded-lg p-4 flex gap-3">
@@ -180,12 +232,14 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
           <Label className="text-muted-foreground">API Key</Label>
           <Input
             type="text"
-            placeholder="Your Kalshi API Key"
+            placeholder={isKalshi ? 'Your Kalshi API Key' : 'Your Polymarket API Key'}
             className="bg-muted border-border font-mono"
             value={data.apiKey}
             onChange={(e) => setData(prev => ({ ...prev, apiKey: e.target.value }))}
           />
-          <p className="text-xs text-muted-foreground">From Kalshi Settings &gt; API Keys</p>
+          <p className="text-xs text-muted-foreground">
+            {isKalshi ? 'From Kalshi Settings > API Keys' : 'From Polymarket Settings > API Keys'}
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -210,28 +264,33 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label className="text-muted-foreground">API Passphrase</Label>
-          <Input
-            type="password"
-            placeholder="Your API Passphrase"
-            className="bg-muted border-border font-mono"
-            value={data.apiPassphrase}
-            onChange={(e) => setData(prev => ({ ...prev, apiPassphrase: e.target.value }))}
-          />
-        </div>
+        {/* Polymarket-specific fields */}
+        {!isKalshi && (
+          <>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">API Passphrase</Label>
+              <Input
+                type="password"
+                placeholder="Your API Passphrase"
+                className="bg-muted border-border font-mono"
+                value={data.apiPassphrase}
+                onChange={(e) => setData(prev => ({ ...prev, apiPassphrase: e.target.value }))}
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label className="text-muted-foreground">Wallet Address</Label>
-          <Input
-            type="text"
-            placeholder="0x..."
-            className="bg-muted border-border font-mono"
-            value={data.funderAddress}
-            onChange={(e) => setData(prev => ({ ...prev, funderAddress: e.target.value }))}
-          />
-          <p className="text-xs text-muted-foreground">Your wallet holding USDC</p>
-        </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Wallet Address</Label>
+              <Input
+                type="text"
+                placeholder="0x..."
+                className="bg-muted border-border font-mono"
+                value={data.funderAddress}
+                onChange={(e) => setData(prev => ({ ...prev, funderAddress: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Your Polygon wallet holding USDC</p>
+            </div>
+          </>
+        )}
 
         <Button
           variant="outline"
@@ -295,41 +354,156 @@ function SportConfigStep({ onNext, onBack, data, setData, loading }: StepProps) 
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="space-y-6"
+      className="space-y-6 max-h-[70vh] overflow-y-auto pr-2"
     >
       <div className="text-center">
         <div className="w-16 h-16 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
           <Settings className="w-8 h-8 text-primary" />
         </div>
         <h2 className="text-xl font-semibold text-foreground mb-1">Sport Configuration</h2>
-        <p className="text-sm text-muted-foreground">Choose which markets to trade</p>
+        <p className="text-sm text-muted-foreground">Choose sports and configure trading parameters</p>
       </div>
 
       <div className="space-y-4">
+        {/* Sports Selection Grid */}
         <div className="bg-muted/30 rounded-lg p-4 border border-border">
-          <Label className="text-sm font-medium text-foreground mb-3 block">Active Sports</Label>
-          <div className="grid grid-cols-2 gap-3">
-            {['nba', 'nfl', 'mlb', 'nhl'].map((sport) => (
+          <Label className="text-sm font-medium text-foreground mb-3 block">Active Sports (select multiple)</Label>
+          <div className="grid grid-cols-5 gap-2">
+            {SPORTS.map((sport) => (
               <div
-                key={sport}
-                onClick={() => toggleSport(sport)}
+                key={sport.id}
+                onClick={() => toggleSport(sport.id)}
                 className={cn(
-                  'p-3 rounded-md border text-center cursor-pointer transition-all',
-                  data.activeSports.includes(sport)
-                    ? 'bg-primary/10 border-primary/30 text-primary'
-                    : 'bg-muted border-border text-muted-foreground hover:border-primary/20'
+                  'p-2 rounded-md border text-center cursor-pointer transition-all',
+                  data.activeSports.includes(sport.id)
+                    ? 'bg-primary/10 border-primary/30'
+                    : 'bg-muted border-border hover:border-primary/20'
                 )}
               >
-                <span className="text-sm font-medium uppercase">{sport}</span>
+                <span className="text-lg block mb-1">{sport.icon}</span>
+                <span className={cn(
+                  'text-xs font-medium',
+                  data.activeSports.includes(sport.id) ? 'text-primary' : 'text-muted-foreground'
+                )}>
+                  {sport.name}
+                </span>
               </div>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground mt-3">Select the sports you want to trade</p>
+          <p className="text-xs text-muted-foreground mt-3">
+            {data.activeSports.length} sport{data.activeSports.length !== 1 ? 's' : ''} selected
+          </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        {/* Entry Conditions */}
+        <div className="bg-muted/30 rounded-lg p-4 border border-border">
+          <Label className="text-sm font-medium text-foreground mb-3 block">Entry Conditions</Label>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Price Drop Threshold</Label>
+              <Input
+                type="number"
+                step="1"
+                min="0"
+                max="100"
+                placeholder="e.g. 15"
+                className="bg-muted border-border"
+                value={data.entryThresholdDrop ? Math.round(data.entryThresholdDrop * 100) : ''}
+                onChange={(e) => setData(prev => ({ ...prev, entryThresholdDrop: (parseFloat(e.target.value) || 0) / 100 }))}
+              />
+              <p className="text-xs text-muted-foreground">% drop from pregame to trigger entry</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Absolute Entry Price</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                max="1"
+                placeholder="e.g. 0.35"
+                className="bg-muted border-border"
+                value={data.entryThresholdAbsolute || ''}
+                onChange={(e) => setData(prev => ({ ...prev, entryThresholdAbsolute: parseFloat(e.target.value) || 0 }))}
+              />
+              <p className="text-xs text-muted-foreground">Buy if price falls below this</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Min Volume Threshold ($)</Label>
+              <Input
+                type="number"
+                min="0"
+                placeholder="e.g. 1000"
+                className="bg-muted border-border"
+                value={data.minVolumeThreshold || ''}
+                onChange={(e) => setData(prev => ({ ...prev, minVolumeThreshold: parseFloat(e.target.value) || 0 }))}
+              />
+              <p className="text-xs text-muted-foreground">Min market volume to enter</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Latest Entry Time (sec)</Label>
+              <Input
+                type="number"
+                min="0"
+                placeholder="e.g. 300"
+                className="bg-muted border-border"
+                value={data.minTimeRemaining || ''}
+                onChange={(e) => setData(prev => ({ ...prev, minTimeRemaining: parseInt(e.target.value) || 0 }))}
+              />
+              <p className="text-xs text-muted-foreground">No buys after X sec remaining</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Exit Conditions */}
+        <div className="bg-muted/30 rounded-lg p-4 border border-border">
+          <Label className="text-sm font-medium text-foreground mb-3 block">Exit Conditions</Label>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Take Profit (%)</Label>
+              <Input
+                type="number"
+                step="1"
+                min="0"
+                max="100"
+                placeholder="e.g. 20"
+                className="bg-muted border-border"
+                value={data.takeProfitPct ? Math.round(data.takeProfitPct * 100) : ''}
+                onChange={(e) => setData(prev => ({ ...prev, takeProfitPct: (parseFloat(e.target.value) || 0) / 100 }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Stop Loss (%)</Label>
+              <Input
+                type="number"
+                step="1"
+                min="0"
+                max="100"
+                placeholder="e.g. 10"
+                className="bg-muted border-border"
+                value={data.stopLossPct ? Math.round(data.stopLossPct * 100) : ''}
+                onChange={(e) => setData(prev => ({ ...prev, stopLossPct: (parseFloat(e.target.value) || 0) / 100 }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Latest Exit Time (sec)</Label>
+              <Input
+                type="number"
+                min="0"
+                placeholder="e.g. 120"
+                className="bg-muted border-border"
+                value={data.exitTimeRemaining || ''}
+                onChange={(e) => setData(prev => ({ ...prev, exitTimeRemaining: parseInt(e.target.value) || 0 }))}
+              />
+              <p className="text-xs text-muted-foreground">Must sell when X sec remain</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Position Sizing */}
+        <div className="bg-muted/30 rounded-lg p-4 border border-border">
+          <Label className="text-sm font-medium text-foreground mb-3 block">Position Sizing</Label>
           <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Position Size (USDC)</Label>
+            <Label className="text-xs text-muted-foreground">Position Size (USDC)</Label>
             <Input
               type="number"
               min="1"
@@ -338,78 +512,12 @@ function SportConfigStep({ onNext, onBack, data, setData, loading }: StepProps) 
               value={data.positionSize || ''}
               onChange={(e) => setData(prev => ({ ...prev, positionSize: parseFloat(e.target.value) || 0 }))}
             />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Entry Drop Threshold</Label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-              placeholder="e.g. 0.15"
-              className="bg-muted border-border"
-              value={data.entryThresholdDrop || ''}
-              onChange={(e) => setData(prev => ({ ...prev, entryThresholdDrop: parseFloat(e.target.value) || 0 }))}
-            />
-            <p className="text-xs text-muted-foreground">15% = 0.15</p>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Absolute Entry Price</Label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-              placeholder="e.g. 0.50"
-              className="bg-muted border-border"
-              value={data.entryThresholdAbsolute || ''}
-              onChange={(e) => setData(prev => ({ ...prev, entryThresholdAbsolute: parseFloat(e.target.value) || 0 }))}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Take Profit (%)</Label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-              placeholder="e.g. 0.20"
-              className="bg-muted border-border"
-              value={data.takeProfitPct || ''}
-              onChange={(e) => setData(prev => ({ ...prev, takeProfitPct: parseFloat(e.target.value) || 0 }))}
-            />
-            <p className="text-xs text-muted-foreground">20% = 0.20</p>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Stop Loss (%)</Label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-              placeholder="e.g. 0.10"
-              className="bg-muted border-border"
-              value={data.stopLossPct || ''}
-              onChange={(e) => setData(prev => ({ ...prev, stopLossPct: parseFloat(e.target.value) || 0 }))}
-            />
-            <p className="text-xs text-muted-foreground">10% = 0.10</p>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-sm text-muted-foreground">Min Time Remaining (sec)</Label>
-            <Input
-              type="number"
-              min="0"
-              placeholder="e.g. 300"
-              className="bg-muted border-border"
-              value={data.minTimeRemaining || ''}
-              onChange={(e) => setData(prev => ({ ...prev, minTimeRemaining: parseInt(e.target.value) || 0 }))}
-            />
-            <p className="text-xs text-muted-foreground">300 = 5 minutes</p>
+            <p className="text-xs text-muted-foreground">Max amount to invest per trade</p>
           </div>
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 sticky bottom-0 bg-card pt-4">
         <Button variant="outline" onClick={onBack} className="flex-1 border-border">
           <ChevronLeft className="w-4 h-4 mr-2" />
           Back
@@ -637,6 +745,7 @@ export default function Onboarding() {
 
   // Centralized form data
   const [data, setData] = useState<OnboardingData>({
+    platform: 'kalshi',
     apiKey: '',
     apiSecret: '',
     apiPassphrase: '',
@@ -644,10 +753,12 @@ export default function Onboarding() {
     activeSports: ['nba'],
     positionSize: 50,
     entryThresholdDrop: 0.15,
-    entryThresholdAbsolute: 0.50,
+    entryThresholdAbsolute: 0.35,
     takeProfitPct: 0.20,
     stopLossPct: 0.10,
     minTimeRemaining: 300,
+    exitTimeRemaining: 120,
+    minVolumeThreshold: 1000,
     maxDailyLoss: 100,
     maxExposure: 500,
     maxConcurrentPositions: 10,
@@ -660,28 +771,24 @@ export default function Onboarding() {
     try {
       // Save sport configs for each active sport
       for (const sport of data.activeSports) {
+        const sportConfig = {
+          sport,
+          enabled: true,
+          entry_threshold_drop: data.entryThresholdDrop,
+          entry_threshold_absolute: data.entryThresholdAbsolute,
+          take_profit_pct: data.takeProfitPct,
+          stop_loss_pct: data.stopLossPct,
+          position_size_usdc: data.positionSize,
+          min_time_remaining_seconds: data.minTimeRemaining,
+          exit_time_remaining_seconds: data.exitTimeRemaining,
+          min_volume_threshold: data.minVolumeThreshold,
+        };
+
         try {
-          await apiClient.createSportConfig({
-            sport,
-            enabled: true,
-            entry_threshold_drop: data.entryThresholdDrop,
-            entry_threshold_absolute: data.entryThresholdAbsolute,
-            take_profit_pct: data.takeProfitPct,
-            stop_loss_pct: data.stopLossPct,
-            position_size_usdc: data.positionSize,
-            min_time_remaining_seconds: data.minTimeRemaining,
-          });
-        } catch (error) {
+          await apiClient.createSportConfig(sportConfig);
+        } catch {
           // Config might already exist, try updating instead
-          await apiClient.updateSportConfig(sport, {
-            enabled: true,
-            entry_threshold_drop: data.entryThresholdDrop,
-            entry_threshold_absolute: data.entryThresholdAbsolute,
-            take_profit_pct: data.takeProfitPct,
-            stop_loss_pct: data.stopLossPct,
-            position_size_usdc: data.positionSize,
-            min_time_remaining_seconds: data.minTimeRemaining,
-          });
+          await apiClient.updateSportConfig(sport, sportConfig);
         }
       }
 
@@ -694,8 +801,10 @@ export default function Onboarding() {
         bot_enabled: true,
       });
 
-      // Complete onboarding - mark user as onboarded
-      await apiClient.completeOnboardingStep(5, {});
+      // Complete onboarding with platform info
+      await apiClient.completeOnboardingStep(5, {
+        platform: data.platform,
+      });
 
       // Refresh user state
       await refreshUser();

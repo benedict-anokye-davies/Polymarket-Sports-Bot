@@ -63,7 +63,21 @@ class SportConfig(Base):
         Integer,
         default=300
     )
-    
+
+    # Latest exit time - must sell once X seconds remaining in game
+    exit_time_remaining_seconds: Mapped[int | None] = mapped_column(
+        Integer,
+        default=120,  # 2 minutes before game ends
+        nullable=True
+    )
+
+    # Minimum market volume threshold (in USDC) to enter
+    min_volume_threshold: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        default=Decimal("1000.00"),
+        nullable=True
+    )
+
     take_profit_pct: Mapped[Decimal] = mapped_column(
         Numeric(5, 4),
         default=Decimal("0.20")
@@ -88,6 +102,36 @@ class SportConfig(Base):
     max_total_positions: Mapped[int] = mapped_column(
         Integer,
         default=5
+    )
+    
+    # Per-sport risk limits
+    max_daily_loss_usdc: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2),
+        default=Decimal("50.00"),
+        nullable=True
+    )
+    max_exposure_usdc: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2),
+        default=Decimal("200.00"),
+        nullable=True
+    )
+    
+    # Priority for capital allocation (1 = highest)
+    priority: Mapped[int] = mapped_column(
+        Integer,
+        default=1
+    )
+    
+    # Trading schedule (JSON string: "18:00-23:59")
+    trading_hours_start: Mapped[str | None] = mapped_column(
+        String(10),
+        default=None,
+        nullable=True
+    )
+    trading_hours_end: Mapped[str | None] = mapped_column(
+        String(10),
+        default=None,
+        nullable=True
     )
     
     created_at: Mapped[datetime] = mapped_column(

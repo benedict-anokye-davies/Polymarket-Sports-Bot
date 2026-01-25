@@ -201,43 +201,102 @@ async def get_bot_status_endpoint(db: DbSession, current_user: OnboardedUser) ->
     }
 
 
-@router.post("/emergency-stop", response_model=MessageResponse)
-async def emergency_stop(db: DbSession, current_user: OnboardedUser) -> MessageResponse:
+@router.post("/emergency-stop", response_model=dict)
+async def emergency_stop(
+    db: DbSession,
+    current_user: OnboardedUser,
+    close_positions: bool = True
+) -> dict:
     """
     Emergency stop that immediately halts all bot activity.
-    Attempts to close open positions at market prices.
-    Use with caution.
+    
+    Args:
+        close_positions: If True, attempts to close all open positions at market prices.
+    
+    Returns:
+        Summary of shutdown actions including positions closed and P&L.
     """
     from src.services.bot_runner import _bot_instances
     from src.services.discord_notifier import discord_notifier
     
     bot_runner = _bot_instances.get(current_user.id)
     
+    result = {
+        "success": True,
+        "message": "Emergency stop executed",
+        "positions_closed": 0,
+        "positions_failed": 0,
+        "total_pnl": 0.0,
+        "errors": []
+    }
+    
     if bot_runner:
-        # Force stop
-        await bot_runner.stop(db)
-        
-        # Notify via Discord
+        # Use full emergency shutdown with position closure
+        shutdown_result = await bot_runner.emergency_shutdown(db, close_positions=close_positions)
+        result.update(shutdown_result)
+    else:
+        # Bot not running, just ensure flag is off
         await discord_notifier.notify_error(
             "Emergency Stop Triggered",
-            "Bot has been emergency stopped by user",
+            "Bot was not running but emergency stop requested",
             "emergency_stop"
         )
     
-    # Ensure database flag is off
+    # Ensure database flags are set
     await GlobalSettingsCRUD.set_bot_enabled(db, current_user.id, False)
+    
+    # Also set emergency_stop flag in settings
+    await GlobalSettingsCRUD.update(db, current_user.id, emergency_stop=True)
     
     await ActivityLogCRUD.warning(
         db,
         current_user.id,
         "BOT",
-        "Emergency stop triggered - all bot activity halted"
+        f"Emergency stop triggered - closed {result['positions_closed']} positions, "
+        f"P&L: ${result['total_pnl']:.2f}"
     )
     
-    return MessageResponse(
-        message="Emergency stop executed. Bot disabled. Review positions manually.",
-        success=True
+    return result
+
+
+@router.post("/clear-emergency", response_model=MessageResponse)
+async def clear_emergency_stop(db: DbSession, current_user: OnboardedUser) -> MessageResponse:
+    """
+    Clears the emergency stop flag, allowing the bot to be restarted.
+    """
+    await GlobalSettingsCRUD.update(db, current_user.id, emergency_stop=False)
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "BOT",
+        "Emergency stop cleared - bot can be restarted"
     )
+    
+    return MessageResponse(message="Emergency stop cleared. Bot can now be restarted.")
+
+
+@router.get("/sport-stats", response_model=dict)
+async def get_sport_stats(current_user: OnboardedUser) -> dict:
+    """
+    Returns per-sport statistics including:
+    - Trades today per sport
+    - P&L per sport
+    - Open positions per sport
+    - Tracked games per sport
+    """
+    from src.services.bot_runner import _bot_instances
+    
+    bot_runner = _bot_instances.get(current_user.id)
+    
+    if not bot_runner:
+        return {"sports": {}, "message": "Bot not running"}
+    
+    return {
+        "sports": bot_runner.get_sport_stats(),
+        "enabled_sports": bot_runner.enabled_sports,
+        "paper_trading": bot_runner.dry_run
+    }
 
 
 @router.get("/tracked-games", response_model=list)
@@ -251,3 +310,65 @@ async def get_tracked_games(current_user: OnboardedUser) -> list:
         return []
     
     return bot_status.get("games", [])
+
+
+@router.post("/paper-trading", response_model=MessageResponse)
+async def toggle_paper_trading(
+    db: DbSession,
+    current_user: OnboardedUser,
+    enabled: bool = True
+) -> MessageResponse:
+    """
+    Toggles paper trading mode.
+    
+    Paper trading executes simulated trades without real money.
+    Recommended for testing strategies before going live.
+    
+    Args:
+        enabled: True for paper trading, False for live trading
+    """
+    from src.services.bot_runner import _bot_instances
+    
+    # Update database setting
+    await GlobalSettingsCRUD.update(db, current_user.id, dry_run_mode=enabled)
+    
+    # Update running bot if exists
+    bot_runner = _bot_instances.get(current_user.id)
+    if bot_runner:
+        bot_runner.dry_run = enabled
+        bot_runner.polymarket_client.dry_run = enabled
+    
+    mode_str = "PAPER TRADING" if enabled else "LIVE TRADING"
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "BOT",
+        f"Trading mode changed to {mode_str}"
+    )
+    
+    return MessageResponse(message=f"Trading mode set to {mode_str}")
+
+
+@router.get("/paper-trading", response_model=dict)
+async def get_paper_trading_status(db: DbSession, current_user: OnboardedUser) -> dict:
+    """
+    Returns current paper trading status and simulated trades if in paper mode.
+    """
+    from src.services.bot_runner import _bot_instances
+    
+    settings = await GlobalSettingsCRUD.get_by_user_id(db, current_user.id)
+    is_paper = settings.dry_run_mode if settings and hasattr(settings, 'dry_run_mode') else True
+    
+    result = {
+        "paper_trading_enabled": is_paper,
+        "mode": "PAPER" if is_paper else "LIVE",
+        "simulated_trades": []
+    }
+    
+    # Get simulated trades from running bot
+    bot_runner = _bot_instances.get(current_user.id)
+    if bot_runner and bot_runner.polymarket_client:
+        simulated = getattr(bot_runner.polymarket_client, '_simulated_orders', {})
+        result["simulated_trades"] = list(simulated.values())
+    
+    return result

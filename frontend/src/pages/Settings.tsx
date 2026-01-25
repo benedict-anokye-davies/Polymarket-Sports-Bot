@@ -26,12 +26,18 @@ interface WalletCredentials {
   funder_address: string;
 }
 
-const SPORTS = ['nba', 'nfl', 'mlb', 'nhl'] as const;
+const SPORTS = ['nba', 'nfl', 'mlb', 'nhl', 'soccer', 'mma', 'tennis', 'golf', 'ncaab', 'ncaaf'] as const;
 const SPORT_LABELS: Record<string, string> = {
   nba: 'NBA',
   nfl: 'NFL',
   mlb: 'MLB',
   nhl: 'NHL',
+  soccer: 'Soccer',
+  mma: 'MMA/UFC',
+  tennis: 'Tennis',
+  golf: 'Golf',
+  ncaab: 'NCAA BB',
+  ncaaf: 'NCAA FB',
 };
 
 export default function Settings() {
@@ -110,6 +116,11 @@ export default function Settings() {
               max_positions_per_game: config.max_positions_per_game,
               max_total_positions: config.max_total_positions,
               min_time_remaining_seconds: config.min_time_remaining_seconds,
+              exit_time_remaining_seconds: config.exit_time_remaining_seconds,
+              min_volume_threshold: config.min_volume_threshold,
+              max_daily_loss_usdc: config.max_daily_loss_usdc,
+              max_exposure_usdc: config.max_exposure_usdc,
+              priority: config.priority,
             },
           });
         });
@@ -371,110 +382,157 @@ export default function Settings() {
                         />
                       </div>
                     </AccordionTrigger>
-                    <AccordionContent className="pt-4 px-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label className="text-muted-foreground text-xs">Entry Threshold Drop (%)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="1"
-                            placeholder="e.g. 0.15"
-                            className="bg-muted border-border"
-                            value={config.entry_threshold_drop}
-                            onChange={(e) => updateSportConfig(sport, 'entry_threshold_drop', parseFloat(e.target.value) || 0)}
-                          />
-                          <p className="text-xs text-muted-foreground">15% drop = 0.15</p>
+                    <AccordionContent className="pt-4 px-4 space-y-4">
+                      {/* Entry Conditions */}
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Entry Conditions</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Price Drop (%)</Label>
+                            <Input
+                              type="number"
+                              step="1"
+                              min="0"
+                              max="100"
+                              placeholder="15"
+                              className="bg-muted border-border h-8"
+                              value={config.entry_threshold_drop ? Math.round(config.entry_threshold_drop * 100) : ''}
+                              onChange={(e) => updateSportConfig(sport, 'entry_threshold_drop', (parseFloat(e.target.value) || 0) / 100)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Absolute Entry</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="1"
+                              placeholder="0.35"
+                              className="bg-muted border-border h-8"
+                              value={config.entry_threshold_absolute || ''}
+                              onChange={(e) => updateSportConfig(sport, 'entry_threshold_absolute', parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Min Volume ($)</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              placeholder="1000"
+                              className="bg-muted border-border h-8"
+                              value={config.min_volume_threshold || ''}
+                              onChange={(e) => updateSportConfig(sport, 'min_volume_threshold', parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Latest Entry (sec)</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              placeholder="300"
+                              className="bg-muted border-border h-8"
+                              value={config.min_time_remaining_seconds || ''}
+                              onChange={(e) => updateSportConfig(sport, 'min_time_remaining_seconds', parseInt(e.target.value) || 0)}
+                            />
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-muted-foreground text-xs">Absolute Entry Price</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="1"
-                            placeholder="e.g. 0.50"
-                            className="bg-muted border-border"
-                            value={config.entry_threshold_absolute}
-                            onChange={(e) => updateSportConfig(sport, 'entry_threshold_absolute', parseFloat(e.target.value) || 0)}
-                          />
-                          <p className="text-xs text-muted-foreground">Enter when price below this</p>
+                      </div>
+
+                      {/* Exit Conditions */}
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Exit Conditions</p>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Take Profit (%)</Label>
+                            <Input
+                              type="number"
+                              step="1"
+                              min="0"
+                              max="100"
+                              placeholder="20"
+                              className="bg-muted border-border h-8"
+                              value={config.take_profit_pct ? Math.round(config.take_profit_pct * 100) : ''}
+                              onChange={(e) => updateSportConfig(sport, 'take_profit_pct', (parseFloat(e.target.value) || 0) / 100)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Stop Loss (%)</Label>
+                            <Input
+                              type="number"
+                              step="1"
+                              min="0"
+                              max="100"
+                              placeholder="10"
+                              className="bg-muted border-border h-8"
+                              value={config.stop_loss_pct ? Math.round(config.stop_loss_pct * 100) : ''}
+                              onChange={(e) => updateSportConfig(sport, 'stop_loss_pct', (parseFloat(e.target.value) || 0) / 100)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Latest Exit (sec)</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              placeholder="120"
+                              className="bg-muted border-border h-8"
+                              value={config.exit_time_remaining_seconds || ''}
+                              onChange={(e) => updateSportConfig(sport, 'exit_time_remaining_seconds', parseInt(e.target.value) || 0)}
+                            />
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-muted-foreground text-xs">Take Profit (%)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="1"
-                            placeholder="e.g. 0.20"
-                            className="bg-muted border-border"
-                            value={config.take_profit_pct}
-                            onChange={(e) => updateSportConfig(sport, 'take_profit_pct', parseFloat(e.target.value) || 0)}
-                          />
-                          <p className="text-xs text-muted-foreground">20% profit = 0.20</p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-muted-foreground text-xs">Stop Loss (%)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="1"
-                            placeholder="e.g. 0.10"
-                            className="bg-muted border-border"
-                            value={config.stop_loss_pct}
-                            onChange={(e) => updateSportConfig(sport, 'stop_loss_pct', parseFloat(e.target.value) || 0)}
-                          />
-                          <p className="text-xs text-muted-foreground">10% loss = 0.10</p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-muted-foreground text-xs">Position Size (USDC)</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            placeholder="e.g. 50"
-                            className="bg-muted border-border"
-                            value={config.position_size_usdc}
-                            onChange={(e) => updateSportConfig(sport, 'position_size_usdc', parseFloat(e.target.value) || 50)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-muted-foreground text-xs">Min Time Remaining (sec)</Label>
-                          <Input
-                            type="number"
-                            min="0"
-                            placeholder="e.g. 300"
-                            className="bg-muted border-border"
-                            value={config.min_time_remaining_seconds}
-                            onChange={(e) => updateSportConfig(sport, 'min_time_remaining_seconds', parseInt(e.target.value) || 0)}
-                          />
-                          <p className="text-xs text-muted-foreground">300 = 5 minutes</p>
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-muted-foreground text-xs">Max Positions Per Game</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            max="10"
-                            placeholder="e.g. 1"
-                            className="bg-muted border-border"
-                            value={config.max_positions_per_game}
-                            onChange={(e) => updateSportConfig(sport, 'max_positions_per_game', parseInt(e.target.value) || 1)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-muted-foreground text-xs">Max Total Positions</Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            max="50"
-                            placeholder="e.g. 5"
-                            className="bg-muted border-border"
-                            value={config.max_total_positions}
-                            onChange={(e) => updateSportConfig(sport, 'max_total_positions', parseInt(e.target.value) || 5)}
-                          />
+                      </div>
+
+                      {/* Position Sizing */}
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Position & Risk</p>
+                        <div className="grid grid-cols-4 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Size ($)</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              placeholder="50"
+                              className="bg-muted border-border h-8"
+                              value={config.position_size_usdc || ''}
+                              onChange={(e) => updateSportConfig(sport, 'position_size_usdc', parseFloat(e.target.value) || 50)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Max/Game</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="10"
+                              placeholder="1"
+                              className="bg-muted border-border h-8"
+                              value={config.max_positions_per_game || ''}
+                              onChange={(e) => updateSportConfig(sport, 'max_positions_per_game', parseInt(e.target.value) || 1)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Max Total</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="50"
+                              placeholder="5"
+                              className="bg-muted border-border h-8"
+                              value={config.max_total_positions || ''}
+                              onChange={(e) => updateSportConfig(sport, 'max_total_positions', parseInt(e.target.value) || 5)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Priority</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="10"
+                              placeholder="1"
+                              className="bg-muted border-border h-8"
+                              value={config.priority || ''}
+                              onChange={(e) => updateSportConfig(sport, 'priority', parseInt(e.target.value) || 1)}
+                            />
+                          </div>
                         </div>
                       </div>
                     </AccordionContent>

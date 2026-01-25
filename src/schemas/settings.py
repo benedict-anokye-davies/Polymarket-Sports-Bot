@@ -22,6 +22,12 @@ class SportConfigCreate(BaseModel):
     max_positions_per_game: int = Field(default=1, ge=1, le=10)
     max_total_positions: int = Field(default=5, ge=1, le=50)
     min_time_remaining_seconds: int = Field(default=300, ge=0)
+    # Per-sport risk management
+    max_daily_loss_usdc: Decimal | None = Field(default=Decimal("50.00"), ge=0)
+    max_exposure_usdc: Decimal | None = Field(default=Decimal("200.00"), ge=0)
+    priority: int | None = Field(default=1, ge=1, le=10)
+    trading_hours_start: str | None = Field(default=None, pattern="^[0-2][0-9]:[0-5][0-9]$")
+    trading_hours_end: str | None = Field(default=None, pattern="^[0-2][0-9]:[0-5][0-9]$")
 
 
 class SportConfigUpdate(BaseModel):
@@ -38,6 +44,12 @@ class SportConfigUpdate(BaseModel):
     max_positions_per_game: int | None = Field(default=None, ge=1, le=10)
     max_total_positions: int | None = Field(default=None, ge=1, le=50)
     min_time_remaining_seconds: int | None = Field(default=None, ge=0)
+    # Per-sport risk management
+    max_daily_loss_usdc: Decimal | None = Field(default=None, ge=0)
+    max_exposure_usdc: Decimal | None = Field(default=None, ge=0)
+    priority: int | None = Field(default=None, ge=1, le=10)
+    trading_hours_start: str | None = Field(default=None, pattern="^[0-2][0-9]:[0-5][0-9]$")
+    trading_hours_end: str | None = Field(default=None, pattern="^[0-2][0-9]:[0-5][0-9]$")
 
 
 class SportConfigResponse(BaseModel):
@@ -55,6 +67,12 @@ class SportConfigResponse(BaseModel):
     max_positions_per_game: int
     max_total_positions: int
     min_time_remaining_seconds: int
+    # Per-sport risk management
+    max_daily_loss_usdc: Decimal | None = None
+    max_exposure_usdc: Decimal | None = None
+    priority: int | None = None
+    trading_hours_start: str | None = None
+    trading_hours_end: str | None = None
     updated_at: datetime
 
     model_config = {"from_attributes": True}
@@ -71,6 +89,11 @@ class GlobalSettingsUpdate(BaseModel):
     discord_webhook_url: str | None = None
     discord_alerts_enabled: bool | None = None
     poll_interval_seconds: int | None = Field(default=None, ge=5, le=60)
+    # Paper trading and safety
+    dry_run_mode: bool | None = None
+    emergency_stop: bool | None = None
+    max_slippage_pct: Decimal | None = Field(default=None, ge=0, le=0.5)
+    order_fill_timeout_seconds: int | None = Field(default=None, ge=10, le=300)
 
 
 class GlobalSettingsResponse(BaseModel):
@@ -84,6 +107,11 @@ class GlobalSettingsResponse(BaseModel):
     discord_webhook_url: str | None
     discord_alerts_enabled: bool
     poll_interval_seconds: int
+    # Paper trading and safety
+    dry_run_mode: bool | None = True
+    emergency_stop: bool | None = False
+    max_slippage_pct: Decimal | None = None
+    order_fill_timeout_seconds: int | None = None
     updated_at: datetime
     
     model_config = {"from_attributes": True}

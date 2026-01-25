@@ -339,6 +339,13 @@ export interface SportConfigResponse {
   max_positions_per_game: number;
   max_total_positions: number;
   min_time_remaining_seconds: number;
+  exit_time_remaining_seconds: number | null;
+  min_volume_threshold: number | null;
+  max_daily_loss_usdc: number | null;
+  max_exposure_usdc: number | null;
+  priority: number;
+  trading_hours_start: string | null;
+  trading_hours_end: string | null;
   updated_at: string;
 }
 
@@ -352,6 +359,13 @@ export interface SportConfigUpdate {
   max_positions_per_game?: number;
   max_total_positions?: number;
   min_time_remaining_seconds?: number;
+  exit_time_remaining_seconds?: number;
+  min_volume_threshold?: number;
+  max_daily_loss_usdc?: number;
+  max_exposure_usdc?: number;
+  priority?: number;
+  trading_hours_start?: string;
+  trading_hours_end?: string;
 }
 
 export interface SportConfigCreate {
@@ -365,6 +379,11 @@ export interface SportConfigCreate {
   max_positions_per_game?: number;
   max_total_positions?: number;
   min_time_remaining_seconds?: number;
+  exit_time_remaining_seconds?: number;
+  min_volume_threshold?: number;
+  max_daily_loss_usdc?: number;
+  max_exposure_usdc?: number;
+  priority?: number;
 }
 
 // Global Settings Types (matches backend schema)

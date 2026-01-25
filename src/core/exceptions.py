@@ -13,6 +13,7 @@ __all__ = [
     "NotFoundError",
     "ValidationError",
     "PolymarketAPIError",
+    "KalshiAPIError",
     "ESPNAPIError",
     "InsufficientBalanceError",
     "RateLimitError",
@@ -79,6 +80,15 @@ class PolymarketAPIError(AppException):
     """
     status_code = 502
     default_message = "Polymarket API error"
+
+
+class KalshiAPIError(AppException):
+    """
+    Raised when Kalshi API returns an error or fails.
+    5xx responses, timeouts, connection errors.
+    """
+    status_code = 502
+    default_message = "Kalshi API error"
 
 
 class ESPNAPIError(AppException):
