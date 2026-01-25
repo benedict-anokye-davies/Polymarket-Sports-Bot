@@ -32,27 +32,42 @@ const queryClient = new QueryClient({
   },
 });
 
-// Protected route wrapper
-function ProtectedRoute({ children, requireOnboarding = true }: { children: React.ReactNode; requireOnboarding?: boolean }) {
+// Protected route wrapper - requires authentication
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useAuthStore();
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
   
-  // Skip onboarding check - allow direct dashboard access for demo
-  // if (requireOnboarding && user && !user.onboarding_completed) {
-  //   return <Navigate to="/onboarding" replace />;
-  // }
+  // Redirect to onboarding if not completed
+  if (user && !user.onboarding_completed) {
+    return <Navigate to="/onboarding" replace />;
+  }
+  
+  return <>{children}</>;
+}
+
+// Onboarding route - requires auth but allows incomplete onboarding
+function OnboardingRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuthStore();
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
   
   return <>{children}</>;
 }
 
 // Public route wrapper (redirects to dashboard if authenticated)
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   
   if (isAuthenticated) {
+    // If onboarding not complete, redirect there first
+    if (user && !user.onboarding_completed) {
+      return <Navigate to="/onboarding" replace />;
+    }
     return <Navigate to="/dashboard" replace />;
   }
   
@@ -67,17 +82,23 @@ const App = () => (
       <ErrorBoundary>
       <BrowserRouter>
         <Routes>
+          {/* Public routes */}
           <Route path="/" element={<Index />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/bot" element={<BotConfig />} />
-          <Route path="/markets" element={<Markets />} />
-          <Route path="/positions" element={<Positions />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/logs" element={<Logs />} />
+          <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+          <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+          
+          {/* Onboarding - requires auth but not completed onboarding */}
+          <Route path="/onboarding" element={<OnboardingRoute><Onboarding /></OnboardingRoute>} />
+          
+          {/* Protected routes - require auth and completed onboarding */}
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/bot" element={<ProtectedRoute><BotConfig /></ProtectedRoute>} />
+          <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
+          <Route path="/positions" element={<ProtectedRoute><Positions /></ProtectedRoute>} />
+          <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
+          
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

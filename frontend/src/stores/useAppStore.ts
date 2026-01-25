@@ -17,10 +17,17 @@ interface ConnectionState {
   lastHeartbeat: Date | null;
 }
 
+interface TourState {
+  isRunning: boolean;
+  currentPage: 'dashboard' | 'bot-config' | null;
+  stepIndex: number;
+}
+
 interface AppState {
   wallet: WalletState;
   bot: BotState;
   connection: ConnectionState;
+  tour: TourState;
   sidebarCollapsed: boolean;
   
   // Actions
@@ -31,6 +38,10 @@ interface AppState {
   setSseConnected: (connected: boolean) => void;
   toggleSidebar: () => void;
   updateLastUpdate: () => void;
+  startTour: () => void;
+  stopTour: () => void;
+  setTourPage: (page: 'dashboard' | 'bot-config' | null) => void;
+  setTourStep: (index: number) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -47,6 +58,11 @@ export const useAppStore = create<AppState>((set) => ({
   connection: {
     sseConnected: false,
     lastHeartbeat: null,
+  },
+  tour: {
+    isRunning: false,
+    currentPage: null,
+    stepIndex: 0,
   },
   sidebarCollapsed: false,
 
@@ -85,5 +101,25 @@ export const useAppStore = create<AppState>((set) => ({
   updateLastUpdate: () =>
     set((state) => ({
       bot: { ...state.bot, lastUpdate: new Date() },
+    })),
+
+  startTour: () =>
+    set((state) => ({
+      tour: { ...state.tour, isRunning: true, currentPage: 'dashboard', stepIndex: 0 },
+    })),
+
+  stopTour: () =>
+    set((state) => ({
+      tour: { ...state.tour, isRunning: false, currentPage: null, stepIndex: 0 },
+    })),
+
+  setTourPage: (page) =>
+    set((state) => ({
+      tour: { ...state.tour, currentPage: page },
+    })),
+
+  setTourStep: (index) =>
+    set((state) => ({
+      tour: { ...state.tour, stepIndex: index },
     })),
 }));

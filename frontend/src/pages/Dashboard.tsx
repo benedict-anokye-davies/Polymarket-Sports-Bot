@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Wallet, TrendingUp, Briefcase, Eye, Loader2 } from 'lucide-react';
+import { Wallet, TrendingUp, Briefcase, Eye, Loader2, FlaskConical, HelpCircle } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { PriceChart } from '@/components/dashboard/PriceChart';
@@ -7,11 +7,16 @@ import { LiveGames } from '@/components/dashboard/LiveGames';
 import { OrderBook } from '@/components/dashboard/OrderBook';
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton';
 import { apiClient, DashboardStats, ActivityLog } from '@/api/client';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/stores/useAppStore';
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isPaperTrading, setIsPaperTrading] = useState(true);
+  const { startTour } = useAppStore();
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -20,6 +25,14 @@ export default function Dashboard() {
         const data = await apiClient.getDashboardStats();
         setStats(data);
         setError(null);
+        
+        // Check paper trading status
+        try {
+          const botStatus = await apiClient.getBotStatus();
+          setIsPaperTrading(botStatus.paper_trading ?? true);
+        } catch (e) {
+          // Default to paper trading if can't fetch
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
         // Set default values on error
@@ -52,12 +65,54 @@ export default function Dashboard() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Page Header */}
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Real-time overview of your trading activity
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Real-time overview of your trading activity
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Start Tour Button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={startTour}
+              className="gap-2"
+              data-tour="quick-actions"
+            >
+              <HelpCircle className="w-4 h-4" />
+              Take a Tour
+            </Button>
+            {/* Paper Trading Badge */}
+            <div data-tour="bot-status">
+              {isPaperTrading ? (
+                <Badge variant="outline" className="bg-success/10 text-success border-success/20 flex items-center gap-2 px-3 py-1">
+                  <FlaskConical className="w-4 h-4" />
+                  Paper Trading Mode
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 flex items-center gap-2 px-3 py-1">
+                  <TrendingUp className="w-4 h-4" />
+                  Live Trading
+                </Badge>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Paper Trading Info Banner */}
+        {isPaperTrading && (
+          <div className="bg-success/10 border border-success/20 rounded-lg p-4 flex items-start gap-3">
+            <FlaskConical className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-foreground">Paper Trading Active</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                All trades are simulated - no real money is being used. Go to Bot Config to start paper trading and see how the bot performs.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Error Banner */}
         {error && (
@@ -71,7 +126,7 @@ export default function Dashboard() {
         ) : (
         <>
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" data-tour="dashboard-stats">
           <StatCard
             label="Portfolio Value"
             value={loading ? '...' : formatCurrency(stats?.balance_usdc ?? 0)}

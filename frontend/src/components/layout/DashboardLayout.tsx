@@ -4,13 +4,14 @@ import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
 import { useAppStore } from '@/stores/useAppStore';
 import { apiClient } from '@/api/client';
+import { AppTour } from '@/components/AppTour';
 
 interface DashboardLayoutProps {
   children: ReactNode;
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { sidebarCollapsed, setWalletConnected, setBotStatus } = useAppStore();
+  const { sidebarCollapsed, setWalletConnected, setBotStatus, tour, stopTour } = useAppStore();
 
   // Initialize wallet and bot status on mount
   useEffect(() => {
@@ -44,6 +45,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           {children}
         </main>
       </div>
+      
+      {/* App Tour */}
+      <AppTour 
+        run={tour.isRunning} 
+        onComplete={stopTour}
+        startStep={tour.stepIndex}
+      />
     </div>
   );
 }

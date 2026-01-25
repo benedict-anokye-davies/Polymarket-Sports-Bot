@@ -443,6 +443,7 @@ export default function BotConfig() {
               variant={botEnabled ? 'destructive' : 'default'}
               disabled={isLoading || selectedGames.size === 0 || walletConnected === false}
               className="gap-2"
+              data-tour="start-bot"
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -479,7 +480,7 @@ export default function BotConfig() {
 
         {/* Simulation Mode Banner */}
         {simulationMode && (
-          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg" data-tour="simulation-toggle">
             <div className="flex items-start gap-3">
               <FlaskConical className="w-5 h-5 text-yellow-400 mt-0.5" />
               <div>
@@ -529,7 +530,7 @@ export default function BotConfig() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Sport Selector */}
-                <div className="space-y-2">
+                <div className="space-y-2" data-tour="sport-selector">
                   <Label>Sport</Label>
                   <Select value={selectedSport} onValueChange={handleSportChange}>
                     <SelectTrigger>
@@ -576,7 +577,7 @@ export default function BotConfig() {
                 </div>
 
                 {/* Games List - Multi-select with team selection */}
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1" data-tour="games-list">
                   {isLoadingGames ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -741,7 +742,7 @@ export default function BotConfig() {
           </div>
 
           {/* Right Column - Trading Parameters */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2" data-tour="trading-params">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">

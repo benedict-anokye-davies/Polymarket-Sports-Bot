@@ -20,7 +20,7 @@ from src.schemas.common import MessageResponse
 router = APIRouter(prefix="/onboarding", tags=["Onboarding"])
 
 
-TOTAL_ONBOARDING_STEPS = 3
+TOTAL_ONBOARDING_STEPS = 4
 
 ONBOARDING_STEPS = [
     OnboardingStepData(
@@ -45,6 +45,13 @@ ONBOARDING_STEPS = [
         is_completed=False,
         requires_input=True,
         input_fields=["max_daily_loss", "max_exposure"]
+    ),
+    OnboardingStepData(
+        step_number=4,
+        title="Tour & Demo",
+        description="Learn how the bot works and try paper trading",
+        is_completed=False,
+        requires_input=False
     ),
 ]
 

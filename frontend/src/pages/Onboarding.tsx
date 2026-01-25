@@ -13,7 +13,11 @@ import {
   TestTube2,
   Eye,
   EyeOff,
-  Loader2
+  Loader2,
+  Play,
+  FlaskConical,
+  BookOpen,
+  Rocket
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -24,8 +28,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/api/client';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useAppStore } from '@/stores/useAppStore';
 
-const TOTAL_STEPS = 3;
+const TOTAL_STEPS = 4;
 
 // Supported platforms
 const PLATFORMS = [
@@ -334,7 +339,7 @@ function RiskStep({ onNext, onBack, data, setData, loading }: StepProps) {
       className="space-y-6"
     >
       <div className="text-center">
-        <div className="w-16 h-16 rounded-xl bg-warning/10 flex items-center justify-center mx-auto mb-4">
+        <div className="w-16 h-16 rounded-xl bg-warning/10 flex items-center justify-content mx-auto mb-4">
           <Shield className="w-8 h-8 text-warning" />
         </div>
         <h2 className="text-xl font-semibold text-foreground mb-1">Risk Management</h2>
@@ -402,9 +407,92 @@ function RiskStep({ onNext, onBack, data, setData, loading }: StepProps) {
           className="flex-1 bg-primary hover:bg-primary/90"
           disabled={loading}
         >
+          Continue
+          <ChevronRight className="w-4 h-4 ml-2" />
+        </Button>
+      </div>
+    </motion.div>
+  );
+}
+
+// Step 4: Tour & Paper Trading Demo
+function TourStep({ onNext, onBack, loading }: { onNext: () => void; onBack: () => void; loading: boolean }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="space-y-6"
+    >
+      <div className="text-center">
+        <div className="w-16 h-16 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+          <Rocket className="w-8 h-8 text-primary" />
+        </div>
+        <h2 className="text-xl font-semibold text-foreground mb-1">You're All Set!</h2>
+        <p className="text-sm text-muted-foreground">Let's take a quick tour and try paper trading</p>
+      </div>
+
+      {/* How it works */}
+      <div className="bg-muted/30 rounded-lg p-4 border border-border space-y-3">
+        <h3 className="font-medium text-foreground flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-primary" />
+          How the Bot Works
+        </h3>
+        <ol className="text-sm text-muted-foreground space-y-2 list-decimal pl-4">
+          <li><strong>Select Games:</strong> Choose which sports games you want to trade</li>
+          <li><strong>Set Strategy:</strong> Configure probability thresholds and position sizes</li>
+          <li><strong>Monitor:</strong> Bot watches live game data and market odds in real-time</li>
+          <li><strong>Auto-Trade:</strong> When odds drop to your threshold, bot enters position</li>
+          <li><strong>Exit:</strong> Bot exits at take-profit or stop-loss automatically</li>
+        </ol>
+      </div>
+
+      {/* Paper Trading Explanation */}
+      <div className="bg-success/10 border border-success/20 rounded-lg p-4">
+        <div className="flex gap-3">
+          <FlaskConical className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-foreground">Paper Trading Mode</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Paper trading is <strong>enabled by default</strong>. This means all trades are simulated - 
+              no real money is used. You can test strategies, see how the bot performs, and gain 
+              confidence before switching to live trading.
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              <span className="text-xs text-success font-medium">Safe to experiment!</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* What's Next */}
+      <div className="bg-info/10 border border-info/20 rounded-lg p-4">
+        <div className="flex gap-3">
+          <Play className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-foreground">Try Your First Demo Trade</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              After entering the dashboard, go to <strong>Bot Config</strong>, select a game, 
+              and start the bot with paper trading ON. Watch it monitor odds and simulate trades!
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <Button variant="outline" onClick={onBack} className="flex-1 border-border">
+          <ChevronLeft className="w-4 h-4 mr-2" />
+          Back
+        </Button>
+        <Button
+          onClick={onNext}
+          className="flex-1 bg-primary hover:bg-primary/90"
+          disabled={loading}
+        >
           {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
           Launch Dashboard
-          <ChevronRight className="w-4 h-4 ml-2" />
+          <Rocket className="w-4 h-4 ml-2" />
         </Button>
       </div>
     </motion.div>
@@ -415,6 +503,7 @@ export default function Onboarding() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { refreshUser, setOnboardingCompleted } = useAuthStore();
+  const { startTour } = useAppStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
@@ -440,8 +529,8 @@ export default function Onboarding() {
         bot_enabled: true,
       });
 
-      // Complete onboarding step 3
-      await apiClient.completeOnboardingStep(3, {
+      // Complete onboarding step 4
+      await apiClient.completeOnboardingStep(4, {
         platform: data.platform,
       });
 
@@ -453,7 +542,11 @@ export default function Onboarding() {
         description: 'Onboarding complete! Welcome to your dashboard.',
       });
 
+      // Navigate first, then start tour with a delay
       navigate('/dashboard');
+      setTimeout(() => {
+        startTour();
+      }, 500);
     } catch (error) {
       console.error('Failed to save onboarding data:', error);
       toast({
@@ -516,6 +609,7 @@ export default function Onboarding() {
               {currentStep === 1 && <WelcomeStep key="welcome" onNext={handleNext} />}
               {currentStep === 2 && <WalletStep key="wallet" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
               {currentStep === 3 && <RiskStep key="risk" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
+              {currentStep === 4 && <TourStep key="tour" onNext={handleNext} onBack={handleBack} loading={loading} />}
             </AnimatePresence>
           </CardContent>
         </Card>

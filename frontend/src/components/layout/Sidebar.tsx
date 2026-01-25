@@ -53,13 +53,15 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto scrollbar-thin">
+      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto scrollbar-thin" data-tour="sidebar">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
+          const isBotConfig = item.path === '/bot';
           return (
             <NavLink
               key={item.path}
               to={item.path}
+              data-tour={isBotConfig ? 'bot-config-link' : undefined}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group relative',
                 isActive
