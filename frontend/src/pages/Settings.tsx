@@ -20,6 +20,7 @@ import { useSportConfigs, useGlobalSettings, useUpdateSportConfig, useUpdateGlob
 
 // Wallet credentials interface
 interface WalletCredentials {
+  platform: 'kalshi' | 'polymarket';
   api_key: string;
   api_secret: string;
   api_passphrase: string;
@@ -49,6 +50,7 @@ export default function Settings() {
 
   // Wallet credentials
   const [wallet, setWallet] = useState<WalletCredentials>({
+    platform: 'kalshi',
     api_key: '',
     api_secret: '',
     api_passphrase: '',
@@ -155,10 +157,21 @@ export default function Settings() {
   };
 
   const handleTestConnection = async () => {
-    if (!wallet.api_key || !wallet.funder_address) {
+    const isKalshi = wallet.platform === 'kalshi';
+
+    if (isKalshi && (!wallet.api_key || !wallet.api_secret)) {
       toast({
         title: 'Error',
-        description: 'Please enter API Key and Wallet Address.',
+        description: 'Please enter API Key and API Secret.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!isKalshi && (!wallet.api_key || !wallet.funder_address)) {
+      toast({
+        title: 'Error',
+        description: 'Please enter Private Key and Wallet Address.',
         variant: 'destructive',
       });
       return;
@@ -166,11 +179,16 @@ export default function Settings() {
 
     try {
       setTestingConnection(true);
-      await apiClient.connectWallet(wallet.api_key, wallet.funder_address, 1);
+      await apiClient.connectWallet(wallet.platform, {
+        apiKey: isKalshi ? wallet.api_key : undefined,
+        apiSecret: isKalshi ? wallet.api_secret : undefined,
+        privateKey: !isKalshi ? wallet.api_key : undefined,
+        funderAddress: !isKalshi ? wallet.funder_address : undefined,
+      });
       setWalletConnected(true);
       toast({
         title: 'Success',
-        description: 'Wallet connection successful.',
+        description: `${isKalshi ? 'Kalshi' : 'Polymarket'} connection successful.`,
       });
     } catch (error) {
       toast({

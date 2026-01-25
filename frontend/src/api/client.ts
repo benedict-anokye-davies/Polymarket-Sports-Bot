@@ -365,13 +365,23 @@ class ApiClient {
     });
   }
 
-  async connectWallet(privateKey: string, funderAddress: string, signatureType: number): Promise<{ message: string }> {
+  async connectWallet(
+    platform: 'kalshi' | 'polymarket',
+    credentials: {
+      apiKey?: string;
+      apiSecret?: string;
+      privateKey?: string;
+      funderAddress?: string;
+    }
+  ): Promise<{ message: string }> {
     return this.request('/onboarding/wallet/connect', {
       method: 'POST',
       body: JSON.stringify({
-        private_key: privateKey,
-        funder_address: funderAddress,
-        signature_type: signatureType,
+        platform,
+        api_key: credentials.apiKey,
+        api_secret: credentials.apiSecret,
+        private_key: credentials.privateKey,
+        funder_address: credentials.funderAddress,
       }),
     });
   }
@@ -792,6 +802,8 @@ export interface GameSelection {
   home_team: string;
   away_team: string;
   start_time: string;
+  // Which team to bet on: 'home', 'away', or 'both'
+  selected_side?: 'home' | 'away' | 'both';
   market_ticker?: string;
   token_id_yes?: string;
   token_id_no?: string;
@@ -800,6 +812,8 @@ export interface GameSelection {
 export interface BotConfigRequest {
   sport: string;
   game: GameSelection;
+  // Additional games for multi-sport support
+  additional_games?: GameSelection[];
   parameters: TradingParameters;
   simulation_mode?: boolean;
 }

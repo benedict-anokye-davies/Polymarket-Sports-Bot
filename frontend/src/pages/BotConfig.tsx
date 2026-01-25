@@ -67,6 +67,13 @@ interface GameData {
   volume: number;
 }
 
+// Selected game with side preference
+interface SelectedGame {
+  game: GameData;
+  sport: string;
+  side: 'home' | 'away';  // Which team to bet on
+}
+
 // Trading parameters interface (matches API TradingParameters)
 interface TradingParams {
   probabilityDrop: number;      // % drop from pregame to trigger entry
@@ -114,13 +121,14 @@ const fromApiParams = (params: TradingParameters): TradingParams => ({
 export default function BotConfig() {
   const [botEnabled, setBotEnabled] = useState(false);
   const [selectedSport, setSelectedSport] = useState<string>('nba');
-  const [selectedGames, setSelectedGames] = useState<Set<string>>(new Set());
+  // Changed: Now tracks game ID -> SelectedGame with side preference
+  const [selectedGames, setSelectedGames] = useState<Map<string, SelectedGame>>(new Map());
   const [tradingParams, setTradingParams] = useState<TradingParams>(DEFAULT_PARAMS);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  
+
   // Simulation mode - test bot without real money
   const [simulationMode, setSimulationMode] = useState(true);
 
@@ -189,36 +197,57 @@ export default function BotConfig() {
   // Get current sport config
   const currentSport = SPORTS.find(s => s.id === selectedSport);
 
-  // Get selected games data
-  const selectedGamesData = availableGames.filter(g => selectedGames.has(g.id));
+  // Get selected games data (from current sport only for display)
+  const selectedGamesData = Array.from(selectedGames.values());
 
-  // Toggle game selection
-  const toggleGameSelection = (gameId: string) => {
+  // Toggle game selection with default side = home
+  const toggleGameSelection = (gameId: string, game: GameData) => {
     setSelectedGames(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(gameId)) {
-        newSet.delete(gameId);
+      const newMap = new Map(prev);
+      if (newMap.has(gameId)) {
+        newMap.delete(gameId);
       } else {
-        newSet.add(gameId);
+        // Default to home team when first selecting
+        newMap.set(gameId, {
+          game,
+          sport: selectedSport,
+          side: 'home'
+        });
       }
-      return newSet;
+      return newMap;
     });
   };
 
-  // Select all games
+  // Change which team is selected for a game
+  const changeSideSelection = (gameId: string, side: 'home' | 'away') => {
+    setSelectedGames(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(gameId);
+      if (existing) {
+        newMap.set(gameId, { ...existing, side });
+      }
+      return newMap;
+    });
+  };
+
+  // Select all games (default to home team)
   const selectAllGames = () => {
-    setSelectedGames(new Set(availableGames.map(g => g.id)));
+    const newMap = new Map<string, SelectedGame>();
+    availableGames.forEach(g => {
+      newMap.set(g.id, { game: g, sport: selectedSport, side: 'home' });
+    });
+    setSelectedGames(newMap);
   };
 
   // Clear all selections
   const clearAllGames = () => {
-    setSelectedGames(new Set());
+    setSelectedGames(new Map());
   };
 
-  // Handle sport change
+  // Handle sport change - NOTE: Don't clear games from other sports!
   const handleSportChange = (sportId: string) => {
     setSelectedSport(sportId);
-    setSelectedGames(new Set()); // Reset game selection
+    // Don't clear selections - this allows multi-sport support
     setError(null);
     setSuccessMessage(null);
   };
@@ -234,37 +263,54 @@ export default function BotConfig() {
       setError('Please select at least one game');
       return;
     }
-    
+
     setIsSaving(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     try {
-      // Save config for the first selected game (API will handle multiple games)
-      const firstGame = selectedGamesData[0];
-      if (firstGame) {
+      // Get all selected games with their side preferences
+      const allSelectedGames = Array.from(selectedGames.values());
+      const firstSelection = allSelectedGames[0];
+
+      if (firstSelection) {
+        // Build additional games list for multi-sport support
+        const additionalGames = allSelectedGames.slice(1).map(sel => ({
+          game_id: sel.game.id,
+          sport: sel.sport,
+          home_team: sel.game.homeTeam,
+          away_team: sel.game.awayTeam,
+          start_time: sel.game.startTime,
+          selected_side: sel.side,  // Include which team to bet on
+        }));
+
         await apiClient.saveBotConfig({
-          sport: selectedSport,
+          sport: firstSelection.sport,
           game: {
-            game_id: firstGame.id,
-            sport: selectedSport,
-            home_team: firstGame.homeTeam,
-            away_team: firstGame.awayTeam,
-            start_time: firstGame.startTime,
+            game_id: firstSelection.game.id,
+            sport: firstSelection.sport,
+            home_team: firstSelection.game.homeTeam,
+            away_team: firstSelection.game.awayTeam,
+            start_time: firstSelection.game.startTime,
+            selected_side: firstSelection.side,  // Include which team to bet on
           },
+          additional_games: additionalGames.length > 0 ? additionalGames : undefined,
           parameters: toApiParams(tradingParams),
           simulation_mode: simulationMode,
         });
       }
       const modeStr = simulationMode ? 'Paper Trading' : 'Live Trading';
-      setSuccessMessage(`Configuration saved (${modeStr}) for ${selectedGames.size} game${selectedGames.size > 1 ? 's' : ''}!`);
-      setTimeout(() => setSuccessMessage(null), 3000);
+      const teamsStr = allSelectedGames.map(s =>
+        s.side === 'home' ? s.game.homeTeam : s.game.awayTeam
+      ).join(', ');
+      setSuccessMessage(`Configuration saved (${modeStr}) betting on: ${teamsStr}`);
+      setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
       setIsSaving(false);
     }
-  }, [selectedSport, selectedGames.size, selectedGamesData, tradingParams, simulationMode]);
+  }, [selectedGames, tradingParams, simulationMode]);
 
   // Toggle bot on/off
   const handleToggleBot = useCallback(async () => {
@@ -272,28 +318,41 @@ export default function BotConfig() {
       setError('Please select at least one game');
       return;
     }
-    
+
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      // First save the config with simulation mode
-      const firstGame = selectedGamesData[0];
-      if (firstGame) {
+      // First save the config with simulation mode and selected sides
+      const allSelectedGames = Array.from(selectedGames.values());
+      const firstSelection = allSelectedGames[0];
+
+      if (firstSelection) {
+        const additionalGames = allSelectedGames.slice(1).map(sel => ({
+          game_id: sel.game.id,
+          sport: sel.sport,
+          home_team: sel.game.homeTeam,
+          away_team: sel.game.awayTeam,
+          start_time: sel.game.startTime,
+          selected_side: sel.side,
+        }));
+
         await apiClient.saveBotConfig({
-          sport: selectedSport,
+          sport: firstSelection.sport,
           game: {
-            game_id: firstGame.id,
-            sport: selectedSport,
-            home_team: firstGame.homeTeam,
-            away_team: firstGame.awayTeam,
-            start_time: firstGame.startTime,
+            game_id: firstSelection.game.id,
+            sport: firstSelection.sport,
+            home_team: firstSelection.game.homeTeam,
+            away_team: firstSelection.game.awayTeam,
+            start_time: firstSelection.game.startTime,
+            selected_side: firstSelection.side,
           },
+          additional_games: additionalGames.length > 0 ? additionalGames : undefined,
           parameters: toApiParams(tradingParams),
           simulation_mode: simulationMode,
         });
       }
-      
+
       // Then start/stop the bot
       if (botEnabled) {
         await apiClient.stopBot();
@@ -303,15 +362,18 @@ export default function BotConfig() {
         await apiClient.startBot();
         setBotEnabled(true);
         const modeStr = simulationMode ? '(Paper Trading)' : '(Live Trading)';
-        setSuccessMessage(`Bot started ${modeStr} monitoring ${selectedGames.size} game${selectedGames.size > 1 ? 's' : ''}`);
+        const teamsStr = allSelectedGames.map(s =>
+          s.side === 'home' ? s.game.homeTeam : s.game.awayTeam
+        ).join(', ');
+        setSuccessMessage(`Bot started ${modeStr} betting on: ${teamsStr}`);
       }
-      setTimeout(() => setSuccessMessage(null), 3000);
+      setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to toggle bot');
     } finally {
       setIsLoading(false);
     }
-  }, [botEnabled, selectedGames.size, selectedGamesData, selectedSport, tradingParams, simulationMode]);
+  }, [botEnabled, selectedGames, tradingParams, simulationMode]);
 
   return (
     <DashboardLayout>
@@ -476,8 +538,8 @@ export default function BotConfig() {
                   </div>
                 </div>
 
-                {/* Games List - Multi-select with checkboxes */}
-                <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                {/* Games List - Multi-select with team selection */}
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
                   {isLoadingGames ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -490,55 +552,108 @@ export default function BotConfig() {
                       <p className="text-xs mt-1">Try selecting a different sport</p>
                     </div>
                   ) : (
-                    availableGames.map(game => (
-                      <div
-                        key={game.id}
-                        onClick={() => toggleGameSelection(game.id)}
-                        className={cn(
-                          'p-3 rounded-lg border cursor-pointer transition-all',
-                          selectedGames.has(game.id)
-                            ? 'bg-primary/10 border-primary/50'
-                            : 'bg-muted/30 border-border hover:border-primary/30'
-                        )}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Badge 
-                                variant={game.status === 'live' ? 'default' : 'secondary'}
-                                className={cn(
-                                  'text-xs',
-                                  game.status === 'live' && 'bg-red-500/20 text-red-400 animate-pulse'
+                    availableGames.map(game => {
+                      const selection = selectedGames.get(game.id);
+                      const isSelected = !!selection;
+
+                      return (
+                        <div
+                          key={game.id}
+                          className={cn(
+                            'p-3 rounded-lg border transition-all',
+                            isSelected
+                              ? 'bg-primary/10 border-primary/50'
+                              : 'bg-muted/30 border-border hover:border-primary/30'
+                          )}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div
+                              className="flex-1 cursor-pointer"
+                              onClick={() => toggleGameSelection(game.id, game)}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge
+                                  variant={game.status === 'live' ? 'default' : 'secondary'}
+                                  className={cn(
+                                    'text-xs',
+                                    game.status === 'live' && 'bg-red-500/20 text-red-400 animate-pulse'
+                                  )}
+                                >
+                                  {game.status === 'live' ? 'LIVE' : game.status === 'final' ? 'Final' : 'Upcoming'}
+                                </Badge>
+                                {game.status === 'live' && game.currentPeriod && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {game.currentPeriod} {game.clock}
+                                  </span>
                                 )}
-                              >
-                                {game.status === 'live' ? 'LIVE' : game.status === 'final' ? 'Final' : 'Upcoming'}
-                              </Badge>
-                              {game.status === 'live' && game.currentPeriod && (
-                                <span className="text-xs text-muted-foreground">
-                                  {game.currentPeriod} {game.clock}
-                                </span>
+                              </div>
+                              <p className="font-medium text-sm">
+                                {game.awayTeam} @ {game.homeTeam}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {game.startTime}
+                              </p>
+                            </div>
+                            <div
+                              className={cn(
+                                'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors mt-1 cursor-pointer',
+                                isSelected
+                                  ? 'bg-primary border-primary'
+                                  : 'border-muted-foreground/30'
+                              )}
+                              onClick={() => toggleGameSelection(game.id, game)}
+                            >
+                              {isSelected && (
+                                <Check className="w-3 h-3 text-primary-foreground" />
                               )}
                             </div>
-                            <p className="font-medium text-sm">
-                              {game.awayTeam} @ {game.homeTeam}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {game.startTime}
-                            </p>
                           </div>
-                          <div className={cn(
-                            'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors mt-1',
-                            selectedGames.has(game.id)
-                              ? 'bg-primary border-primary'
-                              : 'border-muted-foreground/30'
-                          )}>
-                            {selectedGames.has(game.id) && (
-                              <Check className="w-3 h-3 text-primary-foreground" />
-                            )}
-                          </div>
+
+                          {/* Team Selection - shown when game is selected */}
+                          {isSelected && (
+                            <div className="mt-3 pt-3 border-t border-primary/20">
+                              <p className="text-xs text-muted-foreground mb-2">Bet on which team?</p>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    changeSideSelection(game.id, 'away');
+                                  }}
+                                  className={cn(
+                                    'flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all border',
+                                    selection?.side === 'away'
+                                      ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
+                                      : 'bg-muted/50 border-border text-muted-foreground hover:border-blue-500/30'
+                                  )}
+                                >
+                                  {game.awayTeam}
+                                  {selection?.side === 'away' && (
+                                    <Check className="w-3 h-3 inline ml-1" />
+                                  )}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    changeSideSelection(game.id, 'home');
+                                  }}
+                                  className={cn(
+                                    'flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all border',
+                                    selection?.side === 'home'
+                                      ? 'bg-green-500/20 border-green-500/50 text-green-400'
+                                      : 'bg-muted/50 border-border text-muted-foreground hover:border-green-500/30'
+                                  )}
+                                >
+                                  {game.homeTeam}
+                                  {selection?.side === 'home' && (
+                                    <Check className="w-3 h-3 inline ml-1" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
 
@@ -551,9 +666,22 @@ export default function BotConfig() {
                         {selectedGames.size} game{selectedGames.size > 1 ? 's' : ''} selected
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Bot will monitor all selected games simultaneously
-                    </p>
+                    <div className="mt-2 space-y-1">
+                      {Array.from(selectedGames.values()).map(sel => (
+                        <div key={sel.game.id} className="text-xs flex items-center gap-1">
+                          <span className="text-muted-foreground">{sel.sport.toUpperCase()}:</span>
+                          <span className={cn(
+                            'font-medium',
+                            sel.side === 'home' ? 'text-green-400' : 'text-blue-400'
+                          )}>
+                            {sel.side === 'home' ? sel.game.homeTeam : sel.game.awayTeam}
+                          </span>
+                          <span className="text-muted-foreground">
+                            ({sel.side === 'home' ? 'home' : 'away'})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -891,26 +1019,34 @@ export default function BotConfig() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-primary" />
-                <span className="font-medium">Active Game Selection</span>
+                <span className="font-medium">Active Betting Selection</span>
               </div>
-              <Badge variant="outline">{selectedGames.size} game{selectedGames.size !== 1 ? 's' : ''}</Badge>
+              <Badge variant="outline">{selectedGames.size} team{selectedGames.size !== 1 ? 's' : ''}</Badge>
             </div>
             <div className="flex flex-wrap gap-2">
-              {selectedGamesData.map(game => (
-                <Badge 
-                  key={game.id} 
+              {selectedGamesData.map(sel => (
+                <Badge
+                  key={sel.game.id}
                   variant="secondary"
-                  className="flex items-center gap-1 pr-1"
+                  className={cn(
+                    'flex items-center gap-1 pr-1',
+                    sel.side === 'home' ? 'bg-green-500/10 border-green-500/30' : 'bg-blue-500/10 border-blue-500/30'
+                  )}
                 >
+                  <span className="text-muted-foreground text-xs mr-1">{sel.sport.toUpperCase()}</span>
                   <span className={cn(
-                    game.status === 'live' && 'text-red-400'
+                    'font-medium',
+                    sel.game.status === 'live' && 'text-red-400'
                   )}>
-                    {game.awayTeam} @ {game.homeTeam}
+                    {sel.side === 'home' ? sel.game.homeTeam : sel.game.awayTeam}
+                  </span>
+                  <span className="text-muted-foreground text-xs ml-1">
+                    vs {sel.side === 'home' ? sel.game.awayTeam : sel.game.homeTeam}
                   </span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleGameSelection(game.id);
+                      toggleGameSelection(sel.game.id, sel.game);
                     }}
                     className="ml-1 hover:bg-muted rounded p-0.5"
                   >

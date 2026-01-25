@@ -78,15 +78,32 @@ async def start_bot(
 ) -> MessageResponse:
     """
     Starts the trading bot for the authenticated user.
-    Validates wallet connection and initializes bot runner.
+    Validates credentials and initializes bot runner.
+    Supports both Kalshi and Polymarket platforms.
     """
     credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
-    
+
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Wallet not connected. Please complete onboarding."
+            detail="No credentials found. Please complete onboarding."
         )
+
+    platform = credentials.get("platform", "polymarket")
+
+    # Validate platform-specific credentials
+    if platform == "kalshi":
+        if not credentials.get("api_key") or not credentials.get("api_secret"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Kalshi API credentials not configured. Please update in Settings."
+            )
+    else:
+        if not credentials.get("private_key") or not credentials.get("funder_address"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Polymarket wallet not connected. Please complete onboarding."
+            )
     
     # Check if already running
     status_info = get_bot_status(current_user.id)

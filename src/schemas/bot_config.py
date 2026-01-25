@@ -60,6 +60,14 @@ class GameSelection(BaseModel):
     home_team: str
     away_team: str
     start_time: str
+    # Selected side: "home", "away", or "both"
+    # When "home" - only bet if home team meets criteria
+    # When "away" - only bet if away team meets criteria
+    # When "both" - can bet on either team (legacy behavior)
+    selected_side: str = Field(
+        default="home",
+        description="Which team to bet on: 'home', 'away', or 'both'"
+    )
     market_ticker: Optional[str] = None
     token_id_yes: Optional[str] = None
     token_id_no: Optional[str] = None
@@ -67,8 +75,13 @@ class GameSelection(BaseModel):
 
 class BotConfigRequest(BaseModel):
     """Request to update bot configuration"""
-    sport: str = Field(..., description="Sport identifier (nba, nfl, etc.)")
-    game: GameSelection = Field(..., description="Selected game to trade")
+    sport: str = Field(..., description="Primary sport identifier (nba, nfl, etc.)")
+    game: GameSelection = Field(..., description="Primary selected game to trade")
+    # Support multiple games from different sports
+    additional_games: Optional[List[GameSelection]] = Field(
+        default=None,
+        description="Additional games to trade (can be from different sports)"
+    )
     parameters: TradingParameters = Field(..., description="Trading parameters")
     simulation_mode: bool = Field(default=True, description="Paper trading mode - simulate trades without real money")
 

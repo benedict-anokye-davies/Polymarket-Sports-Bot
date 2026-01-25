@@ -30,11 +30,17 @@ class OnboardingStepData(BaseModel):
 
 class WalletConnectRequest(BaseModel):
     """
-    Request to connect Polymarket wallet credentials.
-    Private key and funder address are encrypted before storage.
+    Request to connect trading platform credentials.
+    Supports both Kalshi and Polymarket platforms.
+    All sensitive data is encrypted before storage.
     """
-    private_key: str = Field(..., min_length=64, max_length=66)
-    funder_address: str = Field(..., min_length=42, max_length=42)
+    platform: str = Field(default="kalshi", description="Platform: 'kalshi' or 'polymarket'")
+    # Kalshi credentials
+    api_key: str | None = Field(default=None, description="Kalshi API Key")
+    api_secret: str | None = Field(default=None, description="Kalshi API Secret")
+    # Polymarket credentials (optional - only needed for Polymarket)
+    private_key: str | None = Field(default=None, min_length=64, max_length=66, description="Polymarket private key")
+    funder_address: str | None = Field(default=None, description="Polymarket wallet address")
 
 
 class WalletTestResponse(BaseModel):

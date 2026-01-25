@@ -114,7 +114,9 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
   const { toast } = useToast();
 
   const testConnection = async () => {
-    if (!data.apiKey || !data.apiSecret) {
+    const isKalshiPlatform = data.platform === 'kalshi';
+
+    if (isKalshiPlatform && (!data.apiKey || !data.apiSecret)) {
       toast({
         title: 'Error',
         description: 'Please enter API Key and API Secret.',
@@ -123,9 +125,23 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
       return;
     }
 
+    if (!isKalshiPlatform && (!data.apiKey || !data.funderAddress)) {
+      toast({
+        title: 'Error',
+        description: 'Please enter Private Key and Wallet Address.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setConnectionStatus('testing');
     try {
-      await apiClient.connectWallet(data.apiKey, data.funderAddress || '', 1);
+      await apiClient.connectWallet(data.platform, {
+        apiKey: isKalshiPlatform ? data.apiKey : undefined,
+        apiSecret: isKalshiPlatform ? data.apiSecret : undefined,
+        privateKey: !isKalshiPlatform ? data.apiKey : undefined,
+        funderAddress: !isKalshiPlatform ? data.funderAddress : undefined,
+      });
       setConnectionStatus('success');
       toast({
         title: 'Success',

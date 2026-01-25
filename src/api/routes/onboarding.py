@@ -124,28 +124,53 @@ async def connect_wallet(
     current_user: CurrentUser
 ) -> MessageResponse:
     """
-    Stores encrypted wallet credentials.
+    Stores encrypted trading platform credentials.
+    Supports both Kalshi and Polymarket platforms.
     """
     existing = await PolymarketAccountCRUD.get_by_user_id(db, current_user.id)
-    
+
     if existing:
         await PolymarketAccountCRUD.delete(db, current_user.id)
-    
-    await PolymarketAccountCRUD.create(
-        db,
-        user_id=current_user.id,
-        private_key=wallet_data.private_key,
-        funder_address=wallet_data.funder_address
-    )
-    
+
+    platform = wallet_data.platform.lower() if wallet_data.platform else "kalshi"
+
+    if platform == "kalshi":
+        # Kalshi only needs API key and secret
+        if not wallet_data.api_key or not wallet_data.api_secret:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Kalshi requires API Key and API Secret"
+            )
+        await PolymarketAccountCRUD.create(
+            db,
+            user_id=current_user.id,
+            platform="kalshi",
+            api_key=wallet_data.api_key,
+            api_secret=wallet_data.api_secret
+        )
+    else:
+        # Polymarket needs private key and funder address
+        if not wallet_data.private_key or not wallet_data.funder_address:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Polymarket requires private key and funder address"
+            )
+        await PolymarketAccountCRUD.create(
+            db,
+            user_id=current_user.id,
+            platform="polymarket",
+            private_key=wallet_data.private_key,
+            funder_address=wallet_data.funder_address
+        )
+
     await ActivityLogCRUD.info(
         db,
         current_user.id,
         "WALLET",
-        "Wallet credentials stored successfully"
+        f"{platform.capitalize()} credentials stored successfully"
     )
-    
-    return MessageResponse(message="Wallet credentials stored successfully")
+
+    return MessageResponse(message=f"{platform.capitalize()} credentials stored successfully")
 
 
 @router.post("/wallet/test", response_model=WalletTestResponse)

@@ -21,28 +21,35 @@ class PolymarketAccountCRUD:
     async def create(
         db: AsyncSession,
         user_id: uuid.UUID,
-        private_key: str,
-        funder_address: str,
-        platform: str = "polymarket"
+        private_key: str | None = None,
+        funder_address: str | None = None,
+        platform: str = "polymarket",
+        api_key: str | None = None,
+        api_secret: str | None = None
     ) -> PolymarketAccount:
         """
-        Creates a new Polymarket account with encrypted credentials.
-        
+        Creates a new trading account with encrypted credentials.
+
         Args:
             db: Database session
             user_id: Associated user ID
-            private_key: Wallet private key (will be encrypted)
-            funder_address: Address holding USDC funds
+            private_key: Wallet private key - required for Polymarket (will be encrypted)
+            funder_address: Address holding USDC funds - required for Polymarket
             platform: Trading platform ('polymarket' or 'kalshi')
-        
+            api_key: API key - required for Kalshi (will be encrypted)
+            api_secret: API secret - required for Kalshi (will be encrypted)
+
         Returns:
             Created PolymarketAccount instance
         """
         account = PolymarketAccount(
             user_id=user_id,
-            private_key_encrypted=encrypt_credential(private_key),
+            private_key_encrypted=encrypt_credential(private_key) if private_key else None,
             funder_address=funder_address,
-            platform=platform
+            platform=platform,
+            api_key_encrypted=encrypt_credential(api_key) if api_key else None,
+            api_secret_encrypted=encrypt_credential(api_secret) if api_secret else None,
+            is_connected=True  # Mark as connected when credentials are saved
         )
         db.add(account)
         await db.commit()
