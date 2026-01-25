@@ -612,6 +612,76 @@ async def place_manual_order(
         )
 
 
+# =============================================================================
+# Live Games from ESPN (Real-Time Data)
+# =============================================================================
+
+@router.get("/live-games/{sport}", response_model=list)
+async def get_live_espn_games(
+    sport: str,
+    current_user: OnboardedUser
+) -> list:
+    """
+    Fetch live and upcoming games directly from ESPN API.
+    Returns real-time game data including scores, periods, and times.
+    
+    Args:
+        sport: Sport identifier (nba, nfl, mlb, nhl, soccer, ncaab, etc.)
+    
+    Returns:
+        List of games with current state
+    """
+    try:
+        espn = ESPNService()
+        events = await espn.get_scoreboard(sport.lower())
+        
+        games = []
+        for event in events:
+            state = espn.parse_game_state(event, sport.lower())
+            
+            # Format for frontend consumption
+            status = 'live' if state['is_live'] else ('final' if state['is_finished'] else 'upcoming')
+            
+            # Show appropriate period info based on status
+            if status == 'upcoming':
+                current_period = 'Pre-game'
+                clock = ''
+            elif status == 'final':
+                current_period = 'Final'
+                clock = ''
+            else:
+                current_period = state['segment'].upper() if state['segment'] else ''
+                clock = state['clock_display']
+            
+            games.append({
+                'id': state['event_id'],
+                'homeTeam': state['home_team']['name'] if state['home_team'] else 'TBD',
+                'awayTeam': state['away_team']['name'] if state['away_team'] else 'TBD',
+                'homeAbbr': state['home_team']['abbreviation'] if state['home_team'] else '',
+                'awayAbbr': state['away_team']['abbreviation'] if state['away_team'] else '',
+                'homeScore': state['home_score'],
+                'awayScore': state['away_score'],
+                'startTime': state['start_time'].isoformat() if state['start_time'] else None,
+                'status': status,
+                'currentPeriod': current_period,
+                'clock': clock,
+                'name': state['name'],
+                'shortName': state['short_name'],
+                # Placeholder odds - in production these come from Polymarket/Kalshi
+                'homeOdds': 0.50,
+                'awayOdds': 0.50,
+                'volume': 0,
+            })
+        
+        await espn.close()
+        return games
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch ESPN games for {sport}: {e}")
+        # Return empty list on error so frontend can handle gracefully
+        return []
+
+
 @router.get("/markets/{platform}/{sport}", response_model=list)
 async def get_available_markets(
     platform: str,

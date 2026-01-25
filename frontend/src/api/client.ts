@@ -187,6 +187,14 @@ class ApiClient {
     return this.request(`/bot/markets/${platform}/${sport}`);
   }
 
+  /**
+   * Get live games from ESPN for a specific sport
+   * Returns real-time game data including scores, periods, times
+   */
+  async getLiveGames(sport: string): Promise<ESPNGame[]> {
+    return this.request(`/bot/live-games/${sport}`);
+  }
+
   // Trading endpoints
   async getMarkets(sport?: string): Promise<Market[]> {
     const params = sport ? `?sport=${sport}` : '';
@@ -835,6 +843,26 @@ export interface SportsMarket {
   title: string;
   status: string;
   yes_price: number;
+}
+
+// ESPN Live Game data from API
+export interface ESPNGame {
+  id: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeAbbr: string;
+  awayAbbr: string;
+  homeScore: number;
+  awayScore: number;
+  startTime: string | null;
+  status: 'upcoming' | 'live' | 'final';
+  currentPeriod: string;
+  clock: string;
+  name: string;
+  shortName: string;
+  homeOdds: number;
+  awayOdds: number;
+  volume: number;
   no_price: number;
   volume: number;
   close_time?: string;

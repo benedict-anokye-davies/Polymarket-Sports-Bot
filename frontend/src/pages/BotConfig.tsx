@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { apiClient, type TradingParameters, type BotConfigResponse } from '@/api/client';
+import { apiClient, type TradingParameters, type BotConfigResponse, type ESPNGame } from '@/api/client';
 
 // All supported sports with their configurations
 const SPORTS = [
@@ -49,8 +49,8 @@ const SPORTS = [
   { id: 'ufc', name: 'UFC', icon: '🥊', hasGameClock: true },
 ];
 
-// Mock games data - in production this comes from ESPN/API
-const MOCK_GAMES: Record<string, Array<{
+// Game type for frontend display
+interface GameData {
   id: string;
   homeTeam: string;
   awayTeam: string;
@@ -61,41 +61,7 @@ const MOCK_GAMES: Record<string, Array<{
   homeOdds: number;
   awayOdds: number;
   volume: number;
-}>> = {
-  nba: [
-    { id: 'nba-1', homeTeam: 'Lakers', awayTeam: 'Celtics', startTime: '7:30 PM ET', status: 'live', currentPeriod: 'Q2', clock: '5:23', homeOdds: 0.45, awayOdds: 0.55, volume: 125000 },
-    { id: 'nba-2', homeTeam: 'Warriors', awayTeam: 'Nets', startTime: '10:00 PM ET', status: 'upcoming', homeOdds: 0.72, awayOdds: 0.28, volume: 85000 },
-    { id: 'nba-3', homeTeam: 'Bucks', awayTeam: 'Heat', startTime: '8:00 PM ET', status: 'upcoming', homeOdds: 0.65, awayOdds: 0.35, volume: 92000 },
-  ],
-  nfl: [
-    { id: 'nfl-1', homeTeam: 'Chiefs', awayTeam: 'Bills', startTime: '4:25 PM ET', status: 'live', currentPeriod: 'Q3', clock: '8:45', homeOdds: 0.58, awayOdds: 0.42, volume: 450000 },
-    { id: 'nfl-2', homeTeam: 'Eagles', awayTeam: '49ers', startTime: '8:20 PM ET', status: 'upcoming', homeOdds: 0.48, awayOdds: 0.52, volume: 380000 },
-  ],
-  mlb: [
-    { id: 'mlb-1', homeTeam: 'Yankees', awayTeam: 'Red Sox', startTime: '7:05 PM ET', status: 'live', currentPeriod: '5th', clock: 'Top', homeOdds: 0.55, awayOdds: 0.45, volume: 65000 },
-    { id: 'mlb-2', homeTeam: 'Dodgers', awayTeam: 'Giants', startTime: '10:10 PM ET', status: 'upcoming', homeOdds: 0.62, awayOdds: 0.38, volume: 72000 },
-  ],
-  nhl: [
-    { id: 'nhl-1', homeTeam: 'Bruins', awayTeam: 'Rangers', startTime: '7:00 PM ET', status: 'live', currentPeriod: 'P2', clock: '12:34', homeOdds: 0.52, awayOdds: 0.48, volume: 45000 },
-  ],
-  soccer: [
-    { id: 'soccer-1', homeTeam: 'Man City', awayTeam: 'Liverpool', startTime: '12:30 PM ET', status: 'upcoming', homeOdds: 0.55, awayOdds: 0.45, volume: 320000 },
-    { id: 'soccer-2', homeTeam: 'Real Madrid', awayTeam: 'Barcelona', startTime: '3:00 PM ET', status: 'upcoming', homeOdds: 0.48, awayOdds: 0.52, volume: 410000 },
-  ],
-  ncaab: [
-    { id: 'ncaab-1', homeTeam: 'Duke', awayTeam: 'UNC', startTime: '9:00 PM ET', status: 'upcoming', homeOdds: 0.58, awayOdds: 0.42, volume: 125000 },
-    { id: 'ncaab-2', homeTeam: 'Kansas', awayTeam: 'Kentucky', startTime: '7:00 PM ET', status: 'live', currentPeriod: '1H', clock: '8:12', homeOdds: 0.51, awayOdds: 0.49, volume: 98000 },
-  ],
-  tennis: [
-    { id: 'tennis-1', homeTeam: 'Djokovic', awayTeam: 'Alcaraz', startTime: '11:00 AM ET', status: 'live', currentPeriod: 'Set 2', homeOdds: 0.45, awayOdds: 0.55, volume: 85000 },
-  ],
-  cricket: [
-    { id: 'cricket-1', homeTeam: 'India', awayTeam: 'Australia', startTime: '4:00 AM ET', status: 'upcoming', homeOdds: 0.52, awayOdds: 0.48, volume: 220000 },
-  ],
-  ufc: [
-    { id: 'ufc-1', homeTeam: 'Jones', awayTeam: 'Miocic', startTime: '10:00 PM ET', status: 'upcoming', homeOdds: 0.75, awayOdds: 0.25, volume: 180000 },
-  ],
-};
+}
 
 // Trading parameters interface (matches API TradingParameters)
 interface TradingParams {
@@ -167,9 +133,52 @@ export default function BotConfig() {
     loadConfig();
   }, []);
 
+  // State for real games from ESPN
+  const [availableGames, setAvailableGames] = useState<GameData[]>([]);
+  const [isLoadingGames, setIsLoadingGames] = useState(false);
+
+  // Fetch games from ESPN API when sport changes
+  const fetchGames = useCallback(async (sport: string) => {
+    setIsLoadingGames(true);
+    setError(null);
+    try {
+      const games = await apiClient.getLiveGames(sport);
+      // Transform ESPN games to our GameData format
+      const transformed: GameData[] = games.map((g) => ({
+        id: g.id,
+        homeTeam: g.homeTeam,
+        awayTeam: g.awayTeam,
+        startTime: g.startTime 
+          ? new Date(g.startTime).toLocaleString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit', 
+              timeZoneName: 'short' 
+            })
+          : 'TBD',
+        status: g.status,
+        currentPeriod: g.currentPeriod,
+        clock: g.clock,
+        homeOdds: g.homeOdds,
+        awayOdds: g.awayOdds,
+        volume: g.volume,
+      }));
+      setAvailableGames(transformed);
+    } catch (err) {
+      console.error('Failed to fetch games:', err);
+      setAvailableGames([]);
+      // Don't show error to user - just show empty list
+    } finally {
+      setIsLoadingGames(false);
+    }
+  }, []);
+
+  // Fetch games when sport changes
+  useEffect(() => {
+    fetchGames(selectedSport);
+  }, [selectedSport, fetchGames]);
+
   // Get current sport config
   const currentSport = SPORTS.find(s => s.id === selectedSport);
-  const availableGames = MOCK_GAMES[selectedSport] || [];
 
   // Get selected game details
   const selectedGameData = availableGames.find(g => g.id === selectedGame);
@@ -356,15 +365,19 @@ export default function BotConfig() {
 
                 {/* Game Selector */}
                 <div className="space-y-2">
-                  <Label>Game</Label>
-                  <Select value={selectedGame} onValueChange={setSelectedGame}>
+                  <Label>Game {isLoadingGames && <span className="text-xs text-muted-foreground">(loading...)</span>}</Label>
+                  <Select value={selectedGame} onValueChange={setSelectedGame} disabled={isLoadingGames}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select game" />
+                      <SelectValue placeholder={isLoadingGames ? "Loading games..." : "Select game"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {availableGames.length === 0 ? (
+                      {isLoadingGames ? (
+                        <SelectItem value="loading" disabled>
+                          Loading games from ESPN...
+                        </SelectItem>
+                      ) : availableGames.length === 0 ? (
                         <SelectItem value="none" disabled>
-                          No games available
+                          No games scheduled today
                         </SelectItem>
                       ) : (
                         availableGames.map(game => (
@@ -377,7 +390,7 @@ export default function BotConfig() {
                                   game.status === 'live' && 'bg-red-500/20 text-red-400'
                                 )}
                               >
-                                {game.status === 'live' ? 'LIVE' : 'Upcoming'}
+                                {game.status === 'live' ? 'LIVE' : game.status === 'final' ? 'Final' : 'Upcoming'}
                               </Badge>
                               <span>{game.awayTeam} @ {game.homeTeam}</span>
                             </span>
@@ -433,9 +446,18 @@ export default function BotConfig() {
                 )}
 
                 {/* Refresh Button */}
-                <Button variant="outline" className="w-full gap-2">
-                  <RefreshCw className="w-4 h-4" />
-                  Refresh Games
+                <Button 
+                  variant="outline" 
+                  className="w-full gap-2"
+                  onClick={() => fetchGames(selectedSport)}
+                  disabled={isLoadingGames}
+                >
+                  {isLoadingGames ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  {isLoadingGames ? 'Loading...' : 'Refresh Games'}
                 </Button>
               </CardContent>
             </Card>
