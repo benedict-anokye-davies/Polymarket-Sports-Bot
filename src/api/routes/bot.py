@@ -613,17 +613,18 @@ async def place_manual_order(
 
 
 # =============================================================================
-# Live Games from ESPN (Real-Time Data)
+# Live Games from ESPN (Real-Time Data) - PUBLIC ENDPOINT
 # =============================================================================
 
 @router.get("/live-games/{sport}", response_model=list)
 async def get_live_espn_games(
-    sport: str,
-    current_user: OnboardedUser
+    sport: str
 ) -> list:
     """
     Fetch live and upcoming games directly from ESPN API.
     Returns real-time game data including scores, periods, and times.
+    
+    This endpoint is PUBLIC - no authentication required since ESPN data is public.
     
     Args:
         sport: Sport identifier (nba, nfl, mlb, nhl, soccer, ncaab, etc.)
