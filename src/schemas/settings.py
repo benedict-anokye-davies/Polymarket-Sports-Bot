@@ -8,11 +8,21 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 
+# Expanded list of supported sports
+SUPPORTED_SPORTS = [
+    "nba", "nfl", "mlb", "nhl",  # Major US leagues
+    "wnba", "ncaab", "ncaaf",     # Additional US sports
+    "soccer", "epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl",  # Soccer
+    "tennis", "mma", "golf"       # Individual sports
+]
+SPORT_PATTERN = f"^({'|'.join(SUPPORTED_SPORTS)})$"
+
+
 class SportConfigCreate(BaseModel):
     """
     Schema for creating a new sport configuration.
     """
-    sport: str = Field(..., pattern="^(nba|nfl|mlb|nhl)$")
+    sport: str = Field(..., pattern=SPORT_PATTERN)
     enabled: bool = True
     entry_threshold_drop: Decimal = Field(default=Decimal("0.15"), ge=0, le=1)
     entry_threshold_absolute: Decimal = Field(default=Decimal("0.50"), ge=0, le=1)
@@ -22,6 +32,18 @@ class SportConfigCreate(BaseModel):
     max_positions_per_game: int = Field(default=1, ge=1, le=10)
     max_total_positions: int = Field(default=5, ge=1, le=50)
     min_time_remaining_seconds: int = Field(default=300, ge=0)
+    
+    # Sport-specific progress thresholds
+    min_time_remaining_minutes: int | None = Field(default=5, ge=1, le=20)  # NBA, NFL, NHL
+    max_elapsed_minutes: int | None = Field(default=70, ge=1, le=120)       # Soccer
+    max_entry_inning: int | None = Field(default=6, ge=1, le=9)             # MLB
+    min_outs_remaining: int | None = Field(default=6, ge=1, le=54)          # MLB
+    max_entry_set: int | None = Field(default=2, ge=1, le=5)                # Tennis
+    min_sets_remaining: int | None = Field(default=1, ge=1, le=3)           # Tennis
+    max_entry_round: int | None = Field(default=2, ge=1, le=5)              # MMA
+    max_entry_hole: int | None = Field(default=14, ge=1, le=18)             # Golf
+    min_holes_remaining: int | None = Field(default=4, ge=1, le=18)         # Golf
+    
     # Per-sport risk management
     max_daily_loss_usdc: Decimal | None = Field(default=Decimal("50.00"), ge=0)
     max_exposure_usdc: Decimal | None = Field(default=Decimal("200.00"), ge=0)
@@ -44,6 +66,18 @@ class SportConfigUpdate(BaseModel):
     max_positions_per_game: int | None = Field(default=None, ge=1, le=10)
     max_total_positions: int | None = Field(default=None, ge=1, le=50)
     min_time_remaining_seconds: int | None = Field(default=None, ge=0)
+    
+    # Sport-specific progress thresholds
+    min_time_remaining_minutes: int | None = Field(default=None, ge=1, le=20)
+    max_elapsed_minutes: int | None = Field(default=None, ge=1, le=120)
+    max_entry_inning: int | None = Field(default=None, ge=1, le=9)
+    min_outs_remaining: int | None = Field(default=None, ge=1, le=54)
+    max_entry_set: int | None = Field(default=None, ge=1, le=5)
+    min_sets_remaining: int | None = Field(default=None, ge=1, le=3)
+    max_entry_round: int | None = Field(default=None, ge=1, le=5)
+    max_entry_hole: int | None = Field(default=None, ge=1, le=18)
+    min_holes_remaining: int | None = Field(default=None, ge=1, le=18)
+    
     # Per-sport risk management
     max_daily_loss_usdc: Decimal | None = Field(default=None, ge=0)
     max_exposure_usdc: Decimal | None = Field(default=None, ge=0)
@@ -67,6 +101,18 @@ class SportConfigResponse(BaseModel):
     max_positions_per_game: int
     max_total_positions: int
     min_time_remaining_seconds: int
+    
+    # Sport-specific progress thresholds
+    min_time_remaining_minutes: int | None = None
+    max_elapsed_minutes: int | None = None
+    max_entry_inning: int | None = None
+    min_outs_remaining: int | None = None
+    max_entry_set: int | None = None
+    min_sets_remaining: int | None = None
+    max_entry_round: int | None = None
+    max_entry_hole: int | None = None
+    min_holes_remaining: int | None = None
+    
     # Per-sport risk management
     max_daily_loss_usdc: Decimal | None = None
     max_exposure_usdc: Decimal | None = None

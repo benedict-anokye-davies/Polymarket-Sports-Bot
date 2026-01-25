@@ -30,13 +30,43 @@ class ESPNService:
         "nfl": "football/nfl",
         "mlb": "baseball/mlb",
         "nhl": "hockey/nhl",
+        "soccer": "soccer/usa.1",  # MLS, can also use eng.1 for EPL
+        "tennis": "tennis/atp",
+        "mma": "mma/ufc",
+        "golf": "golf/pga",
+        # Additional leagues
+        "wnba": "basketball/wnba",
+        "ncaab": "basketball/mens-college-basketball",
+        "ncaaf": "football/college-football",
+        "epl": "soccer/eng.1",
+        "laliga": "soccer/esp.1",
+        "bundesliga": "soccer/ger.1",
+        "seriea": "soccer/ita.1",
+        "ligue1": "soccer/fra.1",
+        "ucl": "soccer/uefa.champions",
     }
     
     SEGMENT_MAPPING = {
         "nba": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "wnba": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "ncaab": {1: "h1", 2: "h2"},  # College basketball uses halves
         "nfl": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "ncaaf": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
         "nhl": {1: "p1", 2: "p2", 3: "p3"},
+        "soccer": {1: "h1", 2: "h2"},
+        "epl": {1: "h1", 2: "h2"},
+        "laliga": {1: "h1", 2: "h2"},
+        "bundesliga": {1: "h1", 2: "h2"},
+        "seriea": {1: "h1", 2: "h2"},
+        "ligue1": {1: "h1", 2: "h2"},
+        "ucl": {1: "h1", 2: "h2"},
+        "tennis": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
+        "mma": {1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5"},
+        "golf": {},  # Golf uses holes, not periods
     }
+    
+    # Sports where clock counts UP instead of DOWN
+    CLOCK_COUNTUP_SPORTS = {"soccer", "epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl"}
     
     def __init__(self):
         """
@@ -183,6 +213,39 @@ class ESPNService:
             except ValueError:
                 pass
         
+        # Sport-specific progress metrics
+        sport_lower = sport.lower()
+        elapsed_minutes = 0
+        outs_remaining = 0
+        current_inning_half = "top"
+        
+        # Soccer: calculate elapsed minutes (clock counts UP)
+        if sport_lower in self.CLOCK_COUNTUP_SPORTS:
+            # For soccer, clock_seconds IS elapsed time, not remaining
+            elapsed_minutes = clock_seconds / 60
+            # Calculate period contribution (45 min per half)
+            if period == 2:
+                elapsed_minutes += 45
+        
+        # MLB: parse inning details
+        elif sport_lower == "mlb":
+            # ESPN provides inning as period, and we need to parse top/bottom
+            # Total outs in MLB: 27 per team (9 innings * 3 outs)
+            # In current inning, check if top or bottom half
+            situation = competitions.get("situation", {})
+            outs_in_inning = situation.get("outs", 0)
+            is_top_inning = situation.get("isTopInning", True)
+            current_inning_half = "top" if is_top_inning else "bottom"
+            
+            # Calculate outs remaining for the favorite
+            # If top of inning, they still have bottom + remaining innings
+            # If bottom, they have remaining innings only
+            remaining_innings = max(0, 9 - period)
+            if is_top_inning:
+                outs_remaining = (remaining_innings * 6) + (3 - outs_in_inning) + 3
+            else:
+                outs_remaining = (remaining_innings * 6) + (3 - outs_in_inning)
+        
         return {
             "event_id": game.get("id", ""),
             "name": game.get("name", ""),
@@ -194,6 +257,10 @@ class ESPNService:
             "segment": segment,
             "clock_display": clock_display,
             "time_remaining_seconds": clock_seconds,
+            # Sport-specific fields
+            "elapsed_minutes": elapsed_minutes,  # For soccer
+            "outs_remaining": outs_remaining,    # For MLB
+            "inning_half": current_inning_half,  # For MLB (top/bottom)
             "home_team": home_team,
             "away_team": away_team,
             "home_score": home_score,
