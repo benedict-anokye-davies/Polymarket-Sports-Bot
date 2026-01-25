@@ -7,8 +7,6 @@ import {
   Shield,
   BarChart3,
   Wallet,
-  Settings,
-  Bell,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -21,33 +19,18 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/api/client';
 import { useAuthStore } from '@/stores/useAuthStore';
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 3;
 
 // Supported platforms
 const PLATFORMS = [
   { id: 'kalshi', name: 'Kalshi', desc: 'US-regulated prediction market' },
   { id: 'polymarket', name: 'Polymarket', desc: 'Crypto-based prediction market' },
-] as const;
-
-// Expanded sports list
-const SPORTS = [
-  { id: 'nba', name: 'NBA', icon: '🏀' },
-  { id: 'nfl', name: 'NFL', icon: '🏈' },
-  { id: 'mlb', name: 'MLB', icon: '⚾' },
-  { id: 'nhl', name: 'NHL', icon: '🏒' },
-  { id: 'soccer', name: 'Soccer', icon: '⚽' },
-  { id: 'mma', name: 'MMA/UFC', icon: '🥊' },
-  { id: 'tennis', name: 'Tennis', icon: '🎾' },
-  { id: 'golf', name: 'Golf', icon: '⛳' },
-  { id: 'ncaab', name: 'NCAA BB', icon: '🏀' },
-  { id: 'ncaaf', name: 'NCAA FB', icon: '🏈' },
 ] as const;
 
 // Shared state interface for all form data
@@ -59,23 +42,10 @@ interface OnboardingData {
   apiSecret: string;
   apiPassphrase: string;
   funderAddress: string;
-  // Sport config
-  activeSports: string[];
-  positionSize: number;
-  entryThresholdDrop: number;
-  entryThresholdAbsolute: number;
-  takeProfitPct: number;
-  stopLossPct: number;
-  minTimeRemaining: number;
-  exitTimeRemaining: number;
-  minVolumeThreshold: number;
   // Risk
   maxDailyLoss: number;
   maxExposure: number;
   maxConcurrentPositions: number;
-  // Discord
-  discordWebhookUrl: string;
-  discordAlertsEnabled: boolean;
 }
 
 interface StepProps {
@@ -338,205 +308,7 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
   );
 }
 
-// Step 3: Sport Configuration
-function SportConfigStep({ onNext, onBack, data, setData, loading }: StepProps) {
-  const toggleSport = (sport: string) => {
-    setData(prev => ({
-      ...prev,
-      activeSports: prev.activeSports.includes(sport)
-        ? prev.activeSports.filter(s => s !== sport)
-        : [...prev.activeSports, sport]
-    }));
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className="space-y-6 max-h-[70vh] overflow-y-auto pr-2"
-    >
-      <div className="text-center">
-        <div className="w-16 h-16 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-          <Settings className="w-8 h-8 text-primary" />
-        </div>
-        <h2 className="text-xl font-semibold text-foreground mb-1">Sport Configuration</h2>
-        <p className="text-sm text-muted-foreground">Choose sports and configure trading parameters</p>
-      </div>
-
-      <div className="space-y-4">
-        {/* Sports Selection Grid */}
-        <div className="bg-muted/30 rounded-lg p-4 border border-border">
-          <Label className="text-sm font-medium text-foreground mb-3 block">Active Sports (select multiple)</Label>
-          <div className="grid grid-cols-5 gap-2">
-            {SPORTS.map((sport) => (
-              <div
-                key={sport.id}
-                onClick={() => toggleSport(sport.id)}
-                className={cn(
-                  'p-2 rounded-md border text-center cursor-pointer transition-all',
-                  data.activeSports.includes(sport.id)
-                    ? 'bg-primary/10 border-primary/30'
-                    : 'bg-muted border-border hover:border-primary/20'
-                )}
-              >
-                <span className="text-lg block mb-1">{sport.icon}</span>
-                <span className={cn(
-                  'text-xs font-medium',
-                  data.activeSports.includes(sport.id) ? 'text-primary' : 'text-muted-foreground'
-                )}>
-                  {sport.name}
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground mt-3">
-            {data.activeSports.length} sport{data.activeSports.length !== 1 ? 's' : ''} selected
-          </p>
-        </div>
-
-        {/* Entry Conditions */}
-        <div className="bg-muted/30 rounded-lg p-4 border border-border">
-          <Label className="text-sm font-medium text-foreground mb-3 block">Entry Conditions</Label>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Price Drop Threshold</Label>
-              <Input
-                type="number"
-                step="1"
-                min="0"
-                max="100"
-                placeholder="e.g. 15"
-                className="bg-muted border-border"
-                value={data.entryThresholdDrop ? Math.round(data.entryThresholdDrop * 100) : ''}
-                onChange={(e) => setData(prev => ({ ...prev, entryThresholdDrop: (parseFloat(e.target.value) || 0) / 100 }))}
-              />
-              <p className="text-xs text-muted-foreground">% drop from pregame to trigger entry</p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Absolute Entry Price</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                max="1"
-                placeholder="e.g. 0.35"
-                className="bg-muted border-border"
-                value={data.entryThresholdAbsolute || ''}
-                onChange={(e) => setData(prev => ({ ...prev, entryThresholdAbsolute: parseFloat(e.target.value) || 0 }))}
-              />
-              <p className="text-xs text-muted-foreground">Buy if price falls below this</p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Min Volume Threshold ($)</Label>
-              <Input
-                type="number"
-                min="0"
-                placeholder="e.g. 1000"
-                className="bg-muted border-border"
-                value={data.minVolumeThreshold || ''}
-                onChange={(e) => setData(prev => ({ ...prev, minVolumeThreshold: parseFloat(e.target.value) || 0 }))}
-              />
-              <p className="text-xs text-muted-foreground">Min market volume to enter</p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Latest Entry Time (sec)</Label>
-              <Input
-                type="number"
-                min="0"
-                placeholder="e.g. 300"
-                className="bg-muted border-border"
-                value={data.minTimeRemaining || ''}
-                onChange={(e) => setData(prev => ({ ...prev, minTimeRemaining: parseInt(e.target.value) || 0 }))}
-              />
-              <p className="text-xs text-muted-foreground">No buys after X sec remaining</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Exit Conditions */}
-        <div className="bg-muted/30 rounded-lg p-4 border border-border">
-          <Label className="text-sm font-medium text-foreground mb-3 block">Exit Conditions</Label>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Take Profit (%)</Label>
-              <Input
-                type="number"
-                step="1"
-                min="0"
-                max="100"
-                placeholder="e.g. 20"
-                className="bg-muted border-border"
-                value={data.takeProfitPct ? Math.round(data.takeProfitPct * 100) : ''}
-                onChange={(e) => setData(prev => ({ ...prev, takeProfitPct: (parseFloat(e.target.value) || 0) / 100 }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Stop Loss (%)</Label>
-              <Input
-                type="number"
-                step="1"
-                min="0"
-                max="100"
-                placeholder="e.g. 10"
-                className="bg-muted border-border"
-                value={data.stopLossPct ? Math.round(data.stopLossPct * 100) : ''}
-                onChange={(e) => setData(prev => ({ ...prev, stopLossPct: (parseFloat(e.target.value) || 0) / 100 }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Latest Exit Time (sec)</Label>
-              <Input
-                type="number"
-                min="0"
-                placeholder="e.g. 120"
-                className="bg-muted border-border"
-                value={data.exitTimeRemaining || ''}
-                onChange={(e) => setData(prev => ({ ...prev, exitTimeRemaining: parseInt(e.target.value) || 0 }))}
-              />
-              <p className="text-xs text-muted-foreground">Must sell when X sec remain</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Position Sizing */}
-        <div className="bg-muted/30 rounded-lg p-4 border border-border">
-          <Label className="text-sm font-medium text-foreground mb-3 block">Position Sizing</Label>
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Position Size (USDC)</Label>
-            <Input
-              type="number"
-              min="1"
-              placeholder="e.g. 50"
-              className="bg-muted border-border"
-              value={data.positionSize || ''}
-              onChange={(e) => setData(prev => ({ ...prev, positionSize: parseFloat(e.target.value) || 0 }))}
-            />
-            <p className="text-xs text-muted-foreground">Max amount to invest per trade</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex gap-3 sticky bottom-0 bg-card pt-4">
-        <Button variant="outline" onClick={onBack} className="flex-1 border-border">
-          <ChevronLeft className="w-4 h-4 mr-2" />
-          Back
-        </Button>
-        <Button
-          onClick={onNext}
-          className="flex-1 bg-primary hover:bg-primary/90"
-          disabled={loading || data.activeSports.length === 0}
-        >
-          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-          Continue
-          <ChevronRight className="w-4 h-4 ml-2" />
-        </Button>
-      </div>
-    </motion.div>
-  );
-}
-
-// Step 4: Risk Management
+// Step 3: Risk Management
 function RiskStep({ onNext, onBack, data, setData, loading }: StepProps) {
   return (
     <motion.div
@@ -615,123 +387,10 @@ function RiskStep({ onNext, onBack, data, setData, loading }: StepProps) {
           disabled={loading}
         >
           {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-          Continue
-          <ChevronRight className="w-4 h-4 ml-2" />
-        </Button>
-      </div>
-    </motion.div>
-  );
-}
-
-// Step 5: Discord Alerts
-function AlertsStep({ onNext, onBack, data, setData, loading }: StepProps) {
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const { toast } = useToast();
-
-  const testWebhook = async () => {
-    if (!data.discordWebhookUrl) return;
-    setTestStatus('testing');
-    try {
-      await apiClient.testDiscordWebhook();
-      setTestStatus('success');
-      toast({
-        title: 'Success',
-        description: 'Test message sent to Discord.',
-      });
-    } catch (error) {
-      setTestStatus('error');
-      toast({
-        title: 'Error',
-        description: 'Failed to send test message.',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className="space-y-6"
-    >
-      <div className="text-center">
-        <div className="w-16 h-16 rounded-xl bg-info/10 flex items-center justify-center mx-auto mb-4">
-          <Bell className="w-8 h-8 text-info" />
-        </div>
-        <h2 className="text-xl font-semibold text-foreground mb-1">Discord Alerts</h2>
-        <p className="text-sm text-muted-foreground">Get notified about trades and events</p>
-      </div>
-
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label className="text-sm text-muted-foreground">Discord Webhook URL (Optional)</Label>
-          <Input
-            type="url"
-            placeholder="https://discord.com/api/webhooks/..."
-            className="bg-muted border-border font-mono text-sm"
-            value={data.discordWebhookUrl}
-            onChange={(e) => setData(prev => ({ ...prev, discordWebhookUrl: e.target.value }))}
-          />
-        </div>
-
-        <Button
-          variant="outline"
-          className="w-full border-border hover:bg-muted gap-2"
-          onClick={testWebhook}
-          disabled={!data.discordWebhookUrl || testStatus === 'testing'}
-        >
-          {testStatus === 'testing' ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <TestTube2 className="w-4 h-4" />
-          )}
-          {testStatus === 'testing' ? 'Testing...' : 'Test Webhook'}
-        </Button>
-
-        {testStatus === 'success' && (
-          <div className="flex items-center gap-2 text-sm text-primary">
-            <Check className="w-4 h-4" />
-            Test message sent successfully
-          </div>
-        )}
-
-        <div className="flex items-center justify-between bg-muted/30 rounded-lg p-4 border border-border">
-          <div>
-            <p className="text-sm font-medium text-foreground">Enable Discord Alerts</p>
-            <p className="text-xs text-muted-foreground mt-1">Receive notifications for trades and errors</p>
-          </div>
-          <Switch
-            checked={data.discordAlertsEnabled}
-            onCheckedChange={(checked) => setData(prev => ({ ...prev, discordAlertsEnabled: checked }))}
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <Button variant="outline" onClick={onBack} className="flex-1 border-border">
-          <ChevronLeft className="w-4 h-4 mr-2" />
-          Back
-        </Button>
-        <Button
-          onClick={onNext}
-          className="flex-1 bg-primary hover:bg-primary/90"
-          disabled={loading}
-        >
-          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
           Launch Dashboard
           <ChevronRight className="w-4 h-4 ml-2" />
         </Button>
       </div>
-
-      <Button
-        variant="ghost"
-        className="w-full text-muted-foreground hover:text-foreground"
-        onClick={onNext}
-        disabled={loading}
-      >
-        Skip for now
-      </Button>
     </motion.div>
   );
 }
@@ -750,59 +409,23 @@ export default function Onboarding() {
     apiSecret: '',
     apiPassphrase: '',
     funderAddress: '',
-    activeSports: ['nba'],
-    positionSize: 50,
-    entryThresholdDrop: 0.15,
-    entryThresholdAbsolute: 0.35,
-    takeProfitPct: 0.20,
-    stopLossPct: 0.10,
-    minTimeRemaining: 300,
-    exitTimeRemaining: 120,
-    minVolumeThreshold: 1000,
     maxDailyLoss: 100,
     maxExposure: 500,
     maxConcurrentPositions: 10,
-    discordWebhookUrl: '',
-    discordAlertsEnabled: true,
   });
 
   const saveDataToBackend = async () => {
     setLoading(true);
     try {
-      // Save sport configs for each active sport
-      for (const sport of data.activeSports) {
-        const sportConfig = {
-          sport,
-          enabled: true,
-          entry_threshold_drop: data.entryThresholdDrop,
-          entry_threshold_absolute: data.entryThresholdAbsolute,
-          take_profit_pct: data.takeProfitPct,
-          stop_loss_pct: data.stopLossPct,
-          position_size_usdc: data.positionSize,
-          min_time_remaining_seconds: data.minTimeRemaining,
-          exit_time_remaining_seconds: data.exitTimeRemaining,
-          min_volume_threshold: data.minVolumeThreshold,
-        };
-
-        try {
-          await apiClient.createSportConfig(sportConfig);
-        } catch {
-          // Config might already exist, try updating instead
-          await apiClient.updateSportConfig(sport, sportConfig);
-        }
-      }
-
       // Save global settings
       await apiClient.updateGlobalSettings({
         max_daily_loss_usdc: data.maxDailyLoss,
         max_portfolio_exposure_usdc: data.maxExposure,
-        discord_webhook_url: data.discordWebhookUrl || null,
-        discord_alerts_enabled: data.discordAlertsEnabled,
         bot_enabled: true,
       });
 
-      // Complete onboarding with platform info
-      await apiClient.completeOnboardingStep(5, {
+      // Complete onboarding step 3
+      await apiClient.completeOnboardingStep(3, {
         platform: data.platform,
       });
 
@@ -866,9 +489,7 @@ export default function Onboarding() {
             <AnimatePresence mode="wait">
               {currentStep === 1 && <WelcomeStep key="welcome" onNext={handleNext} />}
               {currentStep === 2 && <WalletStep key="wallet" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
-              {currentStep === 3 && <SportConfigStep key="sport" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
-              {currentStep === 4 && <RiskStep key="risk" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
-              {currentStep === 5 && <AlertsStep key="alerts" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
+              {currentStep === 3 && <RiskStep key="risk" onNext={handleNext} onBack={handleBack} data={data} setData={setData} loading={loading} />}
             </AnimatePresence>
           </CardContent>
         </Card>

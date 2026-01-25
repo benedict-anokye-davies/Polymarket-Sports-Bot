@@ -20,6 +20,8 @@ from src.schemas.common import MessageResponse
 router = APIRouter(prefix="/onboarding", tags=["Onboarding"])
 
 
+TOTAL_ONBOARDING_STEPS = 3
+
 ONBOARDING_STEPS = [
     OnboardingStepData(
         step_number=1,
@@ -38,26 +40,11 @@ ONBOARDING_STEPS = [
     ),
     OnboardingStepData(
         step_number=3,
-        title="Sport & Strategy",
-        description="Select sports and configure trading parameters",
-        is_completed=False,
-        requires_input=True,
-        input_fields=["sport", "entry_threshold", "position_size", "take_profit", "stop_loss"]
-    ),
-    OnboardingStepData(
-        step_number=4,
         title="Risk Management",
-        description="Set daily loss limits, max exposure, and notifications",
+        description="Set daily loss limits and max exposure",
         is_completed=False,
         requires_input=True,
-        input_fields=["max_daily_loss", "max_exposure", "discord_webhook"]
-    ),
-    OnboardingStepData(
-        step_number=5,
-        title="Review & Complete",
-        description="Confirm settings and complete onboarding",
-        is_completed=False,
-        requires_input=False
+        input_fields=["max_daily_loss", "max_exposure"]
     ),
 ]
 
@@ -84,7 +71,7 @@ async def get_step_details(step_number: int, current_user: CurrentUser) -> Onboa
     """
     Returns details for a specific onboarding step.
     """
-    if step_number < 1 or step_number > 5:  # Frontend has 5 onboarding steps
+    if step_number < 1 or step_number > TOTAL_ONBOARDING_STEPS:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invalid step number"
@@ -104,16 +91,16 @@ async def complete_step(
 ) -> MessageResponse:
     """
     Marks an onboarding step as complete and advances to the next step.
-    Frontend has 5 steps, so step > 5 means onboarding is complete.
+    Allows completing any step to support flexible onboarding flows.
     """
-    if step_number != current_user.onboarding_step:
+    if step_number < 1 or step_number > TOTAL_ONBOARDING_STEPS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Must complete step {current_user.onboarding_step} first"
+            detail=f"Invalid step number. Must be between 1 and {TOTAL_ONBOARDING_STEPS}"
         )
     
     next_step = step_number + 1
-    completed = next_step > 5  # Frontend has 5 onboarding steps
+    completed = next_step > TOTAL_ONBOARDING_STEPS
     
     await UserCRUD.update_onboarding_step(db, current_user.id, next_step, completed)
     
