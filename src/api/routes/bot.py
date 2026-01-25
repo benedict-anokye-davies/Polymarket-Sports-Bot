@@ -631,54 +631,111 @@ async def get_live_espn_games(
     Returns:
         List of games with current state
     """
+    import httpx
+    
+    SPORT_ENDPOINTS = {
+        "nba": "basketball/nba",
+        "nfl": "football/nfl",
+        "mlb": "baseball/mlb",
+        "nhl": "hockey/nhl",
+        "soccer": "soccer/usa.1",
+        "ncaab": "basketball/mens-college-basketball",
+        "ncaaf": "football/college-football",
+        "tennis": "tennis/atp",
+        "mma": "mma/ufc",
+        "cricket": "cricket",
+        "ufc": "mma/ufc",
+    }
+    
+    sport_lower = sport.lower()
+    endpoint = SPORT_ENDPOINTS.get(sport_lower)
+    
+    if not endpoint:
+        logger.warning(f"Unsupported sport requested: {sport}")
+        return []
+    
     try:
-        espn = ESPNService()
-        events = await espn.get_scoreboard(sport.lower())
-        
-        games = []
-        for event in events:
-            state = espn.parse_game_state(event, sport.lower())
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            url = f"https://site.web.api.espn.com/apis/site/v2/sports/{endpoint}/scoreboard"
+            response = await client.get(url)
+            response.raise_for_status()
             
-            # Format for frontend consumption
-            status = 'live' if state['is_live'] else ('final' if state['is_finished'] else 'upcoming')
+            data = response.json()
+            events = data.get("events", [])
             
-            # Show appropriate period info based on status
-            if status == 'upcoming':
-                current_period = 'Pre-game'
-                clock = ''
-            elif status == 'final':
-                current_period = 'Final'
-                clock = ''
-            else:
-                current_period = state['segment'].upper() if state['segment'] else ''
-                clock = state['clock_display']
+            games = []
+            for event in events:
+                # Parse game state
+                status = event.get("status", {})
+                status_type = status.get("type", {})
+                competitions = event.get("competitions", [{}])[0]
+                competitors = competitions.get("competitors", [])
+                
+                home_team = None
+                away_team = None
+                home_score = 0
+                away_score = 0
+                
+                for comp in competitors:
+                    if comp.get("homeAway") == "home":
+                        home_team = {
+                            "name": comp.get("team", {}).get("displayName", "TBD"),
+                            "abbreviation": comp.get("team", {}).get("abbreviation", ""),
+                        }
+                        home_score = int(comp.get("score", 0) or 0)
+                    elif comp.get("homeAway") == "away":
+                        away_team = {
+                            "name": comp.get("team", {}).get("displayName", "TBD"),
+                            "abbreviation": comp.get("team", {}).get("abbreviation", ""),
+                        }
+                        away_score = int(comp.get("score", 0) or 0)
+                
+                state = status_type.get("state", "")
+                is_live = state == "in"
+                is_finished = state == "post"
+                
+                game_status = 'live' if is_live else ('final' if is_finished else 'upcoming')
+                
+                period = status.get("period", 0)
+                clock_display = status.get("displayClock", "0:00")
+                
+                # Show appropriate period info based on status
+                if game_status == 'upcoming':
+                    current_period = 'Pre-game'
+                    clock = ''
+                elif game_status == 'final':
+                    current_period = 'Final'
+                    clock = ''
+                else:
+                    current_period = f"Q{period}" if sport_lower in ['nba', 'nfl'] else f"P{period}"
+                    clock = clock_display
+                
+                start_time = event.get("date")
+                
+                games.append({
+                    'id': event.get("id", ""),
+                    'homeTeam': home_team['name'] if home_team else 'TBD',
+                    'awayTeam': away_team['name'] if away_team else 'TBD',
+                    'homeAbbr': home_team['abbreviation'] if home_team else '',
+                    'awayAbbr': away_team['abbreviation'] if away_team else '',
+                    'homeScore': home_score,
+                    'awayScore': away_score,
+                    'startTime': start_time,
+                    'status': game_status,
+                    'currentPeriod': current_period,
+                    'clock': clock,
+                    'name': event.get("name", ""),
+                    'shortName': event.get("shortName", ""),
+                    'homeOdds': 0.50,
+                    'awayOdds': 0.50,
+                    'volume': 0,
+                })
             
-            games.append({
-                'id': state['event_id'],
-                'homeTeam': state['home_team']['name'] if state['home_team'] else 'TBD',
-                'awayTeam': state['away_team']['name'] if state['away_team'] else 'TBD',
-                'homeAbbr': state['home_team']['abbreviation'] if state['home_team'] else '',
-                'awayAbbr': state['away_team']['abbreviation'] if state['away_team'] else '',
-                'homeScore': state['home_score'],
-                'awayScore': state['away_score'],
-                'startTime': state['start_time'].isoformat() if state['start_time'] else None,
-                'status': status,
-                'currentPeriod': current_period,
-                'clock': clock,
-                'name': state['name'],
-                'shortName': state['short_name'],
-                # Placeholder odds - in production these come from Polymarket/Kalshi
-                'homeOdds': 0.50,
-                'awayOdds': 0.50,
-                'volume': 0,
-            })
-        
-        await espn.close()
-        return games
-        
+            logger.info(f"Fetched {len(games)} {sport.upper()} games from ESPN")
+            return games
+            
     except Exception as e:
         logger.error(f"Failed to fetch ESPN games for {sport}: {e}")
-        # Return empty list on error so frontend can handle gracefully
         return []
 
 
