@@ -240,15 +240,15 @@ Platform defaults to 'kalshi' with no UI to change it.
 ## IMPLEMENTATION CHECKLIST
 
 ### Phase 1: Critical Bot Fixes (Required for basic functionality)
-- [ ] Fix `_create_bot_dependencies()` to use correct client based on platform
-- [ ] Add `selected_side` validation in bot_runner.py entry logic
-- [ ] Process `additional_games` array in bot config storage
-- [ ] Track multiple games in bot_runner initialization
+- [x] Fix `_create_bot_dependencies()` to use correct client based on platform (**DONE** - Already implemented in bot.py)
+- [x] Add `selected_side` validation in bot_runner.py entry logic (**DONE** - Added `_should_trade_market()` method)
+- [x] Process `additional_games` array in bot config storage (**DONE** - Config now stores `games` array)
+- [x] Track multiple games in bot_runner initialization (**DONE** - Added `_load_user_selected_games()` method)
 
 ### Phase 2: Frontend Fixes (Required for proper UX)
-- [ ] Fix `useConnectWallet` hook signature in useApi.ts
-- [ ] Add platform selector UI in Settings.tsx
-- [ ] Conditional rendering of credential fields based on platform
+- [x] Fix `useConnectWallet` hook signature in useApi.ts (**DONE** - Already had correct platform+credentials signature)
+- [x] Add platform selector UI in Settings.tsx (**DONE** - Already implemented with Kalshi/Polymarket toggle)
+- [x] Conditional rendering of credential fields based on platform (**DONE** - Shows different fields per platform)
 
 ### Phase 3: Testing (Required before client demo)
 - [ ] Test Kalshi user flow: onboarding -> credentials -> start bot

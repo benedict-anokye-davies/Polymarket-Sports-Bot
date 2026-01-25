@@ -59,6 +59,8 @@ class TrackedGame:
     last_update: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     has_position: bool = False
     position_id: UUID | None = None
+    # Which team to bet on: "home", "away", or "both"
+    selected_side: str = "home"
 
 
 @dataclass
@@ -114,6 +116,10 @@ class BotRunner:
         
         # Token ID to game mapping for WebSocket updates
         self.token_to_game: dict[str, str] = {}
+        
+        # User-selected games from bot config (game_id -> game_config dict)
+        # This filters which games the bot will actually track and trade
+        self.user_selected_games: dict[str, dict] = {}
         
         # Configuration
         self.user_id: UUID | None = None
@@ -233,17 +239,58 @@ class BotRunner:
         # Recover open positions from database
         await self._recover_positions(db)
         
+        # Load user-selected games from bot config
+        await self._load_user_selected_games(user_id)
+        
         # Initialize WebSocket
         self.websocket = PolymarketWebSocket()
         
         mode_str = "PAPER TRADING" if self.dry_run else "LIVE TRADING"
+        games_count = len(self.user_selected_games)
         logger.info(
             f"Bot initialized for user {user_id}. "
             f"Mode: {mode_str}, "
             f"Sports: {self.enabled_sports}, "
+            f"Selected games: {games_count}, "
             f"Entry threshold: {self.entry_threshold:.1%}, "
             f"TP: {self.take_profit:.1%}, SL: {self.stop_loss:.1%}"
         )
+    
+    async def _load_user_selected_games(self, user_id: UUID) -> None:
+        """
+        Load user-selected games from the bot config store.
+        
+        This determines which specific games the bot will track and trade.
+        Games not in this list will be ignored during discovery.
+        
+        Args:
+            user_id: User ID to load config for
+        """
+        from src.api.routes.bot import _bot_configs
+        
+        user_id_str = str(user_id)
+        config = _bot_configs.get(user_id_str, {})
+        
+        # Get all games (primary + additional)
+        games = config.get("games", [])
+        
+        # Fallback to single game if "games" array not present
+        if not games and config.get("game"):
+            games = [config["game"]]
+        
+        # Build lookup by game_id
+        self.user_selected_games.clear()
+        for game in games:
+            game_id = game.get("game_id")
+            if game_id:
+                self.user_selected_games[game_id] = game
+                logger.info(
+                    f"Loaded user-selected game: {game.get('away_team', '?')} @ "
+                    f"{game.get('home_team', '?')} ({game.get('sport', '?').upper()}), "
+                    f"side: {game.get('selected_side', 'home')}"
+                )
+        
+        logger.info(f"Loaded {len(self.user_selected_games)} user-selected games")
     
     async def start(self, db: AsyncSession) -> None:
         """
@@ -352,11 +399,18 @@ class BotRunner:
         """
         Periodically discover new sports markets.
         
+        Only tracks games that the user has explicitly selected in bot config.
         Runs every DISCOVERY_INTERVAL seconds.
         """
         while not self._stop_event.is_set():
             try:
                 logger.debug("Running market discovery...")
+                
+                # Skip discovery if no games selected by user
+                if not self.user_selected_games:
+                    logger.debug("No user-selected games to track")
+                    await asyncio.sleep(self.DISCOVERY_INTERVAL)
+                    continue
                 
                 markets = await market_discovery.discover_sports_markets(
                     sports=self.enabled_sports,
@@ -368,14 +422,23 @@ class BotRunner:
                 
                 logger.info(f"Discovered {len(markets)} sports markets")
                 
-                # Match markets to ESPN games
+                # Match markets to ESPN games - ONLY for user-selected games
                 for sport in self.enabled_sports:
                     games = await self.espn_service.get_live_games(sport)
                     
                     for game in games:
                         event_id = game.get("id")
+                        
+                        # Skip if not in user's selected games
+                        if event_id not in self.user_selected_games:
+                            continue
+                        
                         if event_id in self.tracked_games:
                             continue  # Already tracking
+                        
+                        # Get user's game config for selected_side
+                        user_game_config = self.user_selected_games[event_id]
+                        selected_side = user_game_config.get("selected_side", "home")
                         
                         # Try to match to a market
                         competitors = game.get("competitions", [{}])[0].get("competitors", [])
@@ -399,7 +462,7 @@ class BotRunner:
                         if matched_market:
                             await self._start_tracking_game(
                                 db, event_id, sport, home_name, away_name, 
-                                matched_market, game
+                                matched_market, game, selected_side=selected_side
                             )
                 
             except asyncio.CancelledError:
@@ -602,6 +665,7 @@ class BotRunner:
         Evaluate entry conditions for a game.
 
         Entry triggers when:
+        - Selected side matches the market (home/away/both)
         - Game is in allowed entry segment (max_entry_segment)
         - Price has dropped from baseline by threshold OR below absolute threshold
         - Sufficient time remaining (min_time_remaining_seconds)
@@ -612,6 +676,10 @@ class BotRunner:
         """
         # Emergency stop check
         if self.emergency_stop:
+            return
+
+        # Check selected_side - only trade if market matches user's team selection
+        if not self._should_trade_market(game):
             return
 
         # Check if trading is enabled for this market
@@ -1418,6 +1486,74 @@ class BotRunner:
 
         return default
 
+    def _should_trade_market(self, game: TrackedGame) -> bool:
+        """
+        Check if the market matches the user's selected side.
+        
+        Users can select:
+        - "home": Only bet if the market favors home team
+        - "away": Only bet if the market favors away team
+        - "both": Can bet on either team (legacy behavior)
+        
+        For moneyline markets, we determine which team the YES token represents
+        by checking the market question text.
+        
+        Args:
+            game: Tracked game with selected_side field
+            
+        Returns:
+            True if we should trade this market based on selected side
+        """
+        selected_side = getattr(game, 'selected_side', 'home')
+        
+        # "both" allows trading either side
+        if selected_side == "both":
+            return True
+        
+        # Determine which team the YES token represents
+        # Most Polymarket moneyline markets are structured as "Will [Team] win?"
+        market_question = game.market.question.lower() if hasattr(game.market, 'question') else ""
+        
+        home_team_lower = game.home_team.lower()
+        away_team_lower = game.away_team.lower()
+        
+        # Check if market question references the home or away team
+        home_in_question = any(word in market_question for word in home_team_lower.split())
+        away_in_question = any(word in market_question for word in away_team_lower.split())
+        
+        # If we can't determine, allow the trade (conservative fallback)
+        if not home_in_question and not away_in_question:
+            logger.debug(f"Cannot determine market team for {game.market.condition_id}, allowing trade")
+            return True
+        
+        # Determine if market is for home or away team
+        market_is_home = home_in_question and not away_in_question
+        market_is_away = away_in_question and not home_in_question
+        
+        # If both teams mentioned (e.g., "Team A vs Team B"), we need more analysis
+        if home_in_question and away_in_question:
+            # Check which team name appears first - usually the subject team
+            home_pos = market_question.find(home_team_lower.split()[0])
+            away_pos = market_question.find(away_team_lower.split()[0])
+            
+            if home_pos >= 0 and away_pos >= 0:
+                market_is_home = home_pos < away_pos
+                market_is_away = not market_is_home
+            else:
+                # Can't determine, allow trade
+                return True
+        
+        # Validate against selected side
+        if selected_side == "home" and not market_is_home:
+            logger.debug(f"Entry blocked: user selected home team but market is for away team")
+            return False
+        
+        if selected_side == "away" and not market_is_away:
+            logger.debug(f"Entry blocked: user selected away team but market is for home team")
+            return False
+        
+        return True
+
     def _is_market_enabled(self, game: TrackedGame) -> bool:
         """
         Check if trading is enabled for this market.
@@ -1533,7 +1669,8 @@ class BotRunner:
         home_team: str,
         away_team: str,
         market: DiscoveredMarket,
-        game_data: dict
+        game_data: dict,
+        selected_side: str = "home"
     ) -> None:
         """
         Start tracking a game for trading.
@@ -1546,6 +1683,7 @@ class BotRunner:
             away_team: Away team name
             market: Matched Polymarket market
             game_data: ESPN game data
+            selected_side: Which team to bet on ("home", "away", or "both")
         """
         # Get baseline price
         baseline = market.current_price_yes
@@ -1557,7 +1695,8 @@ class BotRunner:
             away_team=away_team,
             market=market,
             baseline_price=baseline,
-            current_price=baseline
+            current_price=baseline,
+            selected_side=selected_side
         )
         
         self.tracked_games[event_id] = tracked

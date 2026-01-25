@@ -464,6 +464,7 @@ async def save_bot_config(
 ) -> BotConfigResponse:
     """
     Save bot configuration with trading parameters.
+    Supports multiple games from different sports via additional_games array.
     This does not start the bot - use /bot/start for that.
     """
     from datetime import datetime
@@ -471,9 +472,18 @@ async def save_bot_config(
     
     user_id = str(current_user.id)
     
+    # Build list of all games to track
+    all_games = [request.game.model_dump()]
+    
+    # Add additional games from other sports
+    if request.additional_games:
+        for game in request.additional_games:
+            all_games.append(game.model_dump())
+    
     _bot_configs[user_id] = {
         "sport": request.sport,
         "game": request.game.model_dump(),
+        "games": all_games,  # Store ALL games for multi-sport tracking
         "parameters": request.parameters.model_dump(),
         "simulation_mode": request.simulation_mode,
         "last_updated": datetime.now().isoformat()
@@ -491,11 +501,17 @@ async def save_bot_config(
     
     # Log the configuration change
     mode_str = "PAPER" if request.simulation_mode else "LIVE"
+    games_count = len(all_games)
+    if games_count > 1:
+        log_msg = f"[{mode_str}] Configuration updated: {games_count} games selected across multiple sports"
+    else:
+        log_msg = f"[{mode_str}] Configuration updated for {request.sport}: {request.game.away_team} @ {request.game.home_team}"
+    
     await ActivityLogCRUD.info(
         db,
         current_user.id,
         "BOT_CONFIG",
-        f"[{mode_str}] Configuration updated for {request.sport}: {request.game.away_team} @ {request.game.home_team}"
+        log_msg
     )
     
     status_info = get_bot_status(current_user.id)
