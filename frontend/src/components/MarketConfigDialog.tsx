@@ -17,6 +17,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { apiClient, MarketConfig, MarketConfigUpdate, Market } from '@/api/client';
+import { useToast } from '@/components/ui/use-toast';
 
 interface MarketConfigDialogProps {
   market: Market;
@@ -28,6 +29,7 @@ interface MarketConfigDialogProps {
  * Allows users to override sport-level defaults for specific markets.
  */
 export function MarketConfigDialog({ market, onSave }: MarketConfigDialogProps) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -89,7 +91,11 @@ export function MarketConfigDialog({ market, onSave }: MarketConfigDialogProps) 
         });
       }
     } catch (err) {
-      console.error('Failed to load market config:', err);
+      toast({
+        title: 'Error',
+        description: 'Failed to load market configuration.',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -100,10 +106,18 @@ export function MarketConfigDialog({ market, onSave }: MarketConfigDialogProps) 
     try {
       await apiClient.upsertMarketConfig(market.condition_id, formData);
       setHasCustomConfig(true);
+      toast({
+        title: 'Configuration saved',
+        description: 'Market trading parameters updated successfully.',
+      });
       onSave?.();
       setOpen(false);
     } catch (err) {
-      console.error('Failed to save market config:', err);
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to save market configuration.',
+        variant: 'destructive',
+      });
     } finally {
       setSaving(false);
     }
@@ -111,7 +125,7 @@ export function MarketConfigDialog({ market, onSave }: MarketConfigDialogProps) 
 
   const handleReset = async () => {
     if (!hasCustomConfig) return;
-    
+
     setSaving(true);
     try {
       await apiClient.deleteMarketConfigByCondition(market.condition_id);
@@ -128,9 +142,17 @@ export function MarketConfigDialog({ market, onSave }: MarketConfigDialogProps) 
         enabled: true,
         auto_trade: true,
       });
+      toast({
+        title: 'Configuration reset',
+        description: 'Market will now use sport-level defaults.',
+      });
       onSave?.();
     } catch (err) {
-      console.error('Failed to reset market config:', err);
+      toast({
+        title: 'Error',
+        description: err instanceof Error ? err.message : 'Failed to reset market configuration.',
+        variant: 'destructive',
+      });
     } finally {
       setSaving(false);
     }

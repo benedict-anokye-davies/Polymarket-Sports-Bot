@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, RefreshCw, Loader2 } from 'lucide-react';
+import { Search, RefreshCw, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { apiClient, LogEntry } from '@/api/client';
+import { TableSkeleton } from '@/components/TableSkeleton';
 
 const levelStyles = {
   INFO: 'bg-primary/10 text-primary border-primary/20',
@@ -121,9 +122,7 @@ export default function Logs() {
         <Card className="bg-card border-border overflow-hidden">
           <div className="max-h-[600px] overflow-y-auto scrollbar-thin">
             {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-              </div>
+              <TableSkeleton columns={4} rows={10} />
             ) : filteredLogs.length === 0 ? (
               <div className="text-center py-16">
                 <p className="text-muted-foreground">No logs found</p>
@@ -169,6 +168,37 @@ export default function Logs() {
             )}
           </div>
         </Card>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Page {page} of {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border hover:bg-muted gap-1"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border hover:bg-muted gap-1"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

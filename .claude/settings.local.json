@@ -18,7 +18,9 @@
       "Bash(taskkill //F //PID 29100)",
       "Bash(python migrate_to_supabase.py:*)",
       "Bash(findstr:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

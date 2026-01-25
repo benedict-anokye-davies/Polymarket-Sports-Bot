@@ -1,9 +1,11 @@
 /**
- * API Client for Polymarket Trading Bot Backend
+ * API Client for Kalshi Trading Bot Backend
  * Handles all HTTP requests with authentication and error handling
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sports-bot-production.up.railway.app/api/v1';
+
+const DEFAULT_TIMEOUT_MS = 30000;
 
 interface ApiError {
   detail: string;
@@ -23,10 +25,11 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    timeoutMs: number = DEFAULT_TIMEOUT_MS
   ): Promise<T> {
     const token = this.getToken();
-    
+
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
@@ -36,30 +39,42 @@ class ApiClient {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-      if (response.status === 401) {
-        // Clear token and redirect to login
-        localStorage.removeItem('auth_token');
-        window.location.href = '/login';
-        throw new Error('Unauthorized');
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        ...options,
+        headers,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('auth_token');
+          window.location.href = '/login';
+          throw new Error('Unauthorized');
+        }
+
+        const error: ApiError = await response.json().catch(() => ({
+          detail: 'An unexpected error occurred',
+          status: response.status,
+        }));
+
+        throw new Error(error.detail || `HTTP Error: ${response.status}`);
       }
 
-      const error: ApiError = await response.json().catch(() => ({
-        detail: 'An unexpected error occurred',
-        status: response.status,
-      }));
-
-      throw new Error(error.detail || `HTTP Error: ${response.status}`);
+      // Handle empty responses
+      const text = await response.text();
+      return text ? JSON.parse(text) : ({} as T);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error('Request timed out. Please check your connection and try again.');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    // Handle empty responses
-    const text = await response.text();
-    return text ? JSON.parse(text) : ({} as T);
   }
 
   // Auth endpoints
@@ -68,20 +83,33 @@ class ApiClient {
     formData.append('username', email);
     formData.append('password', password);
 
-    const response = await fetch(`${this.baseUrl}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Login failed' }));
-      throw new Error(error.detail || 'Login failed');
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Login failed' }));
+        throw new Error(error.detail || 'Login failed');
+      }
+
+      return response.json();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error('Login request timed out. Please check your connection and try again.');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return response.json();
   }
 
   async register(username: string, email: string, password: string): Promise<{ id: string; email: string }> {

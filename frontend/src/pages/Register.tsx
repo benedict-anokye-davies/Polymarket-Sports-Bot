@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, TrendingUp, Check, X } from 'lucide-react';
+import { Eye, EyeOff, TrendingUp, Check, X, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { toast } from 'sonner';
 
 interface PasswordStrength {
   hasMinLength: boolean;
@@ -21,10 +23,13 @@ export default function Register() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);
+
+  const { register, isLoading } = useAuthStore();
 
   const checkPasswordStrength = (pwd: string): PasswordStrength => ({
     hasMinLength: pwd.length >= 8,
@@ -40,13 +45,15 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (strengthScore < 4 || !passwordsMatch || !acceptTerms) return;
-    
-    setIsLoading(true);
-    // Simulate registration
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsLoading(false);
-    navigate('/onboarding');
+    if (strengthScore < 4 || !passwordsMatch || !acceptTerms || !username.trim()) return;
+
+    try {
+      await register(username.trim(), email, password);
+      toast.success('Account created successfully!');
+      navigate('/onboarding');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Registration failed');
+    }
   };
 
   const StrengthIndicator = ({ met, label }: { met: boolean; label: string }) => (
@@ -83,7 +90,7 @@ export default function Register() {
               Start your automated trading journey
             </CardDescription>
           </CardHeader>
-          
+
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -93,6 +100,8 @@ export default function Register() {
                   type="text"
                   placeholder="johndoe"
                   className="bg-muted border-border"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   required
                 />
               </div>
@@ -104,10 +113,12 @@ export default function Register() {
                   type="email"
                   placeholder="trader@example.com"
                   className="bg-muted border-border"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-muted-foreground">Password</Label>
                 <div className="relative">
@@ -134,7 +145,7 @@ export default function Register() {
                     )}
                   </Button>
                 </div>
-                
+
                 {/* Password Strength Bar */}
                 {password && (
                   <div className="space-y-2 mt-2">
@@ -145,7 +156,7 @@ export default function Register() {
                           className={cn(
                             'h-1 flex-1 rounded-full transition-colors',
                             level <= strengthScore
-                              ? strengthScore <= 2 ? 'bg-destructive' 
+                              ? strengthScore <= 2 ? 'bg-destructive'
                               : strengthScore <= 3 ? 'bg-warning'
                               : 'bg-primary'
                               : 'bg-muted'
@@ -199,8 +210,8 @@ export default function Register() {
               </div>
 
               <div className="flex items-start space-x-2">
-                <Checkbox 
-                  id="terms" 
+                <Checkbox
+                  id="terms"
                   checked={acceptTerms}
                   onCheckedChange={(checked) => setAcceptTerms(checked as boolean)}
                 />
@@ -217,18 +228,25 @@ export default function Register() {
             </CardContent>
 
             <CardFooter className="flex flex-col gap-4">
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full bg-primary hover:bg-primary/90"
-                disabled={isLoading || strengthScore < 4 || !passwordsMatch || !acceptTerms}
+                disabled={isLoading || strengthScore < 4 || !passwordsMatch || !acceptTerms || !username.trim()}
               >
-                {isLoading ? 'Creating account...' : 'Create Account'}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Creating account...
+                  </>
+                ) : (
+                  'Create Account'
+                )}
               </Button>
-              
+
               <p className="text-sm text-muted-foreground text-center">
                 Already have an account?{' '}
-                <Link 
-                  to="/login" 
+                <Link
+                  to="/login"
                   className="text-primary hover:text-primary/80 transition-colors"
                 >
                   Sign in

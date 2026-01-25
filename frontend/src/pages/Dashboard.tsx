@@ -5,6 +5,7 @@ import { StatCard } from '@/components/dashboard/StatCard';
 import { PriceChart } from '@/components/dashboard/PriceChart';
 import { LiveGames } from '@/components/dashboard/LiveGames';
 import { OrderBook } from '@/components/dashboard/OrderBook';
+import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton';
 import { apiClient, DashboardStats, ActivityLog } from '@/api/client';
 
 export default function Dashboard() {
@@ -65,6 +66,10 @@ export default function Dashboard() {
           </div>
         )}
 
+        {loading && !stats ? (
+          <DashboardSkeleton />
+        ) : (
+        <>
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <StatCard
@@ -117,16 +122,12 @@ export default function Dashboard() {
           <div className="bg-card border border-border rounded-lg p-6">
             <h3 className="text-base font-medium text-foreground mb-4">Recent Activity</h3>
             <div className="space-y-3">
-              {loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : stats?.recent_activity && stats.recent_activity.length > 0 ? (
+              {stats?.recent_activity && stats.recent_activity.length > 0 ? (
                 stats.recent_activity.slice(0, 5).map((activity: ActivityLog) => (
                   <div key={activity.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                     <div className="flex items-center gap-3">
                       <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                        activity.level === 'INFO' ? 'bg-primary/10 text-primary' : 
+                        activity.level === 'INFO' ? 'bg-primary/10 text-primary' :
                         activity.level === 'WARNING' ? 'bg-warning/10 text-warning' :
                         'bg-destructive/10 text-destructive'
                       }`}>
@@ -154,6 +155,8 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </DashboardLayout>
   );

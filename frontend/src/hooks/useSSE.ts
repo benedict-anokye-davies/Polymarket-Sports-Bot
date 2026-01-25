@@ -42,22 +42,51 @@ interface PositionData {
   unrealized_pnl: number;
 }
 
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_RECONNECT_DELAY = 1000;
+const HEARTBEAT_TIMEOUT_MS = 45000; // 45 seconds without heartbeat = stale
+
 export function useSSE(options: UseSSEOptions = {}) {
   const { enabled = true, onStatus, onGames, onPositions, onError } = options;
   const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
   const [isConnected, setIsConnected] = useState(false);
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  
+
   const { setSseConnected, setBotStatus, updateLastUpdate } = useAppStore();
 
-  const MAX_RECONNECT_ATTEMPTS = 10;
-  const BASE_RECONNECT_DELAY = 1000;
+  // Store callbacks in refs to avoid reconnect on callback identity change
+  const callbacksRef = useRef({ onStatus, onGames, onPositions, onError });
+  callbacksRef.current = { onStatus, onGames, onPositions, onError };
+
+  const clearHeartbeatTimeout = useCallback(() => {
+    if (heartbeatTimeoutRef.current) {
+      clearTimeout(heartbeatTimeoutRef.current);
+      heartbeatTimeoutRef.current = null;
+    }
+  }, []);
+
+  const resetHeartbeatTimeout = useCallback((reconnectFn: () => void) => {
+    clearHeartbeatTimeout();
+    heartbeatTimeoutRef.current = setTimeout(() => {
+      console.warn('[SSE] Heartbeat timeout - connection may be stale');
+      // Close and reconnect
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      setIsConnected(false);
+      setSseConnected(false);
+      reconnectFn();
+    }, HEARTBEAT_TIMEOUT_MS);
+  }, [clearHeartbeatTimeout, setSseConnected]);
 
   const connect = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
+    clearHeartbeatTimeout();
 
     try {
       const eventSource = apiClient.createSSEConnection();
@@ -66,37 +95,39 @@ export function useSSE(options: UseSSEOptions = {}) {
       eventSource.onopen = () => {
         console.log('[SSE] Connected to event stream');
         setIsConnected(true);
-        setReconnectAttempts(0);
+        reconnectAttemptsRef.current = 0;
         setSseConnected(true);
+        resetHeartbeatTimeout(connect);
       };
 
       eventSource.onmessage = (event) => {
         try {
           const parsed: SSEEvent = JSON.parse(event.data);
           updateLastUpdate();
+          resetHeartbeatTimeout(connect);
 
           switch (parsed.type) {
-            case 'status':
+            case 'status': {
               const statusData = parsed.data as StatusData;
               setBotStatus(statusData.state === 'running', statusData.tracked_games);
-              onStatus?.(statusData);
+              callbacksRef.current.onStatus?.(statusData);
               break;
-            
+            }
             case 'games':
-              onGames?.(parsed.data as GameData[]);
+              callbacksRef.current.onGames?.(parsed.data as GameData[]);
               break;
-            
+
             case 'positions':
-              onPositions?.(parsed.data as PositionData[]);
+              callbacksRef.current.onPositions?.(parsed.data as PositionData[]);
               break;
-            
+
             case 'heartbeat':
-              // Keep connection alive, no action needed
+              // Heartbeat received - timeout already reset above
               break;
-            
+
             case 'error':
               console.error('[SSE] Server error:', parsed.data);
-              onError?.(new Error(String(parsed.data)));
+              callbacksRef.current.onError?.(new Error(String(parsed.data)));
               break;
           }
         } catch (e) {
@@ -104,59 +135,53 @@ export function useSSE(options: UseSSEOptions = {}) {
         }
       };
 
-      eventSource.onerror = (error) => {
-        console.error('[SSE] Connection error:', error);
+      eventSource.onerror = () => {
         setIsConnected(false);
         setSseConnected(false);
+        clearHeartbeatTimeout();
         eventSource.close();
+        eventSourceRef.current = null;
 
-        // Reconnect with exponential backoff
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        const attempts = reconnectAttemptsRef.current;
+        if (attempts < MAX_RECONNECT_ATTEMPTS) {
           const delay = Math.min(
-            BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts),
-            30000 // Max 30 seconds
+            BASE_RECONNECT_DELAY * Math.pow(2, attempts),
+            30000
           );
-          
-          console.log(`[SSE] Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
-          
+
+          console.log(`[SSE] Reconnecting in ${delay}ms (attempt ${attempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+
           reconnectTimeoutRef.current = setTimeout(() => {
-            setReconnectAttempts(prev => prev + 1);
+            reconnectAttemptsRef.current += 1;
             connect();
           }, delay);
         } else {
           console.error('[SSE] Max reconnection attempts reached');
-          onError?.(new Error('Connection lost. Please refresh the page.'));
+          callbacksRef.current.onError?.(new Error('Connection lost. Please refresh the page.'));
         }
       };
     } catch (error) {
       console.error('[SSE] Failed to create connection:', error);
-      onError?.(error instanceof Error ? error : new Error('Failed to connect'));
+      callbacksRef.current.onError?.(error instanceof Error ? error : new Error('Failed to connect'));
     }
-  }, [
-    onStatus, 
-    onGames, 
-    onPositions, 
-    onError, 
-    reconnectAttempts, 
-    setSseConnected, 
-    setBotStatus, 
-    updateLastUpdate
-  ]);
+  }, [setSseConnected, setBotStatus, updateLastUpdate, clearHeartbeatTimeout, resetHeartbeatTimeout]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-    
+    clearHeartbeatTimeout();
+
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
-    
+
+    reconnectAttemptsRef.current = 0;
     setIsConnected(false);
     setSseConnected(false);
-  }, [setSseConnected]);
+  }, [setSseConnected, clearHeartbeatTimeout]);
 
   useEffect(() => {
     if (enabled) {
@@ -172,7 +197,7 @@ export function useSSE(options: UseSSEOptions = {}) {
 
   return {
     isConnected,
-    reconnectAttempts,
+    reconnectAttempts: reconnectAttemptsRef.current,
     connect,
     disconnect,
   };

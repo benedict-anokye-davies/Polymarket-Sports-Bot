@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Accordion,
@@ -14,35 +15,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { apiClient } from '@/api/client';
-
-// Backend sport config interface matching API response
-interface SportConfig {
-  id: string;
-  sport: string;
-  enabled: boolean;
-  entry_threshold_drop: number;
-  entry_threshold_absolute: number;
-  take_profit_pct: number;
-  stop_loss_pct: number;
-  position_size_usdc: number;
-  max_positions_per_game: number;
-  max_total_positions: number;
-  min_time_remaining_seconds: number;
-  updated_at: string;
-}
-
-// Backend global settings interface
-interface GlobalSettings {
-  id: string;
-  bot_enabled: boolean;
-  max_daily_loss_usdc: number;
-  max_portfolio_exposure_usdc: number;
-  discord_webhook_url: string | null;
-  discord_alerts_enabled: boolean;
-  poll_interval_seconds: number;
-  updated_at: string;
-}
+import { apiClient, SportConfigResponse } from '@/api/client';
+import { useSportConfigs, useGlobalSettings, useUpdateSportConfig, useUpdateGlobalSettings } from '@/hooks/useApi';
 
 // Wallet credentials interface
 interface WalletCredentials {
@@ -62,12 +36,11 @@ const SPORT_LABELS: Record<string, string> = {
 
 export default function Settings() {
   const { toast } = useToast();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
-  
+
   // Wallet credentials
   const [wallet, setWallet] = useState<WalletCredentials>({
     api_key: '',
@@ -76,51 +49,37 @@ export default function Settings() {
     funder_address: '',
   });
   const [walletConnected, setWalletConnected] = useState(false);
-  
-  // Sport configs
-  const [sportConfigs, setSportConfigs] = useState<Record<string, SportConfig>>({});
-  
-  // Global settings
-  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
 
-  // Load settings on mount
+  // React Query hooks
+  const { data: sportConfigsData, isLoading: loadingSports } = useSportConfigs();
+  const { data: globalSettingsData, isLoading: loadingGlobal } = useGlobalSettings();
+  const updateSportConfigMutation = useUpdateSportConfig();
+  const updateGlobalSettingsMutation = useUpdateGlobalSettings();
+
+  // Local editable copies of server data
+  const [sportConfigs, setSportConfigs] = useState<Record<string, SportConfigResponse>>({});
+  const [globalSettings, setGlobalSettings] = useState<typeof globalSettingsData | null>(null);
+
+  // Sync fetched data into local state for editing
   useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = async () => {
-    try {
-      setLoading(true);
-      
-      // Load sport configs
-      const configs = await apiClient.getSportConfigs();
-      const configMap: Record<string, SportConfig> = {};
-      configs.forEach((config: SportConfig) => {
+    if (sportConfigsData) {
+      const configMap: Record<string, SportConfigResponse> = {};
+      sportConfigsData.forEach((config) => {
         configMap[config.sport] = config;
       });
       setSportConfigs(configMap);
-      
-      // Load global settings
-      const global = await apiClient.getGlobalSettings();
-      setGlobalSettings(global);
-      
-      // Check wallet connection status
-      const user = await apiClient.getCurrentUser();
-      setWalletConnected(user.onboarding_completed);
-      
-    } catch (error) {
-      console.error('Failed to load settings:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load settings. Please refresh the page.',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [sportConfigsData]);
 
-  const updateSportConfig = (sport: string, field: keyof SportConfig, value: number | boolean) => {
+  useEffect(() => {
+    if (globalSettingsData) {
+      setGlobalSettings(globalSettingsData);
+    }
+  }, [globalSettingsData]);
+
+  const loading = loadingSports || loadingGlobal;
+
+  const updateSportConfig = (sport: string, field: keyof SportConfigResponse, value: number | boolean) => {
     setSportConfigs(prev => ({
       ...prev,
       [sport]: {
@@ -133,46 +92,50 @@ export default function Settings() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      
-      // Save each sport config that has changes
-      for (const sport of SPORTS) {
-        const config = sportConfigs[sport];
-        if (config) {
-          await apiClient.updateSportConfig(sport, {
-            enabled: config.enabled,
-            entry_threshold_drop: config.entry_threshold_drop,
-            entry_threshold_absolute: config.entry_threshold_absolute,
-            take_profit_pct: config.take_profit_pct,
-            stop_loss_pct: config.stop_loss_pct,
-            position_size_usdc: config.position_size_usdc,
-            max_positions_per_game: config.max_positions_per_game,
-            max_total_positions: config.max_total_positions,
-            min_time_remaining_seconds: config.min_time_remaining_seconds,
+
+      // Save each sport config
+      const sportPromises = SPORTS
+        .filter(sport => sportConfigs[sport])
+        .map(sport => {
+          const config = sportConfigs[sport];
+          return updateSportConfigMutation.mutateAsync({
+            sport,
+            config: {
+              enabled: config.enabled,
+              entry_threshold_drop: config.entry_threshold_drop,
+              entry_threshold_absolute: config.entry_threshold_absolute,
+              take_profit_pct: config.take_profit_pct,
+              stop_loss_pct: config.stop_loss_pct,
+              position_size_usdc: config.position_size_usdc,
+              max_positions_per_game: config.max_positions_per_game,
+              max_total_positions: config.max_total_positions,
+              min_time_remaining_seconds: config.min_time_remaining_seconds,
+            },
           });
-        }
-      }
-      
-      // Save global settings
-      if (globalSettings) {
-        await apiClient.updateGlobalSettings({
-          bot_enabled: globalSettings.bot_enabled,
-          max_daily_loss_usdc: globalSettings.max_daily_loss_usdc,
-          max_portfolio_exposure_usdc: globalSettings.max_portfolio_exposure_usdc,
-          discord_webhook_url: globalSettings.discord_webhook_url,
-          discord_alerts_enabled: globalSettings.discord_alerts_enabled,
         });
-      }
-      
+
+      // Save global settings
+      const globalPromise = globalSettings
+        ? updateGlobalSettingsMutation.mutateAsync({
+            bot_enabled: globalSettings.bot_enabled,
+            max_daily_loss_usdc: globalSettings.max_daily_loss_usdc,
+            max_portfolio_exposure_usdc: globalSettings.max_portfolio_exposure_usdc,
+            discord_webhook_url: globalSettings.discord_webhook_url,
+            discord_alerts_enabled: globalSettings.discord_alerts_enabled,
+          })
+        : Promise.resolve();
+
+      await Promise.all([...sportPromises, globalPromise]);
+
       toast({
         title: 'Success',
         description: 'Settings saved successfully.',
       });
-      
+
     } catch (error) {
-      console.error('Failed to save settings:', error);
       toast({
         title: 'Error',
-        description: 'Failed to save settings. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to save settings. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -189,7 +152,7 @@ export default function Settings() {
       });
       return;
     }
-    
+
     try {
       setTestingConnection(true);
       await apiClient.connectWallet(wallet.api_key, wallet.funder_address, 1);
@@ -199,10 +162,9 @@ export default function Settings() {
         description: 'Wallet connection successful.',
       });
     } catch (error) {
-      console.error('Connection test failed:', error);
       toast({
         title: 'Error',
-        description: 'Connection test failed. Please check your credentials.',
+        description: error instanceof Error ? error.message : 'Connection test failed. Please check your credentials.',
         variant: 'destructive',
       });
     } finally {
@@ -219,7 +181,7 @@ export default function Settings() {
       });
       return;
     }
-    
+
     try {
       setTestingWebhook(true);
       await apiClient.testDiscordWebhook();
@@ -228,10 +190,9 @@ export default function Settings() {
         description: 'Test message sent to Discord.',
       });
     } catch (error) {
-      console.error('Webhook test failed:', error);
       toast({
         title: 'Error',
-        description: 'Webhook test failed. Please check the URL.',
+        description: error instanceof Error ? error.message : 'Webhook test failed. Please check the URL.',
         variant: 'destructive',
       });
     } finally {
@@ -242,8 +203,27 @@ export default function Settings() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="space-y-6 max-w-4xl">
+          <div className="flex items-center justify-between">
+            <div>
+              <Skeleton className="h-7 w-32" />
+              <Skeleton className="h-4 w-56 mt-2" />
+            </div>
+            <Skeleton className="h-10 w-32" />
+          </div>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="bg-card border border-border rounded-lg p-6 space-y-4">
+              <Skeleton className="h-5 w-40" />
+              <div className="grid grid-cols-2 gap-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            </div>
+          ))}
         </div>
       </DashboardLayout>
     );
@@ -260,8 +240,8 @@ export default function Settings() {
               Configure your bot and trading parameters
             </p>
           </div>
-          <Button 
-            onClick={handleSave} 
+          <Button
+            onClick={handleSave}
             disabled={saving}
             className="bg-primary hover:bg-primary/90"
           >
@@ -288,7 +268,7 @@ export default function Settings() {
               <Input
                 id="apiKey"
                 type="text"
-                placeholder="Your Polymarket API Key"
+                placeholder="Your Kalshi API Key"
                 className="bg-muted border-border font-mono"
                 value={wallet.api_key}
                 onChange={(e) => setWallet(prev => ({ ...prev, api_key: e.target.value }))}
@@ -349,8 +329,8 @@ export default function Settings() {
                   {walletConnected ? 'Connected' : 'Not Connected'}
                 </span>
               </div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="border-border hover:bg-muted gap-2"
                 onClick={handleTestConnection}
                 disabled={testingConnection}
@@ -376,13 +356,13 @@ export default function Settings() {
               {SPORTS.map((sport) => {
                 const config = sportConfigs[sport];
                 if (!config) return null;
-                
+
                 return (
                   <AccordionItem key={sport} value={sport} className="border-border">
                     <AccordionTrigger className="hover:no-underline px-4 py-3 bg-muted/30 rounded-md">
                       <div className="flex items-center justify-between w-full pr-4">
                         <span className="font-medium">{SPORT_LABELS[sport]}</span>
-                        <Switch 
+                        <Switch
                           checked={config.enabled}
                           onCheckedChange={(checked) => {
                             updateSportConfig(sport, 'enabled', checked);
@@ -395,12 +375,12 @@ export default function Settings() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label className="text-muted-foreground text-xs">Entry Threshold Drop (%)</Label>
-                          <Input 
-                            type="number" 
+                          <Input
+                            type="number"
                             step="0.01"
                             min="0"
                             max="1"
-                            placeholder="e.g. 0.15" 
+                            placeholder="e.g. 0.15"
                             className="bg-muted border-border"
                             value={config.entry_threshold_drop}
                             onChange={(e) => updateSportConfig(sport, 'entry_threshold_drop', parseFloat(e.target.value) || 0)}
@@ -409,12 +389,12 @@ export default function Settings() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-muted-foreground text-xs">Absolute Entry Price</Label>
-                          <Input 
-                            type="number" 
+                          <Input
+                            type="number"
                             step="0.01"
                             min="0"
                             max="1"
-                            placeholder="e.g. 0.50" 
+                            placeholder="e.g. 0.50"
                             className="bg-muted border-border"
                             value={config.entry_threshold_absolute}
                             onChange={(e) => updateSportConfig(sport, 'entry_threshold_absolute', parseFloat(e.target.value) || 0)}
@@ -423,12 +403,12 @@ export default function Settings() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-muted-foreground text-xs">Take Profit (%)</Label>
-                          <Input 
-                            type="number" 
+                          <Input
+                            type="number"
                             step="0.01"
                             min="0"
                             max="1"
-                            placeholder="e.g. 0.20" 
+                            placeholder="e.g. 0.20"
                             className="bg-muted border-border"
                             value={config.take_profit_pct}
                             onChange={(e) => updateSportConfig(sport, 'take_profit_pct', parseFloat(e.target.value) || 0)}
@@ -437,12 +417,12 @@ export default function Settings() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-muted-foreground text-xs">Stop Loss (%)</Label>
-                          <Input 
-                            type="number" 
+                          <Input
+                            type="number"
                             step="0.01"
                             min="0"
                             max="1"
-                            placeholder="e.g. 0.10" 
+                            placeholder="e.g. 0.10"
                             className="bg-muted border-border"
                             value={config.stop_loss_pct}
                             onChange={(e) => updateSportConfig(sport, 'stop_loss_pct', parseFloat(e.target.value) || 0)}
@@ -451,10 +431,10 @@ export default function Settings() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-muted-foreground text-xs">Position Size (USDC)</Label>
-                          <Input 
-                            type="number" 
+                          <Input
+                            type="number"
                             min="1"
-                            placeholder="e.g. 50" 
+                            placeholder="e.g. 50"
                             className="bg-muted border-border"
                             value={config.position_size_usdc}
                             onChange={(e) => updateSportConfig(sport, 'position_size_usdc', parseFloat(e.target.value) || 50)}
@@ -462,10 +442,10 @@ export default function Settings() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-muted-foreground text-xs">Min Time Remaining (sec)</Label>
-                          <Input 
-                            type="number" 
+                          <Input
+                            type="number"
                             min="0"
-                            placeholder="e.g. 300" 
+                            placeholder="e.g. 300"
                             className="bg-muted border-border"
                             value={config.min_time_remaining_seconds}
                             onChange={(e) => updateSportConfig(sport, 'min_time_remaining_seconds', parseInt(e.target.value) || 0)}
@@ -474,11 +454,11 @@ export default function Settings() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-muted-foreground text-xs">Max Positions Per Game</Label>
-                          <Input 
-                            type="number" 
+                          <Input
+                            type="number"
                             min="1"
                             max="10"
-                            placeholder="e.g. 1" 
+                            placeholder="e.g. 1"
                             className="bg-muted border-border"
                             value={config.max_positions_per_game}
                             onChange={(e) => updateSportConfig(sport, 'max_positions_per_game', parseInt(e.target.value) || 1)}
@@ -486,11 +466,11 @@ export default function Settings() {
                         </div>
                         <div className="space-y-2">
                           <Label className="text-muted-foreground text-xs">Max Total Positions</Label>
-                          <Input 
-                            type="number" 
+                          <Input
+                            type="number"
                             min="1"
                             max="50"
-                            placeholder="e.g. 5" 
+                            placeholder="e.g. 5"
                             className="bg-muted border-border"
                             value={config.max_total_positions}
                             onChange={(e) => updateSportConfig(sport, 'max_total_positions', parseInt(e.target.value) || 5)}
@@ -522,10 +502,10 @@ export default function Settings() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label className="text-muted-foreground">Max Daily Loss (USDC)</Label>
-                <Input 
-                  type="number" 
+                <Input
+                  type="number"
                   min="0"
-                  placeholder="e.g. 500" 
+                  placeholder="e.g. 500"
                   className="bg-muted border-border"
                   value={globalSettings?.max_daily_loss_usdc || ''}
                   onChange={(e) => setGlobalSettings(prev => prev ? {
@@ -536,10 +516,10 @@ export default function Settings() {
               </div>
               <div className="space-y-2">
                 <Label className="text-muted-foreground">Max Total Exposure (USDC)</Label>
-                <Input 
-                  type="number" 
+                <Input
+                  type="number"
                   min="0"
-                  placeholder="e.g. 5000" 
+                  placeholder="e.g. 5000"
                   className="bg-muted border-border"
                   value={globalSettings?.max_portfolio_exposure_usdc || ''}
                   onChange={(e) => setGlobalSettings(prev => prev ? {
@@ -555,7 +535,7 @@ export default function Settings() {
                 <p className="text-sm font-medium text-foreground">Emergency Stop</p>
                 <p className="text-xs text-muted-foreground">Halt all trading immediately</p>
               </div>
-              <Switch 
+              <Switch
                 checked={globalSettings?.bot_enabled === false}
                 onCheckedChange={(checked) => setGlobalSettings(prev => prev ? {
                   ...prev,
@@ -577,9 +557,9 @@ export default function Settings() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label className="text-muted-foreground">Discord Webhook URL</Label>
-              <Input 
-                type="url" 
-                placeholder="https://discord.com/api/webhooks/..." 
+              <Input
+                type="url"
+                placeholder="https://discord.com/api/webhooks/..."
                 className="bg-muted border-border"
                 value={globalSettings?.discord_webhook_url || ''}
                 onChange={(e) => setGlobalSettings(prev => prev ? {
@@ -588,9 +568,9 @@ export default function Settings() {
                 } : null)}
               />
             </div>
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               className="border-border hover:bg-muted"
               onClick={handleTestWebhook}
               disabled={testingWebhook || !globalSettings?.discord_webhook_url}
@@ -608,7 +588,7 @@ export default function Settings() {
                 <p className="text-sm font-medium text-foreground">Discord Alerts</p>
                 <p className="text-xs text-muted-foreground">Enable notifications for trades and errors</p>
               </div>
-              <Switch 
+              <Switch
                 checked={globalSettings?.discord_alerts_enabled || false}
                 onCheckedChange={(checked) => setGlobalSettings(prev => prev ? {
                   ...prev,

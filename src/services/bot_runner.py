@@ -10,6 +10,7 @@ from decimal import Decimal
 from typing import Any, Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,7 +58,7 @@ class TrackedGame:
     away_score: int = 0
     last_update: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     has_position: bool = False
-    position_id: int | None = None
+    position_id: UUID | None = None
 
 
 class BotRunner:
@@ -98,7 +99,7 @@ class BotRunner:
         self.token_to_game: dict[str, str] = {}
         
         # Configuration
-        self.user_id: int | None = None
+        self.user_id: UUID | None = None
         self.enabled_sports: list[str] = []
         self.risk_per_trade: float = 0.02
         self.max_daily_loss: float = 100.0
@@ -118,7 +119,7 @@ class BotRunner:
     async def initialize(
         self,
         db: AsyncSession,
-        user_id: int
+        user_id: UUID
     ) -> None:
         """
         Initialize bot with user configuration.
@@ -407,16 +408,19 @@ class BotRunner:
             return
         
         # Register price callback
-        self.websocket.on_price_update(self._handle_price_update)
+        self.websocket.add_callback(self._handle_price_update)
         
         while not self._stop_event.is_set():
             try:
                 await self.websocket.connect()
                 
                 # Subscribe to tracked markets
-                token_ids = list(self.token_to_game.keys())
-                if token_ids:
-                    await self.websocket.subscribe_markets(token_ids)
+                for game in self.tracked_games.values():
+                    await self.websocket.subscribe(
+                        game.market.condition_id,
+                        game.market.token_id_yes,
+                        game.market.token_id_no
+                    )
                 
                 # Keep connection alive
                 while not self._stop_event.is_set() and self.websocket.is_connected:
@@ -815,7 +819,11 @@ class BotRunner:
         
         # Subscribe to WebSocket updates
         if self.websocket and self.websocket.is_connected:
-            await self.websocket.subscribe_markets([market.token_id_yes])
+            await self.websocket.subscribe(
+                market.condition_id,
+                market.token_id_yes,
+                market.token_id_no
+            )
         
         # Save to database
         await TrackedMarketCRUD.create(
@@ -859,7 +867,7 @@ class BotRunner:
         
         # Unsubscribe from WebSocket
         if self.websocket:
-            await self.websocket.unsubscribe_markets([game.market.token_id_yes])
+            await self.websocket.unsubscribe(game.market.condition_id)
         
         # Update database
         await TrackedMarketCRUD.deactivate(
@@ -911,11 +919,11 @@ class BotRunner:
 
 
 # Singleton instance - initialized per user session
-_bot_instances: dict[int, BotRunner] = {}
+_bot_instances: dict[UUID, BotRunner] = {}
 
 
 async def get_bot_runner(
-    user_id: int,
+    user_id: UUID,
     polymarket_client: PolymarketClient,
     trading_engine: TradingEngine,
     espn_service: ESPNService
@@ -942,7 +950,7 @@ async def get_bot_runner(
     return _bot_instances[user_id]
 
 
-def get_bot_status(user_id: int) -> dict | None:
+def get_bot_status(user_id: UUID) -> dict | None:
     """
     Get bot status for a user without creating instance.
     

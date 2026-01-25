@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import { apiClient, Market } from '@/api/client';
 import { MarketConfigDialog } from '@/components/MarketConfigDialog';
+import { TableSkeleton } from '@/components/TableSkeleton';
 
 const statusStyles = {
   LIVE: 'bg-primary/10 text-primary border-primary/20',
@@ -146,9 +147,7 @@ export default function Markets() {
         <Card className="bg-card border-border overflow-hidden">
           <div className="overflow-x-auto">
             {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-              </div>
+              <TableSkeleton columns={7} rows={6} />
             ) : filteredMarkets.length === 0 ? (
               <div className="text-center py-16">
                 <p className="text-muted-foreground">No markets found</p>

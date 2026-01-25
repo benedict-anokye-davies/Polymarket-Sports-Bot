@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import apiClient, { DashboardStats, BotStatus, Market, Position, Settings, PaginatedLogs } from '@/api/client';
+import apiClient, { DashboardStats, BotStatus, Market, Position, Settings, PaginatedLogs, SportConfigResponse, SportConfigUpdate, GlobalSettingsResponse, GlobalSettingsUpdate } from '@/api/client';
 
 // Query keys
 export const queryKeys = {
@@ -8,6 +8,8 @@ export const queryKeys = {
   markets: (sport?: string) => ['markets', sport] as const,
   positions: (status?: string) => ['positions', status] as const,
   settings: ['settings'] as const,
+  sportConfigs: ['settings', 'sports'] as const,
+  globalSettings: ['settings', 'global'] as const,
   logs: (level?: string, page?: number) => ['logs', level, page] as const,
   onboarding: ['onboarding'] as const,
 };
@@ -167,16 +169,58 @@ export function useCompleteOnboardingStep() {
 
 export function useConnectWallet() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: ({ privateKey, funderAddress, signatureType }: { 
-      privateKey: string; 
-      funderAddress: string; 
+    mutationFn: ({ privateKey, funderAddress, signatureType }: {
+      privateKey: string;
+      funderAddress: string;
       signatureType: number;
     }) => apiClient.connectWallet(privateKey, funderAddress, signatureType),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.onboarding });
       queryClient.invalidateQueries({ queryKey: queryKeys.settings });
+    },
+  });
+}
+
+// Sport Config hooks
+export function useSportConfigs() {
+  return useQuery<SportConfigResponse[]>({
+    queryKey: queryKeys.sportConfigs,
+    queryFn: () => apiClient.getSportConfigs(),
+    staleTime: 60000,
+  });
+}
+
+export function useUpdateSportConfig() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ sport, config }: { sport: string; config: SportConfigUpdate }) =>
+      apiClient.updateSportConfig(sport, config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.sportConfigs });
+    },
+  });
+}
+
+// Global Settings hooks
+export function useGlobalSettings() {
+  return useQuery<GlobalSettingsResponse>({
+    queryKey: queryKeys.globalSettings,
+    queryFn: () => apiClient.getGlobalSettings(),
+    staleTime: 60000,
+  });
+}
+
+export function useUpdateGlobalSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (settings: GlobalSettingsUpdate) =>
+      apiClient.updateGlobalSettings(settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.globalSettings });
     },
   });
 }

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bot", tags=["Bot Control"])
 
 
-async def _create_bot_dependencies(db, user_id: int, credentials: dict):
+async def _create_bot_dependencies(db, user_id, credentials: dict):
     """
     Creates and configures bot dependencies.
     

@@ -43,8 +43,8 @@ export function Sidebar() {
           </div>
           {!sidebarCollapsed && (
             <div className="flex flex-col">
-              <span className="font-semibold text-foreground text-sm">Polymarket</span>
-              <span className="text-xs text-muted-foreground">Trading Bot</span>
+              <span className="font-semibold text-foreground text-sm">Kalshi Bot</span>
+              <span className="text-xs text-muted-foreground">Sports Trading</span>
             </div>
           )}
         </div>
