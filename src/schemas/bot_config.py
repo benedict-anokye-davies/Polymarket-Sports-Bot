@@ -70,6 +70,7 @@ class BotConfigRequest(BaseModel):
     sport: str = Field(..., description="Sport identifier (nba, nfl, etc.)")
     game: GameSelection = Field(..., description="Selected game to trade")
     parameters: TradingParameters = Field(..., description="Trading parameters")
+    simulation_mode: bool = Field(default=True, description="Paper trading mode - simulate trades without real money")
 
 
 class BotConfigResponse(BaseModel):
@@ -78,6 +79,7 @@ class BotConfigResponse(BaseModel):
     sport: Optional[str] = None
     game: Optional[GameSelection] = None
     parameters: TradingParameters
+    simulation_mode: bool = True
     last_updated: Optional[str] = None
 
 

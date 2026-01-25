@@ -328,14 +328,17 @@ class TradingEngine:
     async def execute_entry(
         self,
         market: TrackedMarket,
-        entry_signal: dict[str, Any]
+        entry_signal: dict[str, Any],
+        dry_run: bool = False
     ) -> dict[str, Any]:
         """
         Executes an entry trade based on the provided signal.
+        In dry_run mode, simulates the trade without placing real orders.
         
         Args:
             market: Market to enter
             entry_signal: Entry signal from evaluate_entry
+            dry_run: If True, simulate trade without real execution
         
         Returns:
             Execution result dictionary
@@ -348,12 +351,20 @@ class TradingEngine:
         size = position_size / price if price > 0 else 0
         
         try:
-            result = await self.client.place_order(
-                token_id=token_id,
-                side="BUY",
-                price=price,
-                size=size
-            )
+            if dry_run:
+                # Simulate order in paper trading mode
+                import uuid
+                simulated_order_id = f"SIM_{uuid.uuid4().hex[:8]}"
+                result = {"id": simulated_order_id, "status": "simulated"}
+                logger.info(f"[PAPER] Simulated BUY order: {token_id} @ {price}")
+            else:
+                # Real order execution
+                result = await self.client.place_order(
+                    token_id=token_id,
+                    side="BUY",
+                    price=price,
+                    size=size
+                )
             
             position = await PositionCRUD.create(
                 self.db,
@@ -370,16 +381,18 @@ class TradingEngine:
                 team=market.home_team if side == "YES" else market.away_team
             )
             
+            mode_prefix = "[PAPER] " if dry_run else ""
             await ActivityLogCRUD.info(
                 self.db,
                 self.user_id,
                 "TRADE",
-                f"Entered {side} position at {price:.4f}",
+                f"{mode_prefix}Entered {side} position at {price:.4f}",
                 details={
                     "position_id": str(position.id),
                     "token_id": token_id,
                     "size": size,
                     "reason": entry_signal["reason"],
+                    "simulated": dry_run,
                 }
             )
             
@@ -387,6 +400,7 @@ class TradingEngine:
                 "success": True,
                 "position_id": str(position.id),
                 "order_id": result.get("id"),
+                "simulated": dry_run,
             }
             
         except Exception as e:
@@ -408,14 +422,17 @@ class TradingEngine:
     async def execute_exit(
         self,
         position: Any,
-        exit_signal: dict[str, Any]
+        exit_signal: dict[str, Any],
+        dry_run: bool = False
     ) -> dict[str, Any]:
         """
         Executes an exit trade based on the provided signal.
+        In dry_run mode, simulates the trade without placing real orders.
         
         Args:
             position: Position to exit
             exit_signal: Exit signal from evaluate_exit
+            dry_run: If True, simulate trade without real execution
         
         Returns:
             Execution result dictionary
@@ -426,12 +443,20 @@ class TradingEngine:
             if not exit_price:
                 exit_price = await self.client.get_midpoint_price(position.token_id)
             
-            result = await self.client.place_order(
-                token_id=position.token_id,
-                side="SELL",
-                price=exit_price,
-                size=float(position.entry_size)
-            )
+            if dry_run:
+                # Simulate order in paper trading mode
+                import uuid
+                simulated_order_id = f"SIM_{uuid.uuid4().hex[:8]}"
+                result = {"id": simulated_order_id, "status": "simulated"}
+                logger.info(f"[PAPER] Simulated SELL order: {position.token_id} @ {exit_price}")
+            else:
+                # Real order execution
+                result = await self.client.place_order(
+                    token_id=position.token_id,
+                    side="SELL",
+                    price=exit_price,
+                    size=float(position.entry_size)
+                )
             
             exit_proceeds = Decimal(str(exit_price)) * position.entry_size
             
@@ -447,15 +472,17 @@ class TradingEngine:
             
             pnl = closed_position.realized_pnl_usdc
             
+            mode_prefix = "[PAPER] " if dry_run else ""
             await ActivityLogCRUD.info(
                 self.db,
                 self.user_id,
                 "TRADE",
-                f"Closed position at {exit_price:.4f}, P&L: {pnl:.2f} USDC",
+                f"{mode_prefix}Closed position at {exit_price:.4f}, P&L: {pnl:.2f} USDC",
                 details={
                     "position_id": str(position.id),
                     "reason": exit_signal["reason"],
                     "pnl_usdc": float(pnl) if pnl else 0,
+                    "simulated": dry_run,
                 }
             )
             
@@ -464,6 +491,7 @@ class TradingEngine:
                 "position_id": str(position.id),
                 "order_id": result.get("id"),
                 "pnl_usdc": float(pnl) if pnl else 0,
+                "simulated": dry_run,
             }
             
         except Exception as e:

@@ -133,6 +133,8 @@ export default function BotConfig() {
         if (config.sport) setSelectedSport(config.sport);
         if (config.game) setSelectedGames(new Set([config.game.game_id]));
         if (config.parameters) setTradingParams(fromApiParams(config.parameters));
+        // Load simulation mode from backend (defaults to true for safety)
+        setSimulationMode(config.simulation_mode ?? true);
       } catch (err) {
         console.log('No existing config found, using defaults');
       }
@@ -251,16 +253,18 @@ export default function BotConfig() {
             start_time: firstGame.startTime,
           },
           parameters: toApiParams(tradingParams),
+          simulation_mode: simulationMode,
         });
       }
-      setSuccessMessage(`Configuration saved for ${selectedGames.size} game${selectedGames.size > 1 ? 's' : ''}!`);
+      const modeStr = simulationMode ? 'Paper Trading' : 'Live Trading';
+      setSuccessMessage(`Configuration saved (${modeStr}) for ${selectedGames.size} game${selectedGames.size > 1 ? 's' : ''}!`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
       setIsSaving(false);
     }
-  }, [selectedSport, selectedGames.size, selectedGamesData, tradingParams]);
+  }, [selectedSport, selectedGames.size, selectedGamesData, tradingParams, simulationMode]);
 
   // Toggle bot on/off
   const handleToggleBot = useCallback(async () => {
@@ -273,7 +277,7 @@ export default function BotConfig() {
     setError(null);
     
     try {
-      // First save the config
+      // First save the config with simulation mode
       const firstGame = selectedGamesData[0];
       if (firstGame) {
         await apiClient.saveBotConfig({
@@ -286,6 +290,7 @@ export default function BotConfig() {
             start_time: firstGame.startTime,
           },
           parameters: toApiParams(tradingParams),
+          simulation_mode: simulationMode,
         });
       }
       
@@ -297,7 +302,8 @@ export default function BotConfig() {
       } else {
         await apiClient.startBot();
         setBotEnabled(true);
-        setSuccessMessage(`Bot started monitoring ${selectedGames.size} game${selectedGames.size > 1 ? 's' : ''}`);
+        const modeStr = simulationMode ? '(Paper Trading)' : '(Live Trading)';
+        setSuccessMessage(`Bot started ${modeStr} monitoring ${selectedGames.size} game${selectedGames.size > 1 ? 's' : ''}`);
       }
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
@@ -305,7 +311,7 @@ export default function BotConfig() {
     } finally {
       setIsLoading(false);
     }
-  }, [botEnabled, selectedGames.size, selectedGamesData, selectedSport, tradingParams]);
+  }, [botEnabled, selectedGames.size, selectedGamesData, selectedSport, tradingParams, simulationMode]);
 
   return (
     <DashboardLayout>

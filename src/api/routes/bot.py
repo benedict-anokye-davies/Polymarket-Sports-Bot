@@ -393,7 +393,7 @@ _bot_configs: dict[str, dict] = {}
 
 
 @router.get("/config", response_model=BotConfigResponse)
-async def get_bot_config(current_user: OnboardedUser) -> BotConfigResponse:
+async def get_bot_config(db: DbSession, current_user: OnboardedUser) -> BotConfigResponse:
     """
     Get current bot configuration for the user.
     """
@@ -404,6 +404,10 @@ async def get_bot_config(current_user: OnboardedUser) -> BotConfigResponse:
     
     status_info = get_bot_status(current_user.id)
     is_running = bool(status_info and status_info.get("state") == BotState.RUNNING.value)
+    
+    # Get simulation mode from database
+    settings = await GlobalSettingsCRUD.get_by_user_id(db, current_user.id)
+    simulation_mode = settings.dry_run_mode if settings and hasattr(settings, 'dry_run_mode') else True
     
     # Convert stored dict back to Pydantic models
     game_data = config.get("game")
@@ -417,6 +421,7 @@ async def get_bot_config(current_user: OnboardedUser) -> BotConfigResponse:
         sport=config.get("sport"),
         game=game,
         parameters=params,
+        simulation_mode=simulation_mode,
         last_updated=config.get("last_updated")
     )
 
@@ -432,6 +437,7 @@ async def save_bot_config(
     This does not start the bot - use /bot/start for that.
     """
     from datetime import datetime
+    from src.services.bot_runner import _bot_instances
     
     user_id = str(current_user.id)
     
@@ -439,15 +445,27 @@ async def save_bot_config(
         "sport": request.sport,
         "game": request.game.model_dump(),
         "parameters": request.parameters.model_dump(),
+        "simulation_mode": request.simulation_mode,
         "last_updated": datetime.now().isoformat()
     }
     
+    # Persist simulation mode to database
+    await GlobalSettingsCRUD.update(db, current_user.id, dry_run_mode=request.simulation_mode)
+    
+    # Update running bot if exists
+    bot_runner = _bot_instances.get(current_user.id)
+    if bot_runner:
+        bot_runner.dry_run = request.simulation_mode
+        if bot_runner.polymarket_client:
+            bot_runner.polymarket_client.dry_run = request.simulation_mode
+    
     # Log the configuration change
+    mode_str = "PAPER" if request.simulation_mode else "LIVE"
     await ActivityLogCRUD.info(
         db,
         current_user.id,
         "BOT_CONFIG",
-        f"Configuration updated for {request.sport}: {request.game.away_team} @ {request.game.home_team}"
+        f"[{mode_str}] Configuration updated for {request.sport}: {request.game.away_team} @ {request.game.home_team}"
     )
     
     status_info = get_bot_status(current_user.id)
@@ -458,6 +476,7 @@ async def save_bot_config(
         sport=request.sport,
         game=request.game,
         parameters=request.parameters,
+        simulation_mode=request.simulation_mode,
         last_updated=_bot_configs[user_id]["last_updated"]
     )
 

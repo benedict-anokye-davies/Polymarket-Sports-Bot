@@ -180,6 +180,11 @@ class BotRunner:
             # Apply to polymarket client
             self.polymarket_client.dry_run = self.dry_run
             self.polymarket_client.max_slippage = self.max_slippage
+            
+            # Set up Discord notifications if webhook URL is configured
+            if settings.discord_webhook_url and settings.discord_alerts_enabled:
+                discord_notifier.set_webhook_url(settings.discord_webhook_url)
+                logger.info("Discord notifications enabled")
         
         # Load sport configs with per-sport risk limits
         configs = await SportConfigCRUD.get_by_user_id(db, user_id)

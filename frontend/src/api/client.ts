@@ -801,6 +801,7 @@ export interface BotConfigRequest {
   sport: string;
   game: GameSelection;
   parameters: TradingParameters;
+  simulation_mode?: boolean;
 }
 
 export interface BotConfigResponse {
@@ -808,6 +809,7 @@ export interface BotConfigResponse {
   sport?: string;
   game?: GameSelection;
   parameters: TradingParameters;
+  simulation_mode?: boolean;
   last_updated?: string;
 }
 

@@ -5,7 +5,7 @@ CRUD operations for ActivityLog model.
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.activity_log import ActivityLog
@@ -90,6 +90,50 @@ class ActivityLogCRUD:
         Creates an ERROR level log entry.
         """
         return await ActivityLogCRUD.create(db, user_id, "ERROR", category, message, details)
+    
+    @staticmethod
+    async def count_logs(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        level: str | None = None,
+        category: str | None = None
+    ) -> int:
+        """
+        Counts total logs matching the filter criteria.
+        """
+        query = select(func.count()).select_from(ActivityLog).where(ActivityLog.user_id == user_id)
+        
+        if level:
+            query = query.where(ActivityLog.level == level)
+        if category:
+            query = query.where(ActivityLog.category == category)
+        
+        result = await db.execute(query)
+        return result.scalar() or 0
+    
+    @staticmethod
+    async def get_recent_paginated(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        limit: int = 50,
+        offset: int = 0,
+        level: str | None = None,
+        category: str | None = None
+    ) -> list[ActivityLog]:
+        """
+        Retrieves paginated activity logs with optional filtering.
+        """
+        query = select(ActivityLog).where(ActivityLog.user_id == user_id)
+        
+        if level:
+            query = query.where(ActivityLog.level == level)
+        if category:
+            query = query.where(ActivityLog.category == category)
+        
+        query = query.order_by(ActivityLog.created_at.desc()).offset(offset).limit(limit)
+        
+        result = await db.execute(query)
+        return list(result.scalars().all())
     
     @staticmethod
     async def get_recent(
