@@ -78,6 +78,20 @@ class TrackedMarket(Base):
         nullable=True
     )
     
+    # Game selection fields - allows users to choose specific games
+    is_user_selected: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="Whether user has selected this game for trading"
+    )
+    auto_discovered: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        comment="Whether this market was auto-discovered by the bot"
+    )
+    
     game_start_time: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True

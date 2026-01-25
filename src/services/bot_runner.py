@@ -1416,6 +1416,11 @@ class BotRunner:
     def _is_market_enabled(self, game: TrackedGame) -> bool:
         """
         Check if trading is enabled for this market.
+        
+        Validates:
+        - User has selected this game for trading (is_user_selected)
+        - Market-specific config allows trading (enabled, auto_trade)
+        - Sport is enabled in user's sport configs
 
         Args:
             game: Tracked game
@@ -1423,6 +1428,10 @@ class BotRunner:
         Returns:
             True if trading is allowed on this market
         """
+        # Check if user has selected this game for trading
+        if hasattr(game.market, 'is_user_selected') and not game.market.is_user_selected:
+            return False
+        
         condition_id = game.market.condition_id
 
         # Check market-specific config

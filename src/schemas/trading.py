@@ -1,5 +1,5 @@
 """
-Trading schemas for markets, positions, and orders.
+Trading schemas for markets, positions, orders, and game selection.
 """
 
 import uuid
@@ -34,6 +34,8 @@ class TrackedMarketResponse(BaseModel):
     home_score: int | None
     away_score: int | None
     match_confidence: Decimal | None
+    is_user_selected: bool = True
+    auto_discovered: bool = True
     last_updated_at: datetime
     
     model_config = {"from_attributes": True}
@@ -103,6 +105,95 @@ class OrderResponse(BaseModel):
     message: str
     price: Decimal | None = None
     size: Decimal | None = None
+
+
+# ============================================================================
+# Game Selection Schemas
+# ============================================================================
+
+class GameSelectionRequest(BaseModel):
+    """
+    Schema for selecting/unselecting a single game.
+    """
+    market_id: uuid.UUID | None = Field(None, description="TrackedMarket UUID")
+    condition_id: str | None = Field(None, description="Polymarket condition_id")
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        if not self.market_id and not self.condition_id:
+            raise ValueError("Either market_id or condition_id must be provided")
+
+
+class BulkGameSelectionRequest(BaseModel):
+    """
+    Schema for selecting/unselecting multiple games at once.
+    """
+    market_ids: list[uuid.UUID] = Field(
+        ...,
+        min_length=1,
+        description="List of TrackedMarket UUIDs to select/unselect"
+    )
+
+
+class SportGameSelectionRequest(BaseModel):
+    """
+    Schema for selecting/unselecting all games for a sport.
+    """
+    sport: str = Field(..., description="Sport identifier (nba, nfl, mlb, etc.)")
+
+
+class GameSelectionResponse(BaseModel):
+    """
+    Schema for game selection operation response.
+    """
+    success: bool
+    message: str
+    market_id: uuid.UUID | None = None
+    condition_id: str | None = None
+    is_user_selected: bool | None = None
+
+
+class BulkGameSelectionResponse(BaseModel):
+    """
+    Schema for bulk game selection operation response.
+    """
+    success: bool
+    message: str
+    updated_count: int
+
+
+class AvailableGameResponse(BaseModel):
+    """
+    Schema for an available game discovered from Polymarket.
+    Shows games that can be selected for trading.
+    """
+    id: uuid.UUID
+    condition_id: str
+    question: str | None
+    sport: str
+    home_team: str | None
+    away_team: str | None
+    home_abbrev: str | None
+    away_abbrev: str | None
+    game_start_time: datetime | None
+    current_price_yes: Decimal | None
+    current_price_no: Decimal | None
+    is_live: bool
+    is_finished: bool
+    is_user_selected: bool
+    match_confidence: Decimal | None
+    
+    model_config = {"from_attributes": True}
+
+
+class GameListResponse(BaseModel):
+    """
+    Schema for list of games with selection status.
+    """
+    selected: list[AvailableGameResponse]
+    available: list[AvailableGameResponse]
+    total_selected: int
+    total_available: int
 
 
 # ============================================================================

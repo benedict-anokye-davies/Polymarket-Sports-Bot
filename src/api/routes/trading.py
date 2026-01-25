@@ -1,5 +1,5 @@
 """
-Trading routes for markets, positions, and manual orders.
+Trading routes for markets, positions, orders, and game selection.
 """
 
 import uuid
@@ -16,6 +16,13 @@ from src.schemas.trading import (
     PositionResponse,
     OrderRequest,
     OrderResponse,
+    GameSelectionRequest,
+    BulkGameSelectionRequest,
+    SportGameSelectionRequest,
+    GameSelectionResponse,
+    BulkGameSelectionResponse,
+    AvailableGameResponse,
+    GameListResponse,
 )
 from src.schemas.common import PaginatedResponse
 
@@ -270,3 +277,297 @@ async def close_position_manually(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to close position: {str(e)}"
         )
+
+
+# =============================================================================
+# Game Selection Endpoints
+# =============================================================================
+
+@router.get("/games", response_model=GameListResponse)
+async def get_all_games(
+    db: DbSession,
+    current_user: OnboardedUser,
+    sport: str | None = None
+) -> GameListResponse:
+    """
+    Returns all games organized by selection status.
+    Shows both selected (active for trading) and available (can be selected) games.
+    """
+    selected = await TrackedMarketCRUD.get_selected_for_user(db, current_user.id, sport)
+    available = await TrackedMarketCRUD.get_unselected_for_user(db, current_user.id, sport)
+    
+    return GameListResponse(
+        selected=[AvailableGameResponse.model_validate(m) for m in selected],
+        available=[AvailableGameResponse.model_validate(m) for m in available],
+        total_selected=len(selected),
+        total_available=len(available)
+    )
+
+
+@router.get("/games/selected", response_model=list[AvailableGameResponse])
+async def get_selected_games(
+    db: DbSession,
+    current_user: OnboardedUser,
+    sport: str | None = None
+) -> list[AvailableGameResponse]:
+    """
+    Returns games the user has selected for trading.
+    These are the games the bot will actively monitor and trade on.
+    """
+    markets = await TrackedMarketCRUD.get_selected_for_user(db, current_user.id, sport)
+    return [AvailableGameResponse.model_validate(m) for m in markets]
+
+
+@router.get("/games/available", response_model=list[AvailableGameResponse])
+async def get_available_games(
+    db: DbSession,
+    current_user: OnboardedUser,
+    sport: str | None = None
+) -> list[AvailableGameResponse]:
+    """
+    Returns games available for selection (discovered but not selected).
+    User can browse these and choose which ones to trade on.
+    """
+    markets = await TrackedMarketCRUD.get_unselected_for_user(db, current_user.id, sport)
+    return [AvailableGameResponse.model_validate(m) for m in markets]
+
+
+@router.post("/games/{market_id}/select", response_model=GameSelectionResponse)
+async def select_game(
+    market_id: uuid.UUID,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> GameSelectionResponse:
+    """
+    Selects a specific game for trading.
+    The bot will monitor and trade on this game based on configured thresholds.
+    """
+    market = await TrackedMarketCRUD.select_game(db, current_user.id, market_id)
+    
+    if not market:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game not found or not owned by user"
+        )
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "GAME_SELECTION",
+        f"Selected game for trading: {market.question or market.condition_id}",
+        details={"market_id": str(market_id), "sport": market.sport}
+    )
+    
+    return GameSelectionResponse(
+        success=True,
+        message="Game selected for trading",
+        market_id=market.id,
+        condition_id=market.condition_id,
+        is_user_selected=True
+    )
+
+
+@router.delete("/games/{market_id}/select", response_model=GameSelectionResponse)
+async def unselect_game(
+    market_id: uuid.UUID,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> GameSelectionResponse:
+    """
+    Removes a game from trading selection.
+    The bot will no longer monitor or trade on this game.
+    """
+    market = await TrackedMarketCRUD.unselect_game(db, current_user.id, market_id)
+    
+    if not market:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game not found or not owned by user"
+        )
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "GAME_SELECTION",
+        f"Unselected game from trading: {market.question or market.condition_id}",
+        details={"market_id": str(market_id), "sport": market.sport}
+    )
+    
+    return GameSelectionResponse(
+        success=True,
+        message="Game removed from trading selection",
+        market_id=market.id,
+        condition_id=market.condition_id,
+        is_user_selected=False
+    )
+
+
+@router.post("/games/select/bulk", response_model=BulkGameSelectionResponse)
+async def bulk_select_games(
+    request: BulkGameSelectionRequest,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> BulkGameSelectionResponse:
+    """
+    Selects multiple games for trading at once.
+    """
+    count = await TrackedMarketCRUD.bulk_select_games(
+        db, current_user.id, request.market_ids
+    )
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "GAME_SELECTION",
+        f"Bulk selected {count} games for trading",
+        details={"market_ids": [str(mid) for mid in request.market_ids]}
+    )
+    
+    return BulkGameSelectionResponse(
+        success=True,
+        message=f"Selected {count} games for trading",
+        updated_count=count
+    )
+
+
+@router.delete("/games/select/bulk", response_model=BulkGameSelectionResponse)
+async def bulk_unselect_games(
+    request: BulkGameSelectionRequest,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> BulkGameSelectionResponse:
+    """
+    Removes multiple games from trading selection at once.
+    """
+    count = await TrackedMarketCRUD.bulk_unselect_games(
+        db, current_user.id, request.market_ids
+    )
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "GAME_SELECTION",
+        f"Bulk unselected {count} games from trading",
+        details={"market_ids": [str(mid) for mid in request.market_ids]}
+    )
+    
+    return BulkGameSelectionResponse(
+        success=True,
+        message=f"Removed {count} games from trading selection",
+        updated_count=count
+    )
+
+
+@router.post("/games/select/sport/{sport}", response_model=BulkGameSelectionResponse)
+async def select_all_games_for_sport(
+    sport: str,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> BulkGameSelectionResponse:
+    """
+    Selects all available games for a specific sport.
+    Useful for enabling all NBA games at once, for example.
+    """
+    count = await TrackedMarketCRUD.select_all_by_sport(
+        db, current_user.id, sport.lower()
+    )
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "GAME_SELECTION",
+        f"Selected all {sport.upper()} games for trading ({count} games)",
+        details={"sport": sport}
+    )
+    
+    return BulkGameSelectionResponse(
+        success=True,
+        message=f"Selected all {sport.upper()} games ({count} total)",
+        updated_count=count
+    )
+
+
+@router.delete("/games/select/sport/{sport}", response_model=BulkGameSelectionResponse)
+async def unselect_all_games_for_sport(
+    sport: str,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> BulkGameSelectionResponse:
+    """
+    Removes all games for a specific sport from trading selection.
+    """
+    count = await TrackedMarketCRUD.unselect_all_by_sport(
+        db, current_user.id, sport.lower()
+    )
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "GAME_SELECTION",
+        f"Unselected all {sport.upper()} games from trading ({count} games)",
+        details={"sport": sport}
+    )
+    
+    return BulkGameSelectionResponse(
+        success=True,
+        message=f"Removed all {sport.upper()} games from selection ({count} total)",
+        updated_count=count
+    )
+
+
+@router.post("/markets/{condition_id}/track", response_model=GameSelectionResponse)
+async def track_market_by_condition(
+    condition_id: str,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> GameSelectionResponse:
+    """
+    Selects a market for trading using its condition_id.
+    Legacy endpoint for backwards compatibility with frontend.
+    """
+    market = await TrackedMarketCRUD.select_by_condition_id(
+        db, current_user.id, condition_id
+    )
+    
+    if not market:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Market not found"
+        )
+    
+    return GameSelectionResponse(
+        success=True,
+        message="Market tracking enabled",
+        market_id=market.id,
+        condition_id=market.condition_id,
+        is_user_selected=True
+    )
+
+
+@router.delete("/markets/{condition_id}/track", response_model=GameSelectionResponse)
+async def untrack_market_by_condition(
+    condition_id: str,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> GameSelectionResponse:
+    """
+    Unselects a market from trading using its condition_id.
+    Legacy endpoint for backwards compatibility with frontend.
+    """
+    market = await TrackedMarketCRUD.unselect_by_condition_id(
+        db, current_user.id, condition_id
+    )
+    
+    if not market:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Market not found"
+        )
+    
+    return GameSelectionResponse(
+        success=True,
+        message="Market tracking disabled",
+        market_id=market.id,
+        condition_id=market.condition_id,
+        is_user_selected=False
+    )

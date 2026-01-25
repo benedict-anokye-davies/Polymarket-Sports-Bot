@@ -147,11 +147,11 @@ class ApiClient {
     return this.request(`/trading/markets${params}`);
   }
 
-  async trackMarket(conditionId: string): Promise<{ message: string }> {
+  async trackMarket(conditionId: string): Promise<GameSelectionResponse> {
     return this.request(`/trading/markets/${conditionId}/track`, { method: 'POST' });
   }
 
-  async untrackMarket(conditionId: string): Promise<{ message: string }> {
+  async untrackMarket(conditionId: string): Promise<GameSelectionResponse> {
     return this.request(`/trading/markets/${conditionId}/track`, { method: 'DELETE' });
   }
 
@@ -162,6 +162,82 @@ class ApiClient {
 
   async closePosition(positionId: string): Promise<{ message: string }> {
     return this.request(`/trading/positions/${positionId}/close`, { method: 'POST' });
+  }
+
+  // ==========================================================================
+  // Game Selection Endpoints
+  // ==========================================================================
+
+  /**
+   * Get all games organized by selection status
+   */
+  async getAllGames(sport?: string): Promise<GameListResponse> {
+    const params = sport ? `?sport=${sport}` : '';
+    return this.request(`/trading/games${params}`);
+  }
+
+  /**
+   * Get only games selected for trading
+   */
+  async getSelectedGames(sport?: string): Promise<AvailableGame[]> {
+    const params = sport ? `?sport=${sport}` : '';
+    return this.request(`/trading/games/selected${params}`);
+  }
+
+  /**
+   * Get games available but not selected for trading
+   */
+  async getAvailableGames(sport?: string): Promise<AvailableGame[]> {
+    const params = sport ? `?sport=${sport}` : '';
+    return this.request(`/trading/games/available${params}`);
+  }
+
+  /**
+   * Select a specific game for trading
+   */
+  async selectGame(marketId: string): Promise<GameSelectionResponse> {
+    return this.request(`/trading/games/${marketId}/select`, { method: 'POST' });
+  }
+
+  /**
+   * Remove a game from trading selection
+   */
+  async unselectGame(marketId: string): Promise<GameSelectionResponse> {
+    return this.request(`/trading/games/${marketId}/select`, { method: 'DELETE' });
+  }
+
+  /**
+   * Select multiple games at once
+   */
+  async bulkSelectGames(marketIds: string[]): Promise<BulkGameSelectionResponse> {
+    return this.request('/trading/games/select/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ market_ids: marketIds }),
+    });
+  }
+
+  /**
+   * Remove multiple games from selection at once
+   */
+  async bulkUnselectGames(marketIds: string[]): Promise<BulkGameSelectionResponse> {
+    return this.request('/trading/games/select/bulk', {
+      method: 'DELETE',
+      body: JSON.stringify({ market_ids: marketIds }),
+    });
+  }
+
+  /**
+   * Select all games for a specific sport
+   */
+  async selectAllGamesForSport(sport: string): Promise<BulkGameSelectionResponse> {
+    return this.request(`/trading/games/select/sport/${sport}`, { method: 'POST' });
+  }
+
+  /**
+   * Remove all games for a sport from selection
+   */
+  async unselectAllGamesForSport(sport: string): Promise<BulkGameSelectionResponse> {
+    return this.request(`/trading/games/select/sport/${sport}`, { method: 'DELETE' });
   }
 
   // Sport Config endpoints
@@ -443,10 +519,16 @@ export interface Market {
   sport: string;
   home_team: string;
   away_team: string;
+  home_abbrev?: string;
+  away_abbrev?: string;
+  game_start_time?: string;
   baseline_price_yes: number;
   current_price_yes: number;
   is_live: boolean;
+  is_finished: boolean;
   is_tracked: boolean;
+  is_user_selected: boolean;
+  match_confidence?: number;
 }
 
 export interface Position {
@@ -591,6 +673,49 @@ export interface MarketConfigUpdate {
   max_positions?: number | null;
   enabled?: boolean;
   auto_trade?: boolean;
+}
+
+// =============================================================================
+// Game Selection Types
+// =============================================================================
+
+export interface AvailableGame {
+  id: string;
+  condition_id: string;
+  question: string | null;
+  sport: string;
+  home_team: string | null;
+  away_team: string | null;
+  home_abbrev: string | null;
+  away_abbrev: string | null;
+  game_start_time: string | null;
+  current_price_yes: number | null;
+  current_price_no: number | null;
+  is_live: boolean;
+  is_finished: boolean;
+  is_user_selected: boolean;
+  match_confidence: number | null;
+}
+
+export interface GameListResponse {
+  selected: AvailableGame[];
+  available: AvailableGame[];
+  total_selected: number;
+  total_available: number;
+}
+
+export interface GameSelectionResponse {
+  success: boolean;
+  message: string;
+  market_id?: string;
+  condition_id?: string;
+  is_user_selected?: boolean;
+}
+
+export interface BulkGameSelectionResponse {
+  success: boolean;
+  message: string;
+  updated_count: number;
 }
 
 // Export singleton instance
