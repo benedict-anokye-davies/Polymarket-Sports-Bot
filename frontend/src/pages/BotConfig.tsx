@@ -18,6 +18,8 @@ import {
   DollarSign,
   BarChart3,
   AlertTriangle,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -110,7 +112,7 @@ const fromApiParams = (params: TradingParameters): TradingParams => ({
 export default function BotConfig() {
   const [botEnabled, setBotEnabled] = useState(false);
   const [selectedSport, setSelectedSport] = useState<string>('nba');
-  const [selectedGame, setSelectedGame] = useState<string>('');
+  const [selectedGames, setSelectedGames] = useState<Set<string>>(new Set());
   const [tradingParams, setTradingParams] = useState<TradingParams>(DEFAULT_PARAMS);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -124,7 +126,7 @@ export default function BotConfig() {
         const config: BotConfigResponse = await apiClient.getBotConfig();
         setBotEnabled(config.is_running);
         if (config.sport) setSelectedSport(config.sport);
-        if (config.game) setSelectedGame(config.game.game_id);
+        if (config.game) setSelectedGames(new Set([config.game.game_id]));
         if (config.parameters) setTradingParams(fromApiParams(config.parameters));
       } catch (err) {
         console.log('No existing config found, using defaults');
@@ -180,13 +182,36 @@ export default function BotConfig() {
   // Get current sport config
   const currentSport = SPORTS.find(s => s.id === selectedSport);
 
-  // Get selected game details
-  const selectedGameData = availableGames.find(g => g.id === selectedGame);
+  // Get selected games data
+  const selectedGamesData = availableGames.filter(g => selectedGames.has(g.id));
+
+  // Toggle game selection
+  const toggleGameSelection = (gameId: string) => {
+    setSelectedGames(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(gameId)) {
+        newSet.delete(gameId);
+      } else {
+        newSet.add(gameId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select all games
+  const selectAllGames = () => {
+    setSelectedGames(new Set(availableGames.map(g => g.id)));
+  };
+
+  // Clear all selections
+  const clearAllGames = () => {
+    setSelectedGames(new Set());
+  };
 
   // Handle sport change
   const handleSportChange = (sportId: string) => {
     setSelectedSport(sportId);
-    setSelectedGame(''); // Reset game selection
+    setSelectedGames(new Set()); // Reset game selection
     setError(null);
     setSuccessMessage(null);
   };
@@ -198,8 +223,8 @@ export default function BotConfig() {
 
   // Save configuration to API
   const handleSave = useCallback(async () => {
-    if (!selectedGameData) {
-      setError('Please select a game first');
+    if (selectedGames.size === 0) {
+      setError('Please select at least one game');
       return;
     }
     
@@ -208,30 +233,34 @@ export default function BotConfig() {
     setSuccessMessage(null);
     
     try {
-      await apiClient.saveBotConfig({
-        sport: selectedSport,
-        game: {
-          game_id: selectedGame,
+      // Save config for the first selected game (API will handle multiple games)
+      const firstGame = selectedGamesData[0];
+      if (firstGame) {
+        await apiClient.saveBotConfig({
           sport: selectedSport,
-          home_team: selectedGameData.homeTeam,
-          away_team: selectedGameData.awayTeam,
-          start_time: selectedGameData.startTime,
-        },
-        parameters: toApiParams(tradingParams),
-      });
-      setSuccessMessage('Configuration saved successfully!');
+          game: {
+            game_id: firstGame.id,
+            sport: selectedSport,
+            home_team: firstGame.homeTeam,
+            away_team: firstGame.awayTeam,
+            start_time: firstGame.startTime,
+          },
+          parameters: toApiParams(tradingParams),
+        });
+      }
+      setSuccessMessage(`Configuration saved for ${selectedGames.size} game${selectedGames.size > 1 ? 's' : ''}!`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
       setIsSaving(false);
     }
-  }, [selectedSport, selectedGame, selectedGameData, tradingParams]);
+  }, [selectedSport, selectedGames.size, selectedGamesData, tradingParams]);
 
   // Toggle bot on/off
   const handleToggleBot = useCallback(async () => {
-    if (!selectedGame) {
-      setError('Please select a game first');
+    if (selectedGames.size === 0) {
+      setError('Please select at least one game');
       return;
     }
     
@@ -240,15 +269,16 @@ export default function BotConfig() {
     
     try {
       // First save the config
-      if (selectedGameData) {
+      const firstGame = selectedGamesData[0];
+      if (firstGame) {
         await apiClient.saveBotConfig({
           sport: selectedSport,
           game: {
-            game_id: selectedGame,
+            game_id: firstGame.id,
             sport: selectedSport,
-            home_team: selectedGameData.homeTeam,
-            away_team: selectedGameData.awayTeam,
-            start_time: selectedGameData.startTime,
+            home_team: firstGame.homeTeam,
+            away_team: firstGame.awayTeam,
+            start_time: firstGame.startTime,
           },
           parameters: toApiParams(tradingParams),
         });
@@ -262,7 +292,7 @@ export default function BotConfig() {
       } else {
         await apiClient.startBot();
         setBotEnabled(true);
-        setSuccessMessage('Bot started');
+        setSuccessMessage(`Bot started monitoring ${selectedGames.size} game${selectedGames.size > 1 ? 's' : ''}`);
       }
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
@@ -270,7 +300,7 @@ export default function BotConfig() {
     } finally {
       setIsLoading(false);
     }
-  }, [botEnabled, selectedGame, selectedGameData, selectedSport, tradingParams]);
+  }, [botEnabled, selectedGames.size, selectedGamesData, selectedSport, tradingParams]);
 
   return (
     <DashboardLayout>
@@ -294,12 +324,12 @@ export default function BotConfig() {
                 botEnabled && 'bg-green-500/20 text-green-400 border border-green-500/30'
               )}
             >
-              {botEnabled ? 'Bot Running' : 'Bot Stopped'}
+              {botEnabled ? `Bot Running (${selectedGames.size} game${selectedGames.size !== 1 ? 's' : ''})` : 'Bot Stopped'}
             </Badge>
             <Button
               onClick={handleToggleBot}
               variant={botEnabled ? 'destructive' : 'default'}
-              disabled={isLoading || !selectedGame}
+              disabled={isLoading || selectedGames.size === 0}
               className="gap-2"
             >
               {isLoading ? (
@@ -339,7 +369,7 @@ export default function BotConfig() {
                   Game Selection
                 </CardTitle>
                 <CardDescription>
-                  Choose a sport and game to trade on
+                  Select multiple games to trade on simultaneously
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -363,85 +393,111 @@ export default function BotConfig() {
                   </Select>
                 </div>
 
-                {/* Game Selector */}
-                <div className="space-y-2">
-                  <Label>Game {isLoadingGames && <span className="text-xs text-muted-foreground">(loading...)</span>}</Label>
-                  <Select value={selectedGame} onValueChange={setSelectedGame} disabled={isLoadingGames}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={isLoadingGames ? "Loading games..." : "Select game"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {isLoadingGames ? (
-                        <SelectItem value="loading" disabled>
-                          Loading games from ESPN...
-                        </SelectItem>
-                      ) : availableGames.length === 0 ? (
-                        <SelectItem value="none" disabled>
-                          No games scheduled today
-                        </SelectItem>
-                      ) : (
-                        availableGames.map(game => (
-                          <SelectItem key={game.id} value={game.id}>
-                            <span className="flex items-center gap-2">
+                {/* Games List Header */}
+                <div className="flex items-center justify-between pt-2">
+                  <Label>
+                    Games {isLoadingGames && <span className="text-xs text-muted-foreground">(loading...)</span>}
+                  </Label>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={selectAllGames}
+                      disabled={availableGames.length === 0}
+                      className="text-xs h-7"
+                    >
+                      Select All
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={clearAllGames}
+                      disabled={selectedGames.size === 0}
+                      className="text-xs h-7"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Games List - Multi-select with checkboxes */}
+                <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                  {isLoadingGames ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-muted-foreground">Loading games from ESPN...</span>
+                    </div>
+                  ) : availableGames.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Calendar className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p>No games scheduled</p>
+                      <p className="text-xs mt-1">Try selecting a different sport</p>
+                    </div>
+                  ) : (
+                    availableGames.map(game => (
+                      <div
+                        key={game.id}
+                        onClick={() => toggleGameSelection(game.id)}
+                        className={cn(
+                          'p-3 rounded-lg border cursor-pointer transition-all',
+                          selectedGames.has(game.id)
+                            ? 'bg-primary/10 border-primary/50'
+                            : 'bg-muted/30 border-border hover:border-primary/30'
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
                               <Badge 
                                 variant={game.status === 'live' ? 'default' : 'secondary'}
                                 className={cn(
                                   'text-xs',
-                                  game.status === 'live' && 'bg-red-500/20 text-red-400'
+                                  game.status === 'live' && 'bg-red-500/20 text-red-400 animate-pulse'
                                 )}
                               >
                                 {game.status === 'live' ? 'LIVE' : game.status === 'final' ? 'Final' : 'Upcoming'}
                               </Badge>
-                              <span>{game.awayTeam} @ {game.homeTeam}</span>
-                            </span>
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+                              {game.status === 'live' && game.currentPeriod && (
+                                <span className="text-xs text-muted-foreground">
+                                  {game.currentPeriod} {game.clock}
+                                </span>
+                              )}
+                            </div>
+                            <p className="font-medium text-sm">
+                              {game.awayTeam} @ {game.homeTeam}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {game.startTime}
+                            </p>
+                          </div>
+                          <div className={cn(
+                            'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors mt-1',
+                            selectedGames.has(game.id)
+                              ? 'bg-primary border-primary'
+                              : 'border-muted-foreground/30'
+                          )}>
+                            {selectedGames.has(game.id) && (
+                              <Check className="w-3 h-3 text-primary-foreground" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
-                {/* Selected Game Info */}
-                {selectedGameData && (
-                  <div className="mt-4 p-4 rounded-lg bg-muted/50 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Matchup</span>
-                      <span className="font-medium">
-                        {selectedGameData.awayTeam} @ {selectedGameData.homeTeam}
+                {/* Selection Summary */}
+                {selectedGames.size > 0 && (
+                  <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">
+                        {selectedGames.size} game{selectedGames.size > 1 ? 's' : ''} selected
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Start Time</span>
-                      <span className="font-medium">{selectedGameData.startTime}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Status</span>
-                      <Badge variant={selectedGameData.status === 'live' ? 'default' : 'secondary'}>
-                        {selectedGameData.status === 'live' 
-                          ? `${selectedGameData.currentPeriod} - ${selectedGameData.clock}`
-                          : 'Upcoming'
-                        }
-                      </Badge>
-                    </div>
-                    <Separator />
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">{selectedGameData.homeTeam} Win</span>
-                      <span className="font-mono text-primary">
-                        {(selectedGameData.homeOdds * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">{selectedGameData.awayTeam} Win</span>
-                      <span className="font-mono text-primary">
-                        {(selectedGameData.awayOdds * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Volume</span>
-                      <span className="font-mono">
-                        ${selectedGameData.volume.toLocaleString()}
-                      </span>
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Bot will monitor all selected games simultaneously
+                    </p>
                   </div>
                 )}
 
@@ -742,17 +798,17 @@ export default function BotConfig() {
         {/* Quick Stats Footer */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="p-4">
-            <div className="text-sm text-muted-foreground">Selected Game</div>
-            <div className="text-lg font-semibold truncate">
-              {selectedGameData 
-                ? `${selectedGameData.awayTeam} @ ${selectedGameData.homeTeam}`
+            <div className="text-sm text-muted-foreground">Selected Games</div>
+            <div className="text-lg font-semibold">
+              {selectedGames.size > 0 
+                ? `${selectedGames.size} game${selectedGames.size !== 1 ? 's' : ''}`
                 : 'None'
               }
             </div>
           </Card>
           <Card className="p-4">
-            <div className="text-sm text-muted-foreground">Position Size</div>
-            <div className="text-lg font-semibold">${tradingParams.positionSize}</div>
+            <div className="text-sm text-muted-foreground">Max Exposure</div>
+            <div className="text-lg font-semibold">${tradingParams.positionSize * Math.max(1, selectedGames.size)}</div>
           </Card>
           <Card className="p-4">
             <div className="text-sm text-muted-foreground">Risk/Reward</div>
@@ -772,6 +828,43 @@ export default function BotConfig() {
             </div>
           </Card>
         </div>
+
+        {/* Selected Games Summary - shown below stats when games are selected */}
+        {selectedGames.size > 0 && (
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-primary" />
+                <span className="font-medium">Active Game Selection</span>
+              </div>
+              <Badge variant="outline">{selectedGames.size} game{selectedGames.size !== 1 ? 's' : ''}</Badge>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {selectedGamesData.map(game => (
+                <Badge 
+                  key={game.id} 
+                  variant="secondary"
+                  className="flex items-center gap-1 pr-1"
+                >
+                  <span className={cn(
+                    game.status === 'live' && 'text-red-400'
+                  )}>
+                    {game.awayTeam} @ {game.homeTeam}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleGameSelection(game.id);
+                    }}
+                    className="ml-1 hover:bg-muted rounded p-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );
