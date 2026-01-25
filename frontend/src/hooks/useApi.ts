@@ -171,14 +171,21 @@ export function useConnectWallet() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ privateKey, funderAddress, signatureType }: {
-      privateKey: string;
-      funderAddress: string;
-      signatureType: number;
-    }) => apiClient.connectWallet(privateKey, funderAddress, signatureType),
+    mutationFn: ({ platform, credentials }: {
+      platform: 'kalshi' | 'polymarket';
+      credentials: {
+        apiKey?: string;
+        apiSecret?: string;
+        privateKey?: string;
+        funderAddress?: string;
+      };
+    }) => apiClient.connectWallet(platform, credentials),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.onboarding });
       queryClient.invalidateQueries({ queryKey: queryKeys.settings });
+    },
+    onError: (error: Error) => {
+      console.error('Failed to connect wallet:', error);
     },
   });
 }

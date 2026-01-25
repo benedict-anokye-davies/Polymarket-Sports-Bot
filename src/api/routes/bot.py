@@ -27,47 +27,60 @@ router = APIRouter(prefix="/bot", tags=["Bot Control"])
 async def _create_bot_dependencies(db, user_id, credentials: dict):
     """
     Creates and configures bot dependencies.
-    
+    Supports both Kalshi and Polymarket platforms.
+
     Args:
         db: Database session
         user_id: User ID
         credentials: Decrypted wallet credentials
-    
+
     Returns:
-        Tuple of (polymarket_client, trading_engine, espn_service)
+        Tuple of (trading_client, trading_engine, espn_service)
     """
-    polymarket_client = PolymarketClient(
-        private_key=credentials["private_key"],
-        funder_address=credentials["funder_address"],
-        api_key=credentials.get("api_key"),
-        api_secret=credentials.get("api_secret"),
-        passphrase=credentials.get("passphrase")
-    )
-    
+    platform = credentials.get("platform", "polymarket")
+
+    # Create the correct client based on platform
+    if platform == "kalshi":
+        from src.services.kalshi_client import KalshiClient
+        trading_client = KalshiClient(
+            api_key=credentials["api_key"],
+            private_key=credentials["api_secret"]  # Kalshi uses api_secret as private key for signing
+        )
+        logger.info(f"Created KalshiClient for user {user_id}")
+    else:
+        trading_client = PolymarketClient(
+            private_key=credentials["private_key"],
+            funder_address=credentials["funder_address"],
+            api_key=credentials.get("api_key"),
+            api_secret=credentials.get("api_secret"),
+            passphrase=credentials.get("passphrase")
+        )
+        logger.info(f"Created PolymarketClient for user {user_id}")
+
     espn_service = ESPNService()
-    
+
     # Load global settings
     global_settings = await GlobalSettingsCRUD.get_or_create(db, user_id)
-    
+
     # Load sport configs into a dictionary keyed by sport
     sport_configs_list = await SportConfigCRUD.get_all_for_user(db, user_id)
     sport_configs = {config.sport: config for config in sport_configs_list}
-    
+
     # Load market-specific configs into a dictionary keyed by condition_id
     market_configs_list = await MarketConfigCRUD.get_all_for_user(db, user_id, enabled_only=True)
     market_configs = {config.condition_id: config for config in market_configs_list}
-    
+
     # Create trading engine with all configs
     trading_engine = TradingEngine(
         db=db,
         user_id=str(user_id),
-        polymarket_client=polymarket_client,
+        polymarket_client=trading_client,  # Works with either client
         global_settings=global_settings,
         sport_configs=sport_configs,
         market_configs=market_configs
     )
-    
-    return polymarket_client, trading_engine, espn_service
+
+    return trading_client, trading_engine, espn_service
 
 
 @router.post("/start", response_model=MessageResponse)
