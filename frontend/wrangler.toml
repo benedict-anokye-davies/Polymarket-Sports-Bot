@@ -1,0 +1,6 @@
+# Cloudflare Pages configuration
+name = "polymarket-sports-bot"
+compatibility_date = "2024-01-01"
+
+[vars]
+VITE_API_URL = "https://polymarket-sports-bot-production.up.railway.app/api/v1"
