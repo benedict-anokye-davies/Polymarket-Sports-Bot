@@ -20,6 +20,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   X,
+  FlaskConical,
+  Wallet,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -118,6 +120,9 @@ export default function BotConfig() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  // Simulation mode - test bot without real money
+  const [simulationMode, setSimulationMode] = useState(true);
 
   // Load existing bot config on mount
   useEffect(() => {
@@ -313,10 +318,32 @@ export default function BotConfig() {
               Bot Configuration
             </h1>
             <p className="text-muted-foreground mt-1">
-              Select a game and configure trading parameters
+              Select games and configure trading parameters
             </p>
           </div>
           <div className="flex items-center gap-4">
+            {/* Simulation Mode Toggle */}
+            <div 
+              onClick={() => setSimulationMode(!simulationMode)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-all border',
+                simulationMode 
+                  ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' 
+                  : 'bg-green-500/10 border-green-500/30 text-green-400'
+              )}
+            >
+              {simulationMode ? (
+                <>
+                  <FlaskConical className="w-4 h-4" />
+                  <span className="text-sm font-medium">Paper Trading</span>
+                </>
+              ) : (
+                <>
+                  <Wallet className="w-4 h-4" />
+                  <span className="text-sm font-medium">Live Trading</span>
+                </>
+              )}
+            </div>
             <Badge 
               variant={botEnabled ? 'default' : 'secondary'} 
               className={cn(
@@ -343,6 +370,29 @@ export default function BotConfig() {
             </Button>
           </div>
         </div>
+
+        {/* Error/Success Messages */}
+        {/* Simulation Mode Banner */}
+        {simulationMode && (
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex items-start gap-3">
+              <FlaskConical className="w-5 h-5 text-yellow-400 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-yellow-400">Paper Trading Mode (Simulation)</h3>
+                <p className="text-sm text-yellow-400/80 mt-1">
+                  The bot will simulate trades without using real money. Perfect for testing your strategy.
+                  All trades will be logged but no actual orders will be placed on Polymarket.
+                </p>
+                <button 
+                  onClick={() => setSimulationMode(false)}
+                  className="mt-2 text-xs text-yellow-400 underline hover:no-underline"
+                >
+                  Switch to Live Trading
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Error/Success Messages */}
         {error && (
