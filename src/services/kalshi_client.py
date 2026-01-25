@@ -1,510 +1,493 @@
 """
-Kalshi API client implementation.
-Handles authentication and all trading operations for Kalshi markets.
-Supports paper trading mode for safe testing.
+Kalshi API Client for Sports Trading
+Implements RSA-signed authentication and order management.
 """
 
-import asyncio
-import logging
-import hmac
-import hashlib
 import base64
+import json
+import time
+from typing import Optional, Dict, List, Any
 from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Any
-
+from dataclasses import dataclass
 import httpx
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.backends import default_backend
 
-from src.core.exceptions import KalshiAPIError, InsufficientBalanceError
-from src.core.retry import retry_async
+from src.core.exceptions import TradingError, RateLimitError
 
 
-logger = logging.getLogger(__name__)
+# Kalshi API Base URLs
+KALSHI_API_BASE = "https://api.elections.kalshi.com/trade-api/v2"
+KALSHI_WS_URL = "wss://api.elections.kalshi.com/trade-api/v2/ws"
+
+
+@dataclass
+class KalshiOrder:
+    """Represents a Kalshi order response"""
+    order_id: str
+    ticker: str
+    side: str
+    yes_no: str
+    price: float
+    size: int
+    status: str
+    filled_size: int
+    created_at: datetime
+
+
+@dataclass
+class KalshiMarket:
+    """Represents a Kalshi market"""
+    ticker: str
+    event_ticker: str
+    title: str
+    status: str
+    yes_price: float
+    no_price: float
+    volume_yes: int
+    volume_no: int
+    close_ts: int
+    event_start_ts: int
+
+
+class KalshiAuthenticator:
+    """
+    Handles RSA-signed authentication for Kalshi API requests.
+    Kalshi uses custom headers with RSA-SHA256 signatures.
+    """
+    
+    def __init__(self, api_key_id: str, private_key_pem: str):
+        """
+        Initialize authenticator with API key and private key.
+        
+        Args:
+            api_key_id: Kalshi API key ID from dashboard
+            private_key_pem: RSA private key in PEM format (string)
+        """
+        self.api_key_id = api_key_id
+        self.private_key = serialization.load_pem_private_key(
+            private_key_pem.encode() if isinstance(private_key_pem, str) else private_key_pem,
+            password=None,
+            backend=default_backend()
+        )
+    
+    def sign_request(self, method: str, path: str, body: str = "") -> Dict[str, str]:
+        """
+        Generate Kalshi authentication headers for a request.
+        
+        Args:
+            method: HTTP method (GET, POST, DELETE)
+            path: API endpoint path (e.g., /portfolio/orders)
+            body: Request body as JSON string (empty for GET)
+        
+        Returns:
+            Dictionary of authentication headers
+        """
+        timestamp = str(int(time.time()))
+        
+        # Create canonical string: timestamp + method + path + body
+        message = timestamp + method.upper() + path + body
+        
+        # Sign with RSA-SHA256 using PKCS1v15 padding
+        signature = self.private_key.sign(
+            message.encode(),
+            padding.PKCS1v15(),
+            hashes.SHA256()
+        )
+        
+        # Base64 encode signature
+        signature_b64 = base64.b64encode(signature).decode()
+        
+        return {
+            'KALSHI-ACCESS-KEY': self.api_key_id,
+            'KALSHI-ACCESS-SIGN': signature_b64,
+            'KALSHI-ACCESS-TIMESTAMP': timestamp,
+            'Content-Type': 'application/json'
+        }
 
 
 class KalshiClient:
     """
-    Async client for Kalshi REST API.
-    Handles HMAC authentication for API access.
+    Production Kalshi API client for sports trading.
+    Handles market discovery, order placement, and position management.
     """
-
-    API_HOST = "https://trading-api.kalshi.com/trade-api/v2"
-    DEMO_HOST = "https://demo-api.kalshi.co/trade-api/v2"
-
-    def __init__(
-        self,
-        api_key: str,
-        api_secret: str,
-        use_demo: bool = False,
-        dry_run: bool = False,
-        max_slippage: float = 0.02
-    ):
+    
+    def __init__(self, api_key_id: str, private_key_pem: str):
         """
-        Initializes the Kalshi client.
-
+        Initialize Kalshi client with API credentials.
+        
         Args:
-            api_key: Kalshi API key
-            api_secret: Kalshi API secret (private key)
-            use_demo: If True, use demo API endpoint
-            dry_run: If True, simulate orders without executing
-            max_slippage: Maximum acceptable slippage (0.02 = 2%)
+            api_key_id: Kalshi API key ID
+            private_key_pem: RSA private key in PEM format
         """
-        self.api_key = api_key
-        self.api_secret = api_secret
-        self.base_url = self.DEMO_HOST if use_demo else self.API_HOST
-        self.dry_run = dry_run
-        self.max_slippage = max_slippage
-
-        self._http_client: httpx.AsyncClient | None = None
-
-        # Track simulated orders for paper trading
-        self._simulated_orders: dict[str, dict] = {}
-        self._simulated_order_counter: int = 0
-
-    def _generate_signature(self, timestamp: str, method: str, path: str, body: str = "") -> str:
-        """
-        Generate HMAC signature for Kalshi API authentication.
-
-        Args:
-            timestamp: Unix timestamp in milliseconds
-            method: HTTP method (GET, POST, DELETE)
-            path: API path (e.g., /trade-api/v2/portfolio/balance)
-            body: Request body (empty string for GET)
-
-        Returns:
-            Base64-encoded HMAC signature
-        """
-        message = f"{timestamp}{method}{path}{body}"
-        signature = hmac.new(
-            base64.b64decode(self.api_secret),
-            message.encode('utf-8'),
-            hashlib.sha256
-        ).digest()
-        return base64.b64encode(signature).decode('utf-8')
-
-    async def _get_http_client(self) -> httpx.AsyncClient:
-        """Returns reusable async HTTP client."""
-        if self._http_client is None:
-            self._http_client = httpx.AsyncClient(timeout=30.0)
-        return self._http_client
-
+        self.auth = KalshiAuthenticator(api_key_id, private_key_pem)
+        self.base_url = KALSHI_API_BASE
+        self._client = httpx.AsyncClient(timeout=30.0)
+    
+    async def close(self):
+        """Close the HTTP client connection"""
+        await self._client.aclose()
+    
     async def _request(
         self,
         method: str,
-        endpoint: str,
-        data: dict | None = None,
-        params: dict | None = None
-    ) -> dict[str, Any]:
+        path: str,
+        body: Optional[Dict] = None,
+        params: Optional[Dict] = None,
+        authenticated: bool = True
+    ) -> Dict[str, Any]:
         """
-        Make authenticated request to Kalshi API.
-
+        Make an authenticated request to Kalshi API.
+        
         Args:
             method: HTTP method
-            endpoint: API endpoint (without base URL)
-            data: Request body for POST/PUT
-            params: Query parameters
-
+            path: API endpoint path
+            body: Request body (for POST/PUT)
+            params: Query parameters (for GET)
+            authenticated: Whether to include auth headers
+        
         Returns:
-            Response JSON as dict
+            JSON response as dictionary
+        
+        Raises:
+            TradingError: On API errors
+            RateLimitError: On rate limit exceeded
         """
-        http = await self._get_http_client()
-
-        timestamp = str(int(datetime.now(timezone.utc).timestamp() * 1000))
-        path = f"/trade-api/v2{endpoint}"
-        body = "" if data is None else str(data)
-
-        signature = self._generate_signature(timestamp, method.upper(), path, body)
-
-        headers = {
-            "KALSHI-ACCESS-KEY": self.api_key,
-            "KALSHI-ACCESS-SIGNATURE": signature,
-            "KALSHI-ACCESS-TIMESTAMP": timestamp,
-            "Content-Type": "application/json"
-        }
-
-        url = f"{self.base_url}{endpoint}"
-
+        url = f"{self.base_url}{path}"
+        body_str = json.dumps(body) if body else ""
+        
+        headers = {}
+        if authenticated:
+            headers = self.auth.sign_request(method, path, body_str)
+        else:
+            headers = {'Content-Type': 'application/json'}
+        
         try:
-            response = await retry_async(
-                http.request,
-                method,
-                url,
-                headers=headers,
-                json=data,
-                params=params,
-                max_retries=3
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            error_detail = e.response.text if e.response else str(e)
-            logger.error(f"Kalshi API error: {error_detail}")
-            raise KalshiAPIError(f"Kalshi API error: {error_detail}")
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error: {e}")
-            raise KalshiAPIError(f"HTTP error: {str(e)}")
-
-    async def get_balance(self) -> Decimal:
-        """
-        Fetches account balance.
-
-        Returns:
-            Balance in USD as Decimal
-        """
-        try:
-            response = await self._request("GET", "/portfolio/balance")
-            balance = response.get("balance", 0) / 100  # Kalshi returns cents
-            logger.debug(f"Balance fetched: ${balance:.2f}")
-            return Decimal(str(balance))
-        except Exception as e:
-            logger.error(f"Failed to fetch balance: {e}")
-            raise KalshiAPIError(f"Failed to fetch balance: {str(e)}")
-
-    async def get_positions(self) -> list[dict[str, Any]]:
-        """
-        Fetches all open positions.
-
-        Returns:
-            List of position dictionaries
-        """
-        try:
-            response = await self._request("GET", "/portfolio/positions")
-            return response.get("market_positions", [])
-        except Exception as e:
-            logger.error(f"Failed to fetch positions: {e}")
-            raise KalshiAPIError(f"Failed to fetch positions: {str(e)}")
-
-    async def get_markets(
+            if method == "GET":
+                response = await self._client.get(url, headers=headers, params=params)
+            elif method == "POST":
+                response = await self._client.post(url, headers=headers, content=body_str)
+            elif method == "DELETE":
+                response = await self._client.delete(url, headers=headers)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+            
+            # Handle rate limiting
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After", "60")
+                raise RateLimitError(
+                    f"Rate limited. Retry after {retry_after}s",
+                    details={"retry_after": int(retry_after)}
+                )
+            
+            # Handle errors
+            if response.status_code >= 400:
+                error_detail = response.text
+                raise TradingError(
+                    f"Kalshi API error ({response.status_code}): {error_detail}",
+                    details={"status_code": response.status_code, "response": error_detail}
+                )
+            
+            return response.json() if response.text else {}
+        
+        except httpx.RequestError as e:
+            raise TradingError(f"Network error: {str(e)}")
+    
+    # =========================================================================
+    # Market Discovery
+    # =========================================================================
+    
+    async def get_sports_markets(
         self,
+        sport: Optional[str] = None,
         status: str = "open",
-        series_ticker: str | None = None,
-        event_ticker: str | None = None,
         limit: int = 100
-    ) -> list[dict[str, Any]]:
+    ) -> List[KalshiMarket]:
         """
-        Fetches markets from Kalshi.
-
+        Fetch available sports markets.
+        
         Args:
-            status: Market status filter (open, closed, settled)
-            series_ticker: Filter by series
-            event_ticker: Filter by event
-            limit: Max markets to return
-
+            sport: Filter by sport (NBA, NFL, MLB, NHL, etc.)
+            status: Market status filter (open, active, closed)
+            limit: Maximum markets to return
+        
         Returns:
-            List of market data dictionaries
+            List of KalshiMarket objects
         """
-        params = {"status": status, "limit": limit}
-        if series_ticker:
-            params["series_ticker"] = series_ticker
-        if event_ticker:
-            params["event_ticker"] = event_ticker
-
-        try:
-            response = await self._request("GET", "/markets", params=params)
-            return response.get("markets", [])
-        except Exception as e:
-            logger.error(f"Failed to fetch markets: {e}")
-            raise KalshiAPIError(f"Failed to fetch markets: {str(e)}")
-
-    async def get_sports_markets(self, sport: str | None = None) -> list[dict[str, Any]]:
-        """
-        Fetches active sports betting markets.
-        Maps sport names to Kalshi series tickers.
-
-        Args:
-            sport: Sport filter (nba, nfl, mlb, nhl, soccer, etc.)
-
-        Returns:
-            List of market data dictionaries
-        """
-        # Map sports to Kalshi series tickers
-        sport_series = {
-            "nba": "NBA",
-            "nfl": "NFL",
-            "mlb": "MLB",
-            "nhl": "NHL",
-            "soccer": "SOCCER",
-            "mma": "UFC",
-            "tennis": "TENNIS",
-            "golf": "GOLF",
-            "ncaab": "NCAAB",
-            "ncaaf": "NCAAF",
+        params = {
+            "category": "Sports",
+            "status": status,
+            "limit": limit
         }
-
-        series_ticker = sport_series.get(sport.lower()) if sport else None
-
-        try:
-            markets = await self.get_markets(status="open", series_ticker=series_ticker)
-            return markets
-        except Exception as e:
-            logger.error(f"Failed to fetch sports markets: {e}")
-            return []
-
-    async def get_market(self, ticker: str) -> dict[str, Any]:
+        
+        if sport:
+            params["series_ticker"] = sport.upper()
+        
+        response = await self._request("GET", "/markets", params=params, authenticated=False)
+        
+        markets = []
+        for m in response.get("markets", []):
+            markets.append(KalshiMarket(
+                ticker=m.get("ticker", ""),
+                event_ticker=m.get("event_ticker", ""),
+                title=m.get("title", ""),
+                status=m.get("status", ""),
+                yes_price=m.get("yes_price", 0.5),
+                no_price=m.get("no_price", 0.5),
+                volume_yes=m.get("volume_yes", 0),
+                volume_no=m.get("volume_no", 0),
+                close_ts=m.get("close_ts", 0),
+                event_start_ts=m.get("event_start_ts", 0)
+            ))
+        
+        return markets
+    
+    async def get_market(self, ticker: str) -> KalshiMarket:
         """
-        Gets details for a specific market.
-
+        Get details for a specific market.
+        
+        Args:
+            ticker: Market ticker (e.g., NBA24_LAL_BOS_W_241230)
+        
+        Returns:
+            KalshiMarket object
+        """
+        response = await self._request("GET", f"/markets/{ticker}", authenticated=False)
+        m = response.get("market", response)
+        
+        return KalshiMarket(
+            ticker=m.get("ticker", ticker),
+            event_ticker=m.get("event_ticker", ""),
+            title=m.get("title", ""),
+            status=m.get("status", ""),
+            yes_price=m.get("yes_price", 0.5),
+            no_price=m.get("no_price", 0.5),
+            volume_yes=m.get("volume_yes", 0),
+            volume_no=m.get("volume_no", 0),
+            close_ts=m.get("close_ts", 0),
+            event_start_ts=m.get("event_start_ts", 0)
+        )
+    
+    async def get_orderbook(self, ticker: str) -> Dict[str, Any]:
+        """
+        Fetch orderbook for a market.
+        
         Args:
             ticker: Market ticker
-
+        
         Returns:
-            Market data dictionary
+            Orderbook with bids and asks arrays
         """
-        try:
-            response = await self._request("GET", f"/markets/{ticker}")
-            return response.get("market", {})
-        except Exception as e:
-            logger.error(f"Failed to fetch market {ticker}: {e}")
-            raise KalshiAPIError(f"Failed to fetch market: {str(e)}")
-
-    async def get_orderbook(self, ticker: str) -> dict[str, Any]:
+        return await self._request("GET", f"/markets/{ticker}/orderbook", authenticated=False)
+    
+    async def get_trades(self, ticker: str, limit: int = 100) -> List[Dict]:
         """
-        Fetches orderbook for a market.
-
+        Fetch recent trades for a market.
+        
         Args:
             ticker: Market ticker
-
+            limit: Maximum trades to return
+        
         Returns:
-            Orderbook with yes/no sides and bids/asks
+            List of trade objects
         """
-        try:
-            response = await self._request("GET", f"/markets/{ticker}/orderbook")
-            return response.get("orderbook", {})
-        except Exception as e:
-            logger.error(f"Failed to fetch orderbook for {ticker}: {e}")
-            raise KalshiAPIError(f"Failed to fetch orderbook: {str(e)}")
-
-    async def get_midpoint_price(self, ticker: str) -> float:
-        """
-        Gets current midpoint price for a market (YES side).
-
-        Args:
-            ticker: Market ticker
-
-        Returns:
-            Midpoint price as float (0-1)
-        """
-        try:
-            orderbook = await self.get_orderbook(ticker)
-            yes_bids = orderbook.get("yes", {}).get("bids", [])
-            yes_asks = orderbook.get("yes", {}).get("asks", [])
-
-            best_bid = yes_bids[0]["price"] / 100 if yes_bids else 0.5
-            best_ask = yes_asks[0]["price"] / 100 if yes_asks else 0.5
-
-            return (best_bid + best_ask) / 2
-        except Exception as e:
-            logger.warning(f"Failed to get midpoint for {ticker}: {e}")
-            return 0.5
-
+        response = await self._request(
+            "GET",
+            f"/markets/{ticker}/trades",
+            params={"limit": limit},
+            authenticated=False
+        )
+        return response.get("trades", [])
+    
+    # =========================================================================
+    # Order Management
+    # =========================================================================
+    
     async def place_order(
         self,
         ticker: str,
         side: str,
+        yes_no: str,
         price: float,
         size: int,
-        order_type: str = "limit"
-    ) -> dict[str, Any]:
+        time_in_force: str = "gtc",
+        client_order_id: Optional[str] = None
+    ) -> KalshiOrder:
         """
-        Places an order on Kalshi (or simulates in dry_run mode).
-
+        Place a limit order on a Kalshi sports market.
+        
         Args:
-            ticker: Market ticker
-            side: "yes" or "no"
-            price: Limit price in dollars (0.01 to 0.99)
+            ticker: Market ticker (e.g., NBA24_LAL_BOS_W_241230)
+            side: "buy" or "sell"
+            yes_no: "yes" or "no"
+            price: Limit price (0.01 to 0.99)
             size: Number of contracts
-            order_type: "limit" or "market"
-
+            time_in_force: "gtc" (good-til-cancelled) or "fok" (fill-or-kill)
+            client_order_id: Optional idempotency key
+        
         Returns:
-            Order response from API
+            KalshiOrder object with order details
+        
+        Raises:
+            TradingError: On order placement failure
         """
-        # Paper trading mode - simulate the order
-        if self.dry_run:
-            return await self._simulate_order(ticker, side, price, size, order_type)
-
-        try:
-            data = {
-                "ticker": ticker,
-                "side": side.lower(),
-                "type": order_type,
-                "count": size,
-            }
-
-            if order_type == "limit":
-                data["yes_price"] = int(price * 100)  # Convert to cents
-
-            response = await self._request("POST", "/portfolio/orders", data=data)
-
-            order = response.get("order", {})
-            logger.info(
-                f"Order placed: {side} {size} @ ${price:.2f} for {ticker}"
-            )
-
-            return {
-                "id": order.get("order_id"),
-                "status": order.get("status", "created"),
-                "raw": order
-            }
-        except Exception as e:
-            error_str = str(e).lower()
-            logger.error(f"Order placement failed: {e}")
-            if "insufficient" in error_str or "balance" in error_str:
-                raise InsufficientBalanceError(f"Insufficient balance: {str(e)}")
-            raise KalshiAPIError(f"Failed to place order: {str(e)}")
-
-    async def _simulate_order(
-        self,
-        ticker: str,
-        side: str,
-        price: float,
-        size: int,
-        order_type: str
-    ) -> dict[str, Any]:
-        """
-        Simulates an order for paper trading mode.
-
-        Returns:
-            Simulated order response
-        """
-        self._simulated_order_counter += 1
-        order_id = f"KALSHI_DRY_{self._simulated_order_counter:06d}"
-
-        order = {
-            "id": order_id,
+        if not 0.01 <= price <= 0.99:
+            raise TradingError(f"Invalid price {price}. Must be between 0.01 and 0.99")
+        
+        if size < 1:
+            raise TradingError(f"Invalid size {size}. Must be at least 1 contract")
+        
+        body = {
             "ticker": ticker,
             "side": side.lower(),
-            "price": price,
-            "count": size,
-            "order_type": order_type,
-            "status": "filled",
-            "filled_count": size,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "is_simulated": True
+            "yes_no": yes_no.lower(),
+            "type": "limit",
+            "price": round(price, 2),
+            "size": size,
+            "time_in_force": time_in_force.lower(),
         }
-
-        self._simulated_orders[order_id] = order
-
-        logger.info(
-            f"[DRY RUN] Simulated Kalshi order: {side} {size} @ ${price:.2f} "
-            f"for {ticker} (order_id={order_id})"
+        
+        if client_order_id:
+            body["client_order_id"] = client_order_id
+        else:
+            body["client_order_id"] = f"bot-{int(time.time())}-{ticker[:20]}"
+        
+        response = await self._request("POST", "/portfolio/orders", body=body)
+        
+        order = response.get("order", response)
+        return KalshiOrder(
+            order_id=order.get("order_id", ""),
+            ticker=order.get("ticker", ticker),
+            side=order.get("side", side),
+            yes_no=order.get("yes_no", yes_no),
+            price=order.get("price", price),
+            size=order.get("size", size),
+            status=order.get("status", "pending"),
+            filled_size=order.get("filled_size", 0),
+            created_at=datetime.now(timezone.utc)
         )
-
-        return {"id": order_id, "status": "filled", "is_simulated": True, "raw": order}
-
-    async def get_order_status(self, order_id: str) -> dict[str, Any]:
+    
+    async def cancel_order(self, order_id: str) -> bool:
         """
-        Gets the current status of an order.
-
+        Cancel an open order.
+        
         Args:
-            order_id: Order ID to check
-
+            order_id: Kalshi order ID
+        
         Returns:
-            Order status dictionary
-        """
-        # Check simulated orders first
-        if order_id.startswith("KALSHI_DRY_"):
-            return self._simulated_orders.get(order_id, {"status": "not_found"})
-
-        try:
-            response = await self._request("GET", f"/portfolio/orders/{order_id}")
-            return response.get("order", {})
-        except Exception as e:
-            logger.warning(f"Failed to get order status for {order_id}: {e}")
-            return {"status": "error", "error": str(e)}
-
-    async def cancel_order(self, order_id: str) -> dict[str, Any]:
-        """
-        Cancels an existing order.
-
-        Args:
-            order_id: The order ID to cancel
-
-        Returns:
-            Cancellation response
+            True if cancelled successfully
         """
         try:
-            response = await self._request("DELETE", f"/portfolio/orders/{order_id}")
-            return {"success": True, "raw": response}
-        except Exception as e:
-            raise KalshiAPIError(f"Failed to cancel order: {str(e)}")
-
-    async def check_slippage(
-        self,
-        ticker: str,
-        expected_price: float,
-        side: str
-    ) -> tuple[bool, float]:
+            await self._request("DELETE", f"/portfolio/orders/{order_id}")
+            return True
+        except TradingError:
+            return False
+    
+    async def get_orders(self, status: str = "open") -> List[KalshiOrder]:
         """
-        Check if current market price is within acceptable slippage.
-
+        Fetch orders with given status.
+        
         Args:
-            ticker: Market ticker to check
-            expected_price: Price we expected to trade at
-            side: "yes" or "no"
-
+            status: Order status filter (open, pending, filled, cancelled)
+        
         Returns:
-            Tuple of (is_acceptable, actual_price)
+            List of KalshiOrder objects
         """
-        try:
-            actual_price = await self.get_midpoint_price(ticker)
-
-            if side.lower() == "yes":
-                slippage = (actual_price - expected_price) / expected_price if expected_price > 0 else 0
-            else:
-                slippage = (expected_price - actual_price) / expected_price if expected_price > 0 else 0
-
-            is_acceptable = abs(slippage) <= self.max_slippage
-
-            if not is_acceptable:
-                logger.warning(
-                    f"Slippage too high: {slippage:.2%} > {self.max_slippage:.2%} "
-                    f"(expected={expected_price:.4f}, actual={actual_price:.4f})"
-                )
-
-            return is_acceptable, actual_price
-        except Exception as e:
-            logger.error(f"Error checking slippage: {e}")
-            return True, expected_price  # Allow trade on error
-
-    async def wait_for_fill(
-        self,
-        order_id: str,
-        timeout: int = 60,
-        poll_interval: float = 2.0
-    ) -> dict[str, Any]:
+        response = await self._request(
+            "GET",
+            "/portfolio/orders",
+            params={"status": status}
+        )
+        
+        orders = []
+        for o in response.get("orders", []):
+            orders.append(KalshiOrder(
+                order_id=o.get("order_id", ""),
+                ticker=o.get("ticker", ""),
+                side=o.get("side", ""),
+                yes_no=o.get("yes_no", ""),
+                price=o.get("price", 0),
+                size=o.get("size", 0),
+                status=o.get("status", ""),
+                filled_size=o.get("filled_size", 0),
+                created_at=datetime.fromisoformat(o.get("created_time", datetime.now().isoformat()))
+            ))
+        
+        return orders
+    
+    # =========================================================================
+    # Portfolio & Balance
+    # =========================================================================
+    
+    async def get_balance(self) -> Dict[str, float]:
         """
-        Wait for an order to be filled or timeout.
-
+        Get account balance.
+        
+        Returns:
+            Dictionary with available_balance and total_balance
+        """
+        response = await self._request("GET", "/portfolio/balance")
+        return {
+            "available_balance": response.get("available_balance", 0),
+            "total_balance": response.get("total_balance", 0),
+            "pending_withdrawals": response.get("pending_withdrawals", 0)
+        }
+    
+    async def get_positions(self) -> List[Dict]:
+        """
+        Get current positions.
+        
+        Returns:
+            List of position objects with market details
+        """
+        response = await self._request("GET", "/portfolio/positions")
+        return response.get("positions", [])
+    
+    # =========================================================================
+    # Market State Detection
+    # =========================================================================
+    
+    async def get_market_state(self, ticker: str) -> Dict[str, Any]:
+        """
+        Determine if market is pregame, live, or settled.
+        
         Args:
-            order_id: Order ID to monitor
-            timeout: Maximum seconds to wait
-            poll_interval: Seconds between status checks
-
+            ticker: Market ticker
+        
         Returns:
-            Final order status
+            Dictionary with market state information
         """
-        # Simulated orders are instantly filled
-        if order_id.startswith("KALSHI_DRY_"):
-            return self._simulated_orders.get(order_id, {"status": "filled"})
-
-        import time
-        start_time = time.time()
-
-        while time.time() - start_time < timeout:
-            status = await self.get_order_status(order_id)
-
-            order_status = status.get("status", "").lower()
-            if order_status in ("filled", "cancelled", "expired", "rejected"):
-                logger.info(f"Order {order_id} final status: {order_status}")
-                return status
-
-            await asyncio.sleep(poll_interval)
-
-        logger.warning(f"Order {order_id} timed out after {timeout}s")
-        return {"status": "timeout", "order_id": order_id}
-
-    async def close(self) -> None:
-        """Closes HTTP client connections."""
-        if self._http_client:
-            await self._http_client.aclose()
-            self._http_client = None
+        market = await self.get_market(ticker)
+        now = datetime.now(timezone.utc).timestamp()
+        
+        return {
+            "ticker": ticker,
+            "status": market.status,
+            "is_pregame": now < market.event_start_ts,
+            "is_live": market.event_start_ts <= now < market.close_ts and market.status in ["open", "active"],
+            "is_settled": market.status in ["closed", "settled"],
+            "time_to_start": max(0, market.event_start_ts - now),
+            "time_to_close": max(0, market.close_ts - now),
+            "yes_price": market.yes_price,
+            "no_price": market.no_price,
+            "volume": market.volume_yes + market.volume_no
+        }
+    
+    def calculate_implied_probability(self, orderbook: Dict) -> float:
+        """
+        Calculate implied YES probability from orderbook mid-market.
+        
+        Args:
+            orderbook: Orderbook dictionary with bids and asks
+        
+        Returns:
+            Mid-market implied probability (0.0 to 1.0)
+        """
+        bids = orderbook.get("bids", [])
+        asks = orderbook.get("asks", [])
+        
+        best_bid = bids[0]["price"] if bids else 0.5
+        best_ask = asks[0]["price"] if asks else 0.5
+        
+        return (best_bid + best_ask) / 2

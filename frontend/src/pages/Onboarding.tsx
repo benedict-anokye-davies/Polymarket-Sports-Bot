@@ -398,7 +398,7 @@ function RiskStep({ onNext, onBack, data, setData, loading }: StepProps) {
 export default function Onboarding() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { refreshUser } = useAuthStore();
+  const { refreshUser, setOnboardingCompleted } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
@@ -464,6 +464,16 @@ export default function Onboarding() {
     }
   };
 
+  const skipOnboarding = () => {
+    // Mark onboarding as completed in local state to bypass route guard
+    setOnboardingCompleted();
+    toast({
+      title: 'Skipped',
+      description: 'You can configure settings later from the Settings page.',
+    });
+    navigate('/dashboard');
+  };
+
   const progressPercent = (currentStep / TOTAL_STEPS) * 100;
 
   return (
@@ -493,6 +503,18 @@ export default function Onboarding() {
             </AnimatePresence>
           </CardContent>
         </Card>
+
+        {/* Skip Button */}
+        <div className="mt-4 text-center">
+          <Button
+            variant="ghost"
+            className="text-muted-foreground hover:text-foreground text-sm"
+            onClick={skipOnboarding}
+            disabled={loading}
+          >
+            Skip setup and go to Dashboard
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -23,6 +23,7 @@ interface AuthState {
   logout: () => void;
   checkAuth: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  setOnboardingCompleted: () => void;
   clearError: () => void;
 }
 
@@ -130,6 +131,12 @@ export const useAuthStore = create<AuthState>()(
         } catch (error) {
           console.error('Failed to refresh user:', error);
         }
+      },
+
+      setOnboardingCompleted: () => {
+        set((state) => ({
+          user: state.user ? { ...state.user, onboarding_completed: true } : null
+        }));
       },
 
       clearError: () => set({ error: null }),

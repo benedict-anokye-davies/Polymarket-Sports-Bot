@@ -141,6 +141,52 @@ class ApiClient {
     return this.request('/bot/stop', { method: 'POST' });
   }
 
+  // ==========================================================================
+  // Bot Configuration Endpoints (New)
+  // ==========================================================================
+
+  /**
+   * Get current bot configuration including trading parameters
+   */
+  async getBotConfig(): Promise<BotConfigResponse> {
+    return this.request('/bot/config');
+  }
+
+  /**
+   * Save bot configuration with trading parameters
+   * Does not start the bot - use startBot() for that
+   */
+  async saveBotConfig(config: BotConfigRequest): Promise<BotConfigResponse> {
+    return this.request('/bot/config', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  /**
+   * Get detailed bot status including positions and P&L
+   */
+  async getDetailedBotStatus(): Promise<DetailedBotStatus> {
+    return this.request('/bot/status/detailed');
+  }
+
+  /**
+   * Place a manual order on Kalshi or Polymarket
+   */
+  async placeManualOrder(order: PlaceOrderRequest): Promise<PlaceOrderResponse> {
+    return this.request('/bot/order', {
+      method: 'POST',
+      body: JSON.stringify(order),
+    });
+  }
+
+  /**
+   * Get available sports markets from Kalshi or Polymarket
+   */
+  async getSportsMarkets(platform: 'kalshi' | 'polymarket', sport: string): Promise<SportsMarket[]> {
+    return this.request(`/bot/markets/${platform}/${sport}`);
+  }
+
   // Trading endpoints
   async getMarkets(sport?: string): Promise<Market[]> {
     const params = sport ? `?sport=${sport}` : '';
@@ -716,6 +762,82 @@ export interface BulkGameSelectionResponse {
   success: boolean;
   message: string;
   updated_count: number;
+}
+
+// =============================================================================
+// Bot Configuration Types (New)
+// =============================================================================
+
+export interface TradingParameters {
+  probability_drop: number;       // Minimum probability drop to trigger entry (%)
+  min_volume: number;             // Minimum market volume ($)
+  position_size: number;          // Amount to invest per market ($)
+  take_profit: number;            // Take profit percentage (%)
+  stop_loss: number;              // Stop loss percentage (%)
+  latest_entry_time: number;      // No new positions after X minutes remaining
+  latest_exit_time: number;       // Must close positions by X minutes remaining
+}
+
+export interface GameSelection {
+  game_id: string;
+  sport: string;
+  home_team: string;
+  away_team: string;
+  start_time: string;
+  market_ticker?: string;
+  token_id_yes?: string;
+  token_id_no?: string;
+}
+
+export interface BotConfigRequest {
+  sport: string;
+  game: GameSelection;
+  parameters: TradingParameters;
+}
+
+export interface BotConfigResponse {
+  is_running: boolean;
+  sport?: string;
+  game?: GameSelection;
+  parameters: TradingParameters;
+  last_updated?: string;
+}
+
+export interface DetailedBotStatus {
+  is_running: boolean;
+  current_game?: string;
+  current_sport?: string;
+  active_positions: number;
+  pending_orders: number;
+  today_pnl: number;
+  today_trades: number;
+}
+
+export interface PlaceOrderRequest {
+  platform: 'kalshi' | 'polymarket';
+  ticker: string;                 // Market ticker or token_id
+  side: 'buy' | 'sell';
+  outcome: 'yes' | 'no';
+  price: number;                  // 0.01 - 0.99
+  size: number;                   // $ or contracts
+}
+
+export interface PlaceOrderResponse {
+  success: boolean;
+  order_id?: string;
+  status: string;
+  filled_size: number;
+  message?: string;
+}
+
+export interface SportsMarket {
+  ticker: string;
+  title: string;
+  status: string;
+  yes_price: number;
+  no_price: number;
+  volume: number;
+  close_time?: string;
 }
 
 // Export singleton instance

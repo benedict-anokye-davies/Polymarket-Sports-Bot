@@ -22,7 +22,8 @@ class PolymarketAccountCRUD:
         db: AsyncSession,
         user_id: uuid.UUID,
         private_key: str,
-        funder_address: str
+        funder_address: str,
+        platform: str = "polymarket"
     ) -> PolymarketAccount:
         """
         Creates a new Polymarket account with encrypted credentials.
@@ -32,14 +33,16 @@ class PolymarketAccountCRUD:
             user_id: Associated user ID
             private_key: Wallet private key (will be encrypted)
             funder_address: Address holding USDC funds
+            platform: Trading platform ('polymarket' or 'kalshi')
         
         Returns:
             Created PolymarketAccount instance
         """
         account = PolymarketAccount(
             user_id=user_id,
-            encrypted_private_key=encrypt_credential(private_key),
-            funder_address=funder_address
+            private_key_encrypted=encrypt_credential(private_key),
+            funder_address=funder_address,
+            platform=platform
         )
         db.add(account)
         await db.commit()
@@ -76,16 +79,19 @@ class PolymarketAccountCRUD:
             return None
         
         result = {
-            "private_key": decrypt_credential(account.encrypted_private_key),
             "funder_address": account.funder_address,
+            "platform": account.platform,
         }
         
-        if account.encrypted_api_key:
-            result["api_key"] = decrypt_credential(account.encrypted_api_key)
-        if account.encrypted_api_secret:
-            result["api_secret"] = decrypt_credential(account.encrypted_api_secret)
-        if account.encrypted_passphrase:
-            result["passphrase"] = decrypt_credential(account.encrypted_passphrase)
+        # Polymarket credentials
+        if account.private_key_encrypted:
+            result["private_key"] = decrypt_credential(account.private_key_encrypted)
+        if account.api_key_encrypted:
+            result["api_key"] = decrypt_credential(account.api_key_encrypted)
+        if account.api_secret_encrypted:
+            result["api_secret"] = decrypt_credential(account.api_secret_encrypted)
+        if account.api_passphrase_encrypted:
+            result["passphrase"] = decrypt_credential(account.api_passphrase_encrypted)
         
         return result
     
@@ -114,9 +120,9 @@ class PolymarketAccountCRUD:
         if not account:
             raise NotFoundError("Polymarket account not found")
         
-        account.encrypted_api_key = encrypt_credential(api_key)
-        account.encrypted_api_secret = encrypt_credential(api_secret)
-        account.encrypted_passphrase = encrypt_credential(passphrase)
+        account.api_key_encrypted = encrypt_credential(api_key)
+        account.api_secret_encrypted = encrypt_credential(api_secret)
+        account.api_passphrase_encrypted = encrypt_credential(passphrase)
         
         await db.commit()
         await db.refresh(account)

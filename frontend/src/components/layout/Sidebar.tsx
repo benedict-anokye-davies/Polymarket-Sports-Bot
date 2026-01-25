@@ -9,7 +9,8 @@ import {
   TrendingUp,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Bot
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/useAppStore';
@@ -17,6 +18,7 @@ import { Button } from '@/components/ui/button';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { path: '/bot', label: 'Bot Config', icon: Bot },
   { path: '/markets', label: 'Markets', icon: Layers },
   { path: '/positions', label: 'Positions', icon: Briefcase },
   { path: '/history', label: 'History', icon: Clock },

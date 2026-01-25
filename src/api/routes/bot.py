@@ -372,3 +372,288 @@ async def get_paper_trading_status(db: DbSession, current_user: OnboardedUser) -
         result["simulated_trades"] = list(simulated.values())
     
     return result
+
+
+# =============================================================================
+# Bot Configuration Endpoints (New)
+# =============================================================================
+
+from src.schemas.bot_config import (
+    BotConfigRequest,
+    BotConfigResponse,
+    TradingParameters,
+    PlaceOrderRequest,
+    PlaceOrderResponse,
+    MarketDataResponse,
+    BotStatusResponse
+)
+
+# In-memory store for bot configurations (per user)
+_bot_configs: dict[str, dict] = {}
+
+
+@router.get("/config", response_model=BotConfigResponse)
+async def get_bot_config(current_user: OnboardedUser) -> BotConfigResponse:
+    """
+    Get current bot configuration for the user.
+    """
+    user_id = str(current_user.id)
+    config = _bot_configs.get(user_id, {})
+    
+    status_info = get_bot_status(current_user.id)
+    is_running = status_info and status_info.get("state") == BotState.RUNNING.value
+    
+    return BotConfigResponse(
+        is_running=is_running,
+        sport=config.get("sport"),
+        game=config.get("game"),
+        parameters=config.get("parameters", TradingParameters()),
+        last_updated=config.get("last_updated")
+    )
+
+
+@router.post("/config", response_model=BotConfigResponse)
+async def save_bot_config(
+    db: DbSession,
+    current_user: OnboardedUser,
+    request: BotConfigRequest
+) -> BotConfigResponse:
+    """
+    Save bot configuration with trading parameters.
+    This does not start the bot - use /bot/start for that.
+    """
+    from datetime import datetime
+    
+    user_id = str(current_user.id)
+    
+    _bot_configs[user_id] = {
+        "sport": request.sport,
+        "game": request.game.model_dump(),
+        "parameters": request.parameters.model_dump(),
+        "last_updated": datetime.now().isoformat()
+    }
+    
+    # Log the configuration change
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "BOT_CONFIG",
+        f"Configuration updated for {request.sport}: {request.game.away_team} @ {request.game.home_team}"
+    )
+    
+    status_info = get_bot_status(current_user.id)
+    is_running = status_info and status_info.get("state") == BotState.RUNNING.value
+    
+    return BotConfigResponse(
+        is_running=is_running,
+        sport=request.sport,
+        game=request.game,
+        parameters=request.parameters,
+        last_updated=_bot_configs[user_id]["last_updated"]
+    )
+
+
+@router.get("/status/detailed", response_model=BotStatusResponse)
+async def get_detailed_bot_status(
+    db: DbSession,
+    current_user: OnboardedUser
+) -> BotStatusResponse:
+    """
+    Get detailed bot status including positions and P&L.
+    """
+    from src.db.crud.position import PositionCRUD
+    
+    status_info = get_bot_status(current_user.id)
+    is_running = status_info and status_info.get("state") == BotState.RUNNING.value
+    
+    user_id = str(current_user.id)
+    config = _bot_configs.get(user_id, {})
+    
+    # Get position counts
+    open_positions = await PositionCRUD.count_open_for_user(db, current_user.id)
+    today_pnl = await PositionCRUD.get_daily_pnl(db, current_user.id)
+    today_trades = await PositionCRUD.count_today_trades(db, current_user.id)
+    
+    game = config.get("game", {})
+    current_game = f"{game.get('away_team', '')} @ {game.get('home_team', '')}" if game else None
+    
+    return BotStatusResponse(
+        is_running=is_running,
+        current_game=current_game if game else None,
+        current_sport=config.get("sport"),
+        active_positions=open_positions,
+        pending_orders=0,  # TODO: Track pending orders
+        today_pnl=float(today_pnl) if today_pnl else 0.0,
+        today_trades=today_trades
+    )
+
+
+@router.post("/order", response_model=PlaceOrderResponse)
+async def place_manual_order(
+    db: DbSession,
+    current_user: OnboardedUser,
+    request: PlaceOrderRequest
+) -> PlaceOrderResponse:
+    """
+    Place a manual order on Kalshi or Polymarket.
+    Requires wallet to be connected.
+    """
+    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Wallet not connected. Please complete onboarding."
+        )
+    
+    try:
+        if request.platform.lower() == "kalshi":
+            # Use Kalshi client
+            from src.services.kalshi_client import KalshiClient
+            
+            kalshi_key = credentials.get("kalshi_api_key")
+            kalshi_private = credentials.get("kalshi_private_key")
+            
+            if not kalshi_key or not kalshi_private:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Kalshi credentials not configured"
+                )
+            
+            client = KalshiClient(kalshi_key, kalshi_private)
+            
+            order = await client.place_order(
+                ticker=request.ticker,
+                side=request.side,
+                yes_no=request.outcome,
+                price=request.price,
+                size=int(request.size)
+            )
+            
+            await client.close()
+            
+            await ActivityLogCRUD.info(
+                db,
+                current_user.id,
+                "KALSHI_ORDER",
+                f"Placed {request.side} order: {request.ticker} @ {request.price}"
+            )
+            
+            return PlaceOrderResponse(
+                success=True,
+                order_id=order.order_id,
+                status=order.status,
+                filled_size=order.filled_size,
+                message=f"Order placed on Kalshi"
+            )
+        
+        elif request.platform.lower() == "polymarket":
+            # Use Polymarket client
+            client = PolymarketClient(
+                private_key=credentials["private_key"],
+                funder_address=credentials["funder_address"],
+                api_key=credentials.get("api_key"),
+                api_secret=credentials.get("api_secret"),
+                passphrase=credentials.get("passphrase")
+            )
+            
+            result = await client.place_order(
+                token_id=request.ticker,
+                side=request.side.upper(),
+                price=request.price,
+                size=request.size
+            )
+            
+            await ActivityLogCRUD.info(
+                db,
+                current_user.id,
+                "POLYMARKET_ORDER",
+                f"Placed {request.side} order: {request.ticker} @ {request.price}"
+            )
+            
+            return PlaceOrderResponse(
+                success=True,
+                order_id=result.get("orderID", result.get("order_id")),
+                status=result.get("status", "pending"),
+                filled_size=result.get("filled_size", 0),
+                message="Order placed on Polymarket"
+            )
+        
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown platform: {request.platform}. Use 'kalshi' or 'polymarket'"
+            )
+    
+    except Exception as e:
+        logger.error(f"Order placement failed: {e}")
+        return PlaceOrderResponse(
+            success=False,
+            status="failed",
+            message=str(e)
+        )
+
+
+@router.get("/markets/{platform}/{sport}", response_model=list)
+async def get_available_markets(
+    platform: str,
+    sport: str,
+    current_user: OnboardedUser
+) -> list:
+    """
+    Fetch available sports markets from Kalshi or Polymarket.
+    
+    Args:
+        platform: 'kalshi' or 'polymarket'
+        sport: Sport identifier (nba, nfl, mlb, etc.)
+    """
+    try:
+        if platform.lower() == "kalshi":
+            from src.services.kalshi_client import KalshiClient
+            
+            # For market discovery, we don't need auth
+            import httpx
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    "https://api.elections.kalshi.com/trade-api/v2/markets",
+                    params={
+                        "category": "Sports",
+                        "series_ticker": sport.upper(),
+                        "status": "open",
+                        "limit": 50
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("markets", [])
+                else:
+                    return []
+        
+        elif platform.lower() == "polymarket":
+            import httpx
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Query Gamma API for sports markets
+                response = await client.get(
+                    "https://gamma-api.polymarket.com/markets",
+                    params={
+                        "tag": sport.lower(),
+                        "active": "true",
+                        "limit": 50
+                    }
+                )
+                
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    return []
+        
+        else:
+            return []
+    
+    except Exception as e:
+        logger.error(f"Failed to fetch markets: {e}")
+        return []
+

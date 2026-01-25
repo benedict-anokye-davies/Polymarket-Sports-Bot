@@ -15,6 +15,7 @@ import Positions from "./pages/Positions";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
+import BotConfig from "./pages/BotConfig";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -39,10 +40,10 @@ function ProtectedRoute({ children, requireOnboarding = true }: { children: Reac
     return <Navigate to="/login" replace />;
   }
   
-  // Redirect to onboarding if not completed (except for onboarding page itself)
-  if (requireOnboarding && user && !user.onboarding_completed) {
-    return <Navigate to="/onboarding" replace />;
-  }
+  // Skip onboarding check - allow direct dashboard access for demo
+  // if (requireOnboarding && user && !user.onboarding_completed) {
+  //   return <Navigate to="/onboarding" replace />;
+  // }
   
   return <>{children}</>;
 }
@@ -67,15 +68,16 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
-          <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-          <Route path="/onboarding" element={<ProtectedRoute requireOnboarding={false}><Onboarding /></ProtectedRoute>} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
-          <Route path="/positions" element={<ProtectedRoute><Positions /></ProtectedRoute>} />
-          <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/bot" element={<BotConfig />} />
+          <Route path="/markets" element={<Markets />} />
+          <Route path="/positions" element={<Positions />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/logs" element={<Logs />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

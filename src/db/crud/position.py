@@ -236,6 +236,34 @@ class PositionCRUD:
             .options(selectinload(Position.trades))
         )
         return result.scalar_one_or_none()
+    
+    @staticmethod
+    async def count_open_for_user(db: AsyncSession, user_id: uuid.UUID) -> int:
+        """
+        Counts all open positions for a user.
+        """
+        result = await db.execute(
+            select(func.count(Position.id)).where(
+                Position.user_id == user_id,
+                Position.status == "open"
+            )
+        )
+        return result.scalar() or 0
+    
+    @staticmethod
+    async def count_today_trades(db: AsyncSession, user_id: uuid.UUID) -> int:
+        """
+        Counts all positions opened or closed today.
+        """
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        result = await db.execute(
+            select(func.count(Position.id)).where(
+                Position.user_id == user_id,
+                Position.opened_at >= today_start
+            )
+        )
+        return result.scalar() or 0
 
 
 # Singleton instance for simplified imports
