@@ -229,7 +229,7 @@ class ApiClient {
   }
 
   async completeOnboardingStep(step: number, data?: Record<string, unknown>): Promise<{ message: string }> {
-    return this.request(`/onboarding/step/${step}`, {
+    return this.request(`/onboarding/step/${step}/complete`, {
       method: 'POST',
       body: JSON.stringify(data || {}),
     });

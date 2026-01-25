@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 
-from src.api.deps import DbSession, OnboardedUser
+from src.api.deps import DbSession, CurrentUser
 from src.db.crud.sport_config import SportConfigCRUD
 from src.db.crud.global_settings import GlobalSettingsCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/settings", tags=["Settings"])
 @router.get("/sports", response_model=list[SportConfigResponse])
 async def get_all_sport_configs(
     db: DbSession,
-    current_user: OnboardedUser
+    current_user: CurrentUser
 ) -> list[SportConfigResponse]:
     """
     Returns all sport configurations for the user.
@@ -39,7 +39,7 @@ async def get_all_sport_configs(
 async def get_sport_config(
     sport: str,
     db: DbSession,
-    current_user: OnboardedUser
+    current_user: CurrentUser
 ) -> SportConfigResponse:
     """
     Returns configuration for a specific sport.
@@ -60,7 +60,7 @@ async def update_sport_config(
     sport: str,
     config_data: SportConfigUpdate,
     db: DbSession,
-    current_user: OnboardedUser
+    current_user: CurrentUser
 ) -> SportConfigResponse:
     """
     Updates configuration for a specific sport.
@@ -93,7 +93,7 @@ async def update_sport_config(
 async def create_sport_config(
     config_data: SportConfigCreate,
     db: DbSession,
-    current_user: OnboardedUser
+    current_user: CurrentUser
 ) -> SportConfigResponse:
     """
     Creates a new sport configuration.
@@ -123,7 +123,7 @@ async def create_sport_config(
 @router.get("/global", response_model=GlobalSettingsResponse)
 async def get_global_settings(
     db: DbSession,
-    current_user: OnboardedUser
+    current_user: CurrentUser
 ) -> GlobalSettingsResponse:
     """
     Returns global bot settings for the user.
@@ -136,7 +136,7 @@ async def get_global_settings(
 async def update_global_settings(
     settings_data: GlobalSettingsUpdate,
     db: DbSession,
-    current_user: OnboardedUser
+    current_user: CurrentUser
 ) -> GlobalSettingsResponse:
     """
     Updates global bot settings.
@@ -160,7 +160,7 @@ async def update_global_settings(
 @router.post("/discord/test", response_model=MessageResponse)
 async def test_discord_webhook(
     db: DbSession,
-    current_user: OnboardedUser
+    current_user: CurrentUser
 ) -> MessageResponse:
     """
     Sends a test message to the configured Discord webhook.
