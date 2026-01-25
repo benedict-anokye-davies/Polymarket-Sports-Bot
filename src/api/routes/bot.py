@@ -397,17 +397,26 @@ async def get_bot_config(current_user: OnboardedUser) -> BotConfigResponse:
     """
     Get current bot configuration for the user.
     """
+    from src.schemas.bot_config import GameSelection
+    
     user_id = str(current_user.id)
     config = _bot_configs.get(user_id, {})
     
     status_info = get_bot_status(current_user.id)
-    is_running = status_info and status_info.get("state") == BotState.RUNNING.value
+    is_running = bool(status_info and status_info.get("state") == BotState.RUNNING.value)
+    
+    # Convert stored dict back to Pydantic models
+    game_data = config.get("game")
+    game = GameSelection(**game_data) if game_data else None
+    
+    params_data = config.get("parameters")
+    params = TradingParameters(**params_data) if params_data else TradingParameters()
     
     return BotConfigResponse(
         is_running=is_running,
         sport=config.get("sport"),
-        game=config.get("game"),
-        parameters=config.get("parameters", TradingParameters()),
+        game=game,
+        parameters=params,
         last_updated=config.get("last_updated")
     )
 
@@ -442,7 +451,7 @@ async def save_bot_config(
     )
     
     status_info = get_bot_status(current_user.id)
-    is_running = status_info and status_info.get("state") == BotState.RUNNING.value
+    is_running = bool(status_info and status_info.get("state") == BotState.RUNNING.value)
     
     return BotConfigResponse(
         is_running=is_running,
@@ -464,7 +473,7 @@ async def get_detailed_bot_status(
     from src.db.crud.position import PositionCRUD
     
     status_info = get_bot_status(current_user.id)
-    is_running = status_info and status_info.get("state") == BotState.RUNNING.value
+    is_running = bool(status_info and status_info.get("state") == BotState.RUNNING.value)
     
     user_id = str(current_user.id)
     config = _bot_configs.get(user_id, {})
@@ -549,9 +558,18 @@ async def place_manual_order(
         
         elif request.platform.lower() == "polymarket":
             # Use Polymarket client
+            private_key = credentials.get("private_key")
+            funder_address = credentials.get("funder_address")
+            
+            if not private_key or not funder_address:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Polymarket wallet not configured. Please complete onboarding."
+                )
+            
             client = PolymarketClient(
-                private_key=credentials["private_key"],
-                funder_address=credentials["funder_address"],
+                private_key=private_key,
+                funder_address=funder_address,
                 api_key=credentials.get("api_key"),
                 api_secret=credentials.get("api_secret"),
                 passphrase=credentials.get("passphrase")
