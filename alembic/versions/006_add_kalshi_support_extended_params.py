@@ -1,7 +1,7 @@
 """Add Kalshi platform support and extended trading parameters
 
 Revision ID: 006_kalshi_extended
-Revises: 005_add_paper_trading_multisport
+Revises: 005_paper_trading
 Create Date: 2026-01-25 12:00:00.000000
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '006_kalshi_extended'
-down_revision: Union[str, None] = '005_add_paper_trading_multisport'
+down_revision: Union[str, None] = '005_paper_trading'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
