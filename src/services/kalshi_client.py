@@ -113,17 +113,19 @@ class KalshiClient:
     Handles market discovery, order placement, and position management.
     """
     
-    def __init__(self, api_key_id: str, private_key_pem: str):
+    def __init__(self, api_key_id: str, private_key_pem: str, dry_run: bool = True):
         """
         Initialize Kalshi client with API credentials.
-        
+
         Args:
             api_key_id: Kalshi API key ID
             private_key_pem: RSA private key in PEM format
+            dry_run: If True, simulate orders without placing real trades
         """
         self.auth = KalshiAuthenticator(api_key_id, private_key_pem)
         self.base_url = KALSHI_API_BASE
         self._client = httpx.AsyncClient(timeout=30.0)
+        self.dry_run = dry_run
     
     async def close(self):
         """Close the HTTP client connection"""
@@ -477,17 +479,95 @@ class KalshiClient:
     def calculate_implied_probability(self, orderbook: Dict) -> float:
         """
         Calculate implied YES probability from orderbook mid-market.
-        
+
         Args:
             orderbook: Orderbook dictionary with bids and asks
-        
+
         Returns:
             Mid-market implied probability (0.0 to 1.0)
         """
         bids = orderbook.get("bids", [])
         asks = orderbook.get("asks", [])
-        
+
         best_bid = bids[0]["price"] if bids else 0.5
         best_ask = asks[0]["price"] if asks else 0.5
-        
+
         return (best_bid + best_ask) / 2
+
+    # =========================================================================
+    # Bot Runner Compatibility Methods
+    # =========================================================================
+
+    async def wait_for_fill(self, order_id: str, timeout: int = 30) -> str:
+        """
+        Wait for an order to be filled.
+        Polls order status until filled, cancelled, or timeout.
+
+        Args:
+            order_id: Kalshi order ID
+            timeout: Maximum seconds to wait
+
+        Returns:
+            Final order status: "filled", "cancelled", "partial", or "timeout"
+        """
+        import asyncio
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                response = await self._request("GET", f"/portfolio/orders/{order_id}")
+                status = response.get("status", "").lower()
+
+                if status == "filled":
+                    return "filled"
+                elif status in ["cancelled", "canceled"]:
+                    return "cancelled"
+                elif status == "partial":
+                    return "partial"
+
+                await asyncio.sleep(1)
+            except TradingError:
+                await asyncio.sleep(1)
+
+        return "timeout"
+
+    async def check_slippage(
+        self,
+        ticker: str,
+        expected_price: float,
+        side: str = "buy"
+    ) -> tuple[bool, float]:
+        """
+        Check if current market price is within acceptable slippage.
+
+        Args:
+            ticker: Market ticker
+            expected_price: Expected execution price
+            side: "buy" or "sell"
+
+        Returns:
+            Tuple of (is_acceptable, current_price)
+        """
+        try:
+            orderbook = await self.get_orderbook(ticker)
+
+            if side.lower() == "buy":
+                # For buy orders, check best ask
+                asks = orderbook.get("asks", [])
+                if not asks:
+                    return False, expected_price
+                current_price = asks[0].get("price", expected_price)
+                # Allow up to 5% slippage for buys
+                slippage = (current_price - expected_price) / expected_price if expected_price > 0 else 0
+                return slippage <= 0.05, current_price
+            else:
+                # For sell orders, check best bid
+                bids = orderbook.get("bids", [])
+                if not bids:
+                    return False, expected_price
+                current_price = bids[0].get("price", expected_price)
+                # Allow up to 5% slippage for sells
+                slippage = (expected_price - current_price) / expected_price if expected_price > 0 else 0
+                return slippage <= 0.05, current_price
+        except Exception:
+            return True, expected_price  # Allow trade if slippage check fails

@@ -43,8 +43,8 @@ async def _create_bot_dependencies(db, user_id, credentials: dict):
     if platform == "kalshi":
         from src.services.kalshi_client import KalshiClient
         trading_client = KalshiClient(
-            api_key=credentials["api_key"],
-            private_key=credentials["api_secret"]  # Kalshi uses api_secret as private key for signing
+            api_key_id=credentials["api_key"],
+            private_key_pem=credentials["api_secret"]  # Kalshi uses api_secret as private key for signing
         )
         logger.info(f"Created KalshiClient for user {user_id}")
     else:

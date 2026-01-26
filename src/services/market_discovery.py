@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DiscoveredMarket:
-    """Represents a discovered sports market from Polymarket."""
+    """Represents a discovered sports market from Polymarket or Kalshi."""
     condition_id: str
     token_id_yes: str
     token_id_no: str
@@ -37,6 +37,10 @@ class DiscoveredMarket:
     current_price_yes: float
     current_price_no: float
     spread: float
+    # Kalshi-specific field - ticker for trading
+    ticker: str | None = None
+    # Platform indicator: "polymarket" or "kalshi"
+    platform: str = "polymarket"
     
     @property
     def is_high_liquidity(self) -> bool:

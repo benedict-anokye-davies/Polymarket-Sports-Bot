@@ -107,20 +107,23 @@ class BotRunner:
         self.polymarket_client = polymarket_client
         self.trading_engine = trading_engine
         self.espn_service = espn_service
-        
+
+        # Detect platform from client type
+        self.platform = self._detect_platform(polymarket_client)
+
         self.state = BotState.STOPPED
         self.websocket: PolymarketWebSocket | None = None
-        
+
         # Tracked games keyed by ESPN event ID
         self.tracked_games: dict[str, TrackedGame] = {}
-        
+
         # Token ID to game mapping for WebSocket updates
         self.token_to_game: dict[str, str] = {}
-        
+
         # User-selected games from bot config (game_id -> game_config dict)
         # This filters which games the bot will actually track and trade
         self.user_selected_games: dict[str, dict] = {}
-        
+
         # Configuration
         self.user_id: UUID | None = None
         self.enabled_sports: list[str] = []
@@ -129,7 +132,7 @@ class BotRunner:
         self.entry_threshold: float = 0.05
         self.take_profit: float = 0.15
         self.stop_loss: float = 0.10
-        
+
         # Paper trading mode
         self.dry_run: bool = True
         self.max_slippage: float = 0.02
@@ -144,9 +147,74 @@ class BotRunner:
 
         # Per-market configuration overrides (keyed by condition_id)
         self.market_configs: dict[str, Any] = {}
-        
+
         # Concurrent entry locks (prevent double-entry race conditions)
         self._entry_locks: dict[str, asyncio.Lock] = {}
+
+    def _detect_platform(self, client) -> str:
+        """Detect which trading platform the client is for."""
+        client_class = client.__class__.__name__
+        if "Kalshi" in client_class:
+            return "kalshi"
+        return "polymarket"
+
+    async def _place_order(self, game: TrackedGame, side: str, price: float, size: int) -> dict | None:
+        """
+        Platform-agnostic order placement.
+        Handles differences between Polymarket and Kalshi order formats.
+        """
+        if self.platform == "kalshi":
+            # Kalshi order format
+            ticker = game.market.ticker
+            if not ticker:
+                logger.error(f"No ticker available for Kalshi market: {game.market.question}")
+                return None
+
+            return await self.polymarket_client.place_order(
+                ticker=ticker,
+                side=side.lower(),
+                yes_no="yes",
+                price=price,
+                size=int(size),
+                time_in_force="gtc"
+            )
+        else:
+            # Polymarket order format
+            return await self.polymarket_client.place_order(
+                token_id=game.market.token_id_yes,
+                side=side.upper(),
+                price=price,
+                size=size,
+                order_type="GTC"
+            )
+
+    def _get_order_id(self, order: dict) -> str | None:
+        """Get order ID from order response, handling platform differences."""
+        if self.platform == "kalshi":
+            return order.get("order_id")
+        return order.get("id")
+
+    async def _check_slippage(self, game: TrackedGame, price: float, side: str = "buy") -> bool:
+        """
+        Platform-agnostic slippage check.
+        Returns True if slippage is acceptable.
+        """
+        if self.platform == "kalshi":
+            ticker = game.market.ticker
+            if not ticker:
+                return True  # Allow trade if no ticker
+            slippage_ok, _ = await self.polymarket_client.check_slippage(ticker, price, side)
+            return slippage_ok
+        else:
+            # Polymarket check_slippage may return tuple or bool depending on version
+            result = await self.polymarket_client.check_slippage(
+                game.market.token_id_yes,
+                price,
+                side
+            )
+            if isinstance(result, tuple):
+                return result[0]
+            return result
         
         # Stats
         self.start_time: datetime | None = None
@@ -782,59 +850,54 @@ class BotRunner:
                 logger.warning("Insufficient balance for trade")
                 return
             
-            # Slippage check before execution
+            # Slippage check before execution (platform-agnostic)
             if not self.dry_run:
-                slippage_ok = await self.polymarket_client.check_slippage(
-                    game.market.token_id_yes,
-                    game.current_price
-                )
+                slippage_ok = await self._check_slippage(game, game.current_price, "buy")
                 if not slippage_ok:
                     logger.warning(
                         f"Slippage too high for {game.home_team} vs {game.away_team}"
                     )
                     return
-            
-            # Execute entry
+
+            # Execute entry (platform-agnostic)
             try:
-                order = await self.polymarket_client.place_order(
-                    token_id=game.market.token_id_yes,
-                    side="BUY",
-                    price=game.current_price,
-                    size=position_size,
-                    order_type="GTC"
-                )
-                
+                order = await self._place_order(game, "BUY", game.current_price, int(position_size))
+
                 if order:
+                    order_id = self._get_order_id(order)
+
                     # Wait for fill with timeout (skip for paper trading)
                     fill_status = "filled"
                     if not self.dry_run:
                         fill_status = await self.polymarket_client.wait_for_fill(
-                            order.get("id"),
+                            order_id,
                             timeout=self.order_fill_timeout
                         )
-                        
+
                         if fill_status != "filled":
                             logger.warning(f"Order not filled: {fill_status}")
                             # Cancel unfilled order
                             try:
-                                await self.polymarket_client.cancel_order(order.get("id"))
+                                await self.polymarket_client.cancel_order(order_id)
                             except Exception:
                                 pass
                             return
-                    
+
                     # Record position using CRUD interface
                     entry_cost = position_size * game.current_price
+                    # Use ticker for Kalshi, token_id for Polymarket
+                    token_or_ticker = game.market.ticker if self.platform == "kalshi" else game.market.token_id_yes
                     position = await PositionCRUD.create(
                         db,
                         user_id=self.user_id,
-                        condition_id=game.market.condition_id,
-                        token_id=game.market.token_id_yes,
+                        condition_id=game.market.condition_id or game.market.ticker or "",
+                        token_id=token_or_ticker or "",
                         side="YES",
                         entry_price=Decimal(str(game.current_price)),
                         entry_size=Decimal(str(position_size)),
                         entry_cost_usdc=Decimal(str(entry_cost)),
                         entry_reason=f"Price drop from baseline",
-                        entry_order_id=order.get("id")
+                        entry_order_id=order_id
                     )
                     
                     game.has_position = True
@@ -947,21 +1010,16 @@ class BotRunner:
             f"P&L: {pnl_pct:.1%}"
         )
         
-        # Execute exit
+        # Execute exit (platform-agnostic)
         try:
             exit_size = float(position.entry_size)
-            order = await self.polymarket_client.place_order(
-                token_id=game.market.token_id_yes,
-                side="SELL",
-                price=current_price,
-                size=exit_size,
-                order_type="GTC"
-            )
-            
+            order = await self._place_order(game, "SELL", current_price, int(exit_size))
+
             if order:
+                order_id = self._get_order_id(order)
                 pnl = (current_price - entry_price) * exit_size
                 exit_proceeds = current_price * exit_size
-                
+
                 # Update position using close_position method
                 await PositionCRUD.close_position(
                     db,
@@ -970,7 +1028,7 @@ class BotRunner:
                     exit_size=Decimal(str(exit_size)),
                     exit_proceeds_usdc=Decimal(str(exit_proceeds)),
                     exit_reason=exit_reason,
-                    exit_order_id=order.get("id")
+                    exit_order_id=order_id
                 )
                 
                 game.has_position = False
@@ -1178,21 +1236,17 @@ class BotRunner:
                     # Get current market price
                     current_price = game.current_price or float(position.entry_price)
                     exit_size = float(position.entry_size)
-                    
-                    # Execute market exit
-                    order = await self.polymarket_client.place_order(
-                        token_id=game.market.token_id_yes,
-                        side="SELL",
-                        price=current_price * 0.98,  # 2% below for market-like fill
-                        size=exit_size,
-                        order_type="GTC"
-                    )
-                    
+
+                    # Execute market exit (platform-agnostic)
+                    exit_price = current_price * 0.98  # 2% below for market-like fill
+                    order = await self._place_order(game, "SELL", exit_price, int(exit_size))
+
                     if order:
+                        order_id = self._get_order_id(order)
                         entry_price = float(position.entry_price)
                         pnl = (current_price - entry_price) * exit_size
                         exit_proceeds = current_price * exit_size
-                        
+
                         await PositionCRUD.close_position(
                             db,
                             position_id=position.id,
@@ -1200,7 +1254,7 @@ class BotRunner:
                             exit_size=Decimal(str(exit_size)),
                             exit_proceeds_usdc=Decimal(str(exit_proceeds)),
                             exit_reason="emergency_shutdown",
-                            exit_order_id=order.get("id")
+                            exit_order_id=order_id
                         )
                         
                         result["positions_closed"] += 1
