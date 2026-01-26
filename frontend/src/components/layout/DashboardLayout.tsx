@@ -1,8 +1,10 @@
 import { ReactNode, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
 import { useAppStore } from '@/stores/useAppStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { apiClient } from '@/api/client';
 import { AppTour } from '@/components/AppTour';
 
@@ -11,16 +13,25 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
+  const navigate = useNavigate();
   const { sidebarCollapsed, setWalletConnected, setBotStatus, tour, stopTour } = useAppStore();
+  const { refreshUser } = useAuthStore();
 
   // Initialize wallet and bot status on mount
   useEffect(() => {
     const initStatus = async () => {
       try {
-        // Check wallet/credentials status
+        // Check wallet/credentials status and sync onboarding state
         const onboardingStatus = await apiClient.getOnboardingStatus();
         setWalletConnected(onboardingStatus.wallet_connected, 'Connected');
-        
+
+        // If backend says onboarding is not complete (step < 5), refresh user and redirect
+        if (onboardingStatus.current_step < 5) {
+          await refreshUser();
+          navigate('/onboarding');
+          return;
+        }
+
         // Check bot status
         const botStatus = await apiClient.getBotStatus();
         setBotStatus(botStatus.is_running, botStatus.active_positions || 0);
@@ -29,7 +40,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       }
     };
     initStatus();
-  }, [setWalletConnected, setBotStatus]);
+  }, [setWalletConnected, setBotStatus, refreshUser, navigate]);
 
   return (
     <div className="min-h-screen bg-background">

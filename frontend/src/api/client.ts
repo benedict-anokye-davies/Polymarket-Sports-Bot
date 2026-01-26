@@ -386,6 +386,12 @@ class ApiClient {
     });
   }
 
+  async skipOnboarding(): Promise<{ message: string }> {
+    return this.request('/onboarding/skip', {
+      method: 'POST',
+    });
+  }
+
   // Logs endpoints
   async getLogs(level?: string, page: number = 1, limit: number = 50): Promise<PaginatedLogs> {
     const params = new URLSearchParams();

@@ -573,14 +573,30 @@ export default function Onboarding() {
     }
   };
 
-  const skipOnboarding = () => {
-    // Mark onboarding as completed in local state to bypass route guard
-    setOnboardingCompleted();
-    toast({
-      title: 'Skipped',
-      description: 'You can configure settings later from the Settings page.',
-    });
-    navigate('/dashboard');
+  const skipOnboarding = async () => {
+    setLoading(true);
+    try {
+      // Call backend to mark onboarding as complete
+      await apiClient.skipOnboarding();
+
+      // Refresh user state to get updated onboarding status
+      await refreshUser();
+
+      toast({
+        title: 'Skipped',
+        description: 'You can configure settings later from the Settings page.',
+      });
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Failed to skip onboarding:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to skip onboarding.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const progressPercent = (currentStep / TOTAL_STEPS) * 100;
