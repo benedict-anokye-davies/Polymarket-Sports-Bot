@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,6 +18,7 @@ import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
 import BotConfig from "./pages/BotConfig";
 import NotFound from "./pages/NotFound";
+import { Loader2 } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -74,12 +76,42 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Auth initialization wrapper - checks token validity on mount
+function AuthInit({ children }: { children: React.ReactNode }) {
+  const { checkAuth, token } = useAuthStore();
+  const [isChecking, setIsChecking] = useState(true);
+
+  useEffect(() => {
+    const init = async () => {
+      if (token) {
+        await checkAuth();
+      }
+      setIsChecking(false);
+    };
+    init();
+  }, [checkAuth, token]);
+
+  if (isChecking && token) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          <p className="text-muted-foreground text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <ErrorBoundary>
+      <AuthInit>
       <BrowserRouter>
         <Routes>
           {/* Public routes */}
@@ -102,6 +134,7 @@ const App = () => (
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
+      </AuthInit>
       </ErrorBoundary>
     </TooltipProvider>
   </QueryClientProvider>
