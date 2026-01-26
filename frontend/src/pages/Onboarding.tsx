@@ -522,6 +522,17 @@ export default function Onboarding() {
   const saveDataToBackend = async () => {
     setLoading(true);
     try {
+      // Save wallet credentials if provided
+      const isKalshiPlatform = data.platform === 'kalshi';
+      if (data.apiKey && data.apiSecret) {
+        await apiClient.connectWallet(data.platform, {
+          apiKey: isKalshiPlatform ? data.apiKey : undefined,
+          apiSecret: isKalshiPlatform ? data.apiSecret : undefined,
+          privateKey: !isKalshiPlatform ? data.apiKey : undefined,
+          funderAddress: !isKalshiPlatform ? data.funderAddress : undefined,
+        });
+      }
+
       // Save global settings
       await apiClient.updateGlobalSettings({
         max_daily_loss_usdc: data.maxDailyLoss,
