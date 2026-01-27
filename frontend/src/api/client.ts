@@ -1181,8 +1181,7 @@ export interface ESPNGame {
   homeOdds: number;
   awayOdds: number;
   volume: number;
-  no_price: number;
-  volume: number;
+  no_price?: number;
   close_time?: string;
 }
 

@@ -172,8 +172,17 @@ export default function BotConfig() {
       try {
         const config: BotConfigResponse = await apiClient.getBotConfig();
         setBotEnabled(config.is_running);
-        if (config.sport) setSelectedSport(config.sport);
-        if (config.game) setSelectedGames(new Set([config.game.game_id]));
+        if (config.sport) {
+          setSelectedSport(config.sport);
+          // Find the correct category for the sport
+          const cat = categories.find(c => c.leagues.some(l => l.league_key === config.sport));
+          if (cat) {
+            setSelectedCategory(cat.category);
+            setSelectedLeague(config.sport);
+          }
+        }
+        // Note: selectedGames is a Map<string, SelectedGame> - we can't restore it fully 
+        // without the game data, so we'll let the user re-select from the available games
         if (config.parameters) setTradingParams(fromApiParams(config.parameters));
         // Load simulation mode from backend (defaults to true for safety)
         setSimulationMode(config.simulation_mode ?? true);
@@ -182,7 +191,7 @@ export default function BotConfig() {
       }
     };
     loadConfig();
-  }, []);
+  }, [categories]);
 
   // State for real games from ESPN
   const [availableGames, setAvailableGames] = useState<GameData[]>([]);

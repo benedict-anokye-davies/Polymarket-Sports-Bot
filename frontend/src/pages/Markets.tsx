@@ -68,7 +68,6 @@ interface GameData {
   awayOdds: number;
   volume: number;
   sport: string;
-  isSelected: boolean;
 }
 
 export default function Markets() {
@@ -84,11 +83,12 @@ export default function Markets() {
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<string>('available');
   const [selectingAll, setSelectingAll] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
 
-  // League selection state
+  // League selection state - start empty, will be set after categories load
   const [categories, setCategories] = useState<SportCategory[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('basketball');
-  const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set(['nba']));
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
   const [loadingCategories, setLoadingCategories] = useState(true);
 
   // Load categories on mount
@@ -98,8 +98,20 @@ export default function Markets() {
         setLoadingCategories(true);
         const data = await apiClient.getSportCategories();
         setCategories(data);
+        
+        // Set default category to first one (usually basketball)
+        if (data.length > 0) {
+          const firstCategory = data[0];
+          setSelectedCategory(firstCategory.category);
+          
+          // Auto-select first league (usually nba)
+          if (firstCategory.leagues.length > 0) {
+            setSelectedLeagues(new Set([firstCategory.leagues[0].league_key]));
+          }
+        }
       } catch (err) {
         console.error('Failed to load categories:', err);
+        setError('Failed to load sport categories. Please refresh the page.');
       } finally {
         setLoadingCategories(false);
       }
@@ -156,6 +168,7 @@ export default function Markets() {
 
     try {
       setLoading(true);
+      setError(null);
       const allFetchedGames: GameData[] = [];
       
       // Fetch games from each selected league in parallel
@@ -165,10 +178,10 @@ export default function Markets() {
           // Transform ESPN games to our GameData format
           return games.map((g: ESPNGame): GameData => ({
             id: g.id,
-            homeTeam: g.homeTeam,
-            awayTeam: g.awayTeam,
-            homeAbbr: g.homeAbbr || g.homeTeam.substring(0, 3).toUpperCase(),
-            awayAbbr: g.awayAbbr || g.awayTeam.substring(0, 3).toUpperCase(),
+            homeTeam: g.homeTeam || 'TBD',
+            awayTeam: g.awayTeam || 'TBD',
+            homeAbbr: g.homeAbbr || (g.homeTeam ? g.homeTeam.substring(0, 3).toUpperCase() : 'TBD'),
+            awayAbbr: g.awayAbbr || (g.awayTeam ? g.awayTeam.substring(0, 3).toUpperCase() : 'TBD'),
             homeScore: g.homeScore || 0,
             awayScore: g.awayScore || 0,
             startTime: g.startTime 
@@ -180,14 +193,13 @@ export default function Markets() {
                   timeZoneName: 'short' 
                 })
               : 'TBD',
-            status: g.status,
+            status: g.status || 'upcoming',
             currentPeriod: g.currentPeriod || '',
             clock: g.clock || '',
             homeOdds: g.homeOdds || 50,
             awayOdds: g.awayOdds || 50,
             volume: g.volume || 0,
             sport: league,
-            isSelected: selectedGameIds.has(g.id),
           }));
         } catch (err) {
           console.error(`Failed to fetch games for ${league}:`, err);
@@ -210,14 +222,17 @@ export default function Markets() {
       });
 
       setAllGames(allFetchedGames);
-      setError(null);
+      
+      if (allFetchedGames.length === 0) {
+        setError('No games found for selected leagues. Try selecting different leagues or check back later.');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load games');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedLeagues, selectedGameIds]);
+  }, [selectedLeagues]); // Only depend on selectedLeagues, not selectedGameIds
 
   useEffect(() => {
     fetchGames();
