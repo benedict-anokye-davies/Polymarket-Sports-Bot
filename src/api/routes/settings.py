@@ -16,9 +16,17 @@ from src.schemas.settings import (
     SportConfigResponse,
     GlobalSettingsUpdate,
     GlobalSettingsResponse,
+    BulkLeagueConfigRequest,
+    BulkLeagueConfigResponse,
+    LeagueEnableRequest,
+    LeagueEnableResponse,
+    UserLeagueStatus,
+    LEAGUE_SPORT_TYPE_MAP,
+    ALL_SUPPORTED_LEAGUES,
 )
 from src.schemas.common import MessageResponse
 from src.models.sport_config import SPORT_PROGRESS_CONFIG, ProgressMetricType
+from src.services.espn_service import ESPNService
 
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -295,6 +303,210 @@ async def create_sport_config(
     )
     
     return SportConfigResponse.model_validate(config)
+
+
+# ============================================================================
+# Bulk League Configuration Endpoints
+# ============================================================================
+
+@router.post("/leagues/bulk", response_model=BulkLeagueConfigResponse)
+async def bulk_configure_leagues(
+    config_data: BulkLeagueConfigRequest,
+    db: DbSession,
+    current_user: CurrentUser
+) -> BulkLeagueConfigResponse:
+    """
+    Configure multiple leagues at once with the same parameters.
+    
+    Use this to quickly set up trading for multiple leagues (e.g., all European
+    soccer leagues) with identical settings. Each league will get its own
+    config entry that can be customized later if needed.
+    
+    Example request:
+    ```json
+    {
+        "leagues": ["epl", "laliga", "bundesliga", "seriea", "ucl"],
+        "enabled": true,
+        "entry_threshold_drop": 0.15,
+        "position_size_usdc": 50.00,
+        "take_profit_pct": 0.20
+    }
+    ```
+    """
+    configured = []
+    failed = []
+    
+    for league in config_data.leagues:
+        league_lower = league.lower()
+        
+        # Validate league exists
+        if league_lower not in LEAGUE_SPORT_TYPE_MAP:
+            failed.append(league)
+            continue
+        
+        # Get sport type for defaults
+        sport_type = LEAGUE_SPORT_TYPE_MAP[league_lower]
+        
+        # Prepare config data
+        config_dict = config_data.model_dump(exclude={"leagues"})
+        config_dict["sport"] = league_lower
+        
+        # Apply sport-type-specific defaults
+        sport_defaults = SPORT_PROGRESS_CONFIG.get(sport_type, {})
+        metric_type = sport_defaults.get("metric_type", ProgressMetricType.TIME_COUNTDOWN)
+        
+        if metric_type == ProgressMetricType.TIME_COUNTUP:
+            # Soccer - use max_elapsed_minutes
+            config_dict["min_time_remaining_seconds"] = 0
+        else:
+            # Other sports - use min_time_remaining_minutes
+            minutes = config_dict.get("min_time_remaining_minutes", 5)
+            config_dict["min_time_remaining_seconds"] = minutes * 60
+        
+        try:
+            # Check if config exists
+            existing = await SportConfigCRUD.get_by_user_and_sport(
+                db, current_user.id, league_lower
+            )
+            
+            if existing:
+                # Update existing config
+                await SportConfigCRUD.update(db, existing.id, **config_dict)
+            else:
+                # Create new config
+                await SportConfigCRUD.create(
+                    db,
+                    user_id=current_user.id,
+                    **config_dict
+                )
+            
+            configured.append(league_lower)
+            
+        except Exception as e:
+            failed.append(f"{league}: {str(e)}")
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "SETTINGS",
+        f"Bulk configured {len(configured)} leagues"
+    )
+    
+    return BulkLeagueConfigResponse(
+        success=len(failed) == 0,
+        configured_leagues=configured,
+        failed_leagues=failed,
+        message=f"Configured {len(configured)} leagues" + 
+                (f", {len(failed)} failed" if failed else "")
+    )
+
+
+@router.post("/leagues/enable", response_model=LeagueEnableResponse)
+async def bulk_enable_leagues(
+    request: LeagueEnableRequest,
+    db: DbSession,
+    current_user: CurrentUser
+) -> LeagueEnableResponse:
+    """
+    Enable or disable multiple leagues at once without changing other settings.
+    
+    Use this for quick toggling when you want to temporarily disable
+    certain leagues (e.g., during off-season).
+    """
+    updated = []
+    
+    for league in request.leagues:
+        league_lower = league.lower()
+        
+        config = await SportConfigCRUD.get_by_user_and_sport(
+            db, current_user.id, league_lower
+        )
+        
+        if config:
+            await SportConfigCRUD.update(db, config.id, enabled=request.enabled)
+            updated.append(league_lower)
+    
+    action = "enabled" if request.enabled else "disabled"
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "SETTINGS",
+        f"Bulk {action} {len(updated)} leagues"
+    )
+    
+    return LeagueEnableResponse(
+        success=True,
+        updated_leagues=updated,
+        message=f"{action.capitalize()} {len(updated)} leagues"
+    )
+
+
+@router.get("/leagues/status", response_model=list[UserLeagueStatus])
+async def get_user_league_status(
+    db: DbSession,
+    current_user: CurrentUser
+) -> list[UserLeagueStatus]:
+    """
+    Returns all available leagues with their configuration status for the user.
+    
+    Shows which leagues the user has configured, which are enabled,
+    and basic config info for each.
+    """
+    # Get all user's sport configs
+    user_configs = await SportConfigCRUD.get_all_for_user(db, current_user.id)
+    config_map = {c.sport: c for c in user_configs}
+    
+    # Get league display names from ESPN service
+    league_names = ESPNService.LEAGUE_DISPLAY_NAMES
+    
+    result = []
+    for league_id, sport_type in LEAGUE_SPORT_TYPE_MAP.items():
+        config = config_map.get(league_id)
+        
+        result.append(UserLeagueStatus(
+            league_id=league_id,
+            display_name=league_names.get(league_id, league_id.upper()),
+            sport_type=sport_type,
+            is_configured=config is not None,
+            is_enabled=config.enabled if config else False,
+            position_size_usdc=config.position_size_usdc if config else None,
+            entry_threshold_drop=config.entry_threshold_drop if config else None,
+        ))
+    
+    # Sort: enabled first, then configured, then alphabetical
+    result.sort(key=lambda x: (not x.is_enabled, not x.is_configured, x.display_name))
+    
+    return result
+
+
+@router.delete("/leagues/{league}")
+async def delete_league_config(
+    league: str,
+    db: DbSession,
+    current_user: CurrentUser
+) -> MessageResponse:
+    """
+    Deletes a specific league configuration.
+    """
+    config = await SportConfigCRUD.get_by_user_and_sport(db, current_user.id, league.lower())
+    
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Configuration for {league} not found"
+        )
+    
+    await SportConfigCRUD.delete(db, config.id)
+    
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "SETTINGS",
+        f"Deleted {league} configuration"
+    )
+    
+    return MessageResponse(message=f"Deleted {league} configuration")
 
 
 @router.get("/global", response_model=GlobalSettingsResponse)

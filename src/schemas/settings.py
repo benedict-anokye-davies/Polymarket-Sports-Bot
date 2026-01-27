@@ -30,21 +30,72 @@ class WalletUpdateRequest(BaseModel):
     funder_address: str | None = None
 
 
-# Expanded list of supported sports
-SUPPORTED_SPORTS = [
-    "nba", "nfl", "mlb", "nhl",  # Major US leagues
-    "wnba", "ncaab", "ncaaf",     # Additional US sports
-    "soccer", "epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl",  # Soccer
-    "tennis", "mma", "golf"       # Individual sports
-]
-SPORT_PATTERN = f"^({'|'.join(SUPPORTED_SPORTS)})$"
+# League to sport type mapping for proper defaults
+LEAGUE_SPORT_TYPE_MAP = {
+    # Basketball
+    "nba": "nba", "wnba": "nba", "ncaab": "ncaab", "ncaaw": "ncaab",
+    "nba_gleague": "nba", "euroleague": "nba", "eurocup": "nba",
+    "spanish_acb": "nba", "australian_nbl": "nba", "fiba": "nba",
+    
+    # Football
+    "nfl": "nfl", "ncaaf": "nfl", "cfl": "nfl", "xfl": "nfl", "usfl": "nfl",
+    
+    # Baseball
+    "mlb": "mlb", "ncaa_baseball": "mlb", "npb": "mlb", "kbo": "mlb", "mexican_baseball": "mlb",
+    
+    # Hockey
+    "nhl": "nhl", "ahl": "nhl", "khl": "nhl", "shl": "nhl", "ncaa_hockey": "nhl", "iihf": "nhl",
+    
+    # Soccer (all map to "soccer" sport type)
+    "epl": "soccer", "championship": "soccer", "league_one": "soccer", "league_two": "soccer",
+    "fa_cup": "soccer", "efl_cup": "soccer", "laliga": "soccer", "laliga2": "soccer",
+    "copa_del_rey": "soccer", "bundesliga": "soccer", "bundesliga2": "soccer",
+    "dfb_pokal": "soccer", "seriea": "soccer", "serieb": "soccer", "coppa_italia": "soccer",
+    "ligue1": "soccer", "ligue2": "soccer", "coupe_de_france": "soccer",
+    "eredivisie": "soccer", "liga_portugal": "soccer", "scottish": "soccer",
+    "belgian": "soccer", "turkish": "soccer", "russian": "soccer", "greek": "soccer",
+    "austrian": "soccer", "swiss": "soccer", "danish": "soccer", "norwegian": "soccer",
+    "swedish": "soccer", "polish": "soccer", "czech": "soccer", "ukrainian": "soccer",
+    "ucl": "soccer", "europa": "soccer", "conference": "soccer", "nations_league": "soccer",
+    "euro_qualifiers": "soccer", "euros": "soccer", "mls": "soccer", "usl": "soccer",
+    "nwsl": "soccer", "us_open_cup": "soccer", "brazilian": "soccer", "brazilian_b": "soccer",
+    "copa_brazil": "soccer", "libertadores": "soccer", "sudamericana": "soccer",
+    "argentine": "soccer", "mexican": "soccer", "liga_mx_cup": "soccer", "colombian": "soccer",
+    "chilean": "soccer", "peruvian": "soccer", "copa_america": "soccer", "saudi": "soccer",
+    "japanese": "soccer", "korean": "soccer", "chinese": "soccer", "australian_aleague": "soccer",
+    "indian": "soccer", "afc_champions": "soccer", "world_cup": "soccer",
+    "world_cup_qualifiers": "soccer", "club_world_cup": "soccer", "womens_world_cup": "soccer",
+    "concacaf_gold": "soccer", "concacaf_nations": "soccer", "soccer": "soccer",
+    
+    # Tennis
+    "atp": "tennis", "wta": "tennis", "australian_open": "tennis", "french_open": "tennis",
+    "wimbledon": "tennis", "us_open_tennis": "tennis", "davis_cup": "tennis", "tennis": "tennis",
+    
+    # Golf
+    "pga": "golf", "lpga": "golf", "european_tour": "golf", "masters": "golf",
+    "us_open_golf": "golf", "british_open": "golf", "pga_championship": "golf",
+    "liv_golf": "golf", "golf": "golf",
+    
+    # MMA/Combat
+    "ufc": "mma", "bellator": "mma", "pfl": "mma", "one_championship": "mma",
+    "boxing": "mma", "mma": "mma",
+    
+    # Motorsports (uses time-based like NFL)
+    "f1": "nfl", "nascar": "nfl", "indycar": "nfl", "motogp": "nfl",
+    
+    # Other
+    "rugby_union": "nfl", "rugby_league": "nfl", "cricket": "mlb", "afl": "nfl",
+}
+
+# All supported leagues (for validation)
+ALL_SUPPORTED_LEAGUES = list(LEAGUE_SPORT_TYPE_MAP.keys())
 
 
 class SportConfigCreate(BaseModel):
     """
     Schema for creating a new sport configuration.
     """
-    sport: str = Field(..., pattern=SPORT_PATTERN)
+    sport: str = Field(..., description="Sport or league identifier (e.g., 'nba', 'epl', 'ucl')")
     enabled: bool = True
     entry_threshold_drop: Decimal = Field(default=Decimal("0.15"), ge=0, le=1)
     entry_threshold_absolute: Decimal = Field(default=Decimal("0.50"), ge=0, le=1)
@@ -144,6 +195,77 @@ class SportConfigResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ============================================================================
+# Bulk League Configuration Schemas
+# ============================================================================
+
+class BulkLeagueConfigRequest(BaseModel):
+    """
+    Schema for configuring multiple leagues at once with the same parameters.
+    Allows clients to select multiple leagues and apply uniform settings.
+    """
+    leagues: list[str] = Field(
+        ...,
+        min_length=1,
+        description="List of league identifiers to configure (e.g., ['epl', 'laliga', 'ucl'])"
+    )
+    enabled: bool = True
+    entry_threshold_drop: Decimal = Field(default=Decimal("0.15"), ge=0, le=1)
+    entry_threshold_absolute: Decimal = Field(default=Decimal("0.50"), ge=0, le=1)
+    take_profit_pct: Decimal = Field(default=Decimal("0.20"), ge=0, le=1)
+    stop_loss_pct: Decimal = Field(default=Decimal("0.10"), ge=0, le=1)
+    position_size_usdc: Decimal = Field(default=Decimal("50.00"), ge=1)
+    max_positions_per_game: int = Field(default=1, ge=1, le=10)
+    max_total_positions: int = Field(default=5, ge=1, le=50)
+    
+    # Time-based thresholds (auto-applied based on sport type)
+    min_time_remaining_minutes: int | None = Field(default=5, ge=1, le=20)
+    max_elapsed_minutes: int | None = Field(default=70, ge=1, le=120)
+    
+    # Risk management
+    max_daily_loss_usdc: Decimal | None = Field(default=Decimal("50.00"), ge=0)
+    max_exposure_usdc: Decimal | None = Field(default=Decimal("200.00"), ge=0)
+
+
+class BulkLeagueConfigResponse(BaseModel):
+    """Response schema for bulk league configuration."""
+    success: bool
+    configured_leagues: list[str]
+    failed_leagues: list[str]
+    message: str
+
+
+class LeagueEnableRequest(BaseModel):
+    """
+    Schema for enabling/disabling multiple leagues at once.
+    Use this for quick toggling without changing other parameters.
+    """
+    leagues: list[str] = Field(
+        ...,
+        min_length=1,
+        description="List of league identifiers to enable/disable"
+    )
+    enabled: bool = Field(..., description="Whether to enable or disable the leagues")
+
+
+class LeagueEnableResponse(BaseModel):
+    """Response schema for league enable/disable."""
+    success: bool
+    updated_leagues: list[str]
+    message: str
+
+
+class UserLeagueStatus(BaseModel):
+    """Shows all leagues and their configuration status for a user."""
+    league_id: str
+    display_name: str
+    sport_type: str
+    is_configured: bool
+    is_enabled: bool
+    position_size_usdc: Decimal | None = None
+    entry_threshold_drop: Decimal | None = None
 
 
 class GlobalSettingsUpdate(BaseModel):
