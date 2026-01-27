@@ -101,6 +101,56 @@ async def get_soccer_leagues() -> list:
     return ESPNService.get_soccer_leagues()
 
 
+@router.get("/categories", response_model=list)
+async def get_sport_categories() -> list:
+    """
+    Returns all available sport categories with their leagues.
+    Used by frontend to build category tabs/dropdowns.
+    
+    Categories include: basketball, football, baseball, hockey,
+    soccer (multiple regions), tennis, golf, combat, motorsports.
+    """
+    return ESPNService.get_all_categories()
+
+
+@router.get("/categories/{category}/leagues", response_model=list)
+async def get_leagues_by_category(category: str) -> list:
+    """
+    Returns leagues for a specific sport category.
+    
+    Args:
+        category: Category key (e.g., 'basketball', 'hockey', 'soccer_england')
+    
+    Valid categories:
+        - basketball: NBA, WNBA, NCAA, EuroLeague, NBL, etc.
+        - football: NFL, NCAA, CFL, XFL
+        - baseball: MLB, NCAA, NPB, KBO
+        - hockey: NHL, AHL, KHL, SHL
+        - soccer_england: EPL, Championship, FA Cup, etc.
+        - soccer_spain: La Liga, La Liga 2, Copa del Rey
+        - soccer_germany: Bundesliga, 2. Bundesliga, DFB-Pokal
+        - soccer_italy: Serie A, Serie B, Coppa Italia
+        - soccer_france: Ligue 1, Ligue 2, Coupe de France
+        - soccer_europe_other: Eredivisie, Liga Portugal, etc.
+        - soccer_uefa: UCL, Europa League, Conference League
+        - soccer_americas: MLS, Brasileirao, Liga MX, etc.
+        - soccer_asia: J League, K League, Saudi Pro League
+        - soccer_international: World Cup, Copa America, etc.
+        - tennis: ATP, WTA, Grand Slams
+        - golf: PGA, LPGA, European Tour, LIV
+        - combat: UFC, Bellator, PFL, Boxing
+        - motorsports: F1, NASCAR, IndyCar, MotoGP
+        - other: Rugby, Cricket, AFL
+    """
+    leagues = ESPNService.get_leagues_by_category(category)
+    if not leagues:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Category '{category}' not found or has no leagues"
+        )
+    return leagues
+
+
 @router.post("/start", response_model=MessageResponse)
 async def start_bot(
     db: DbSession,

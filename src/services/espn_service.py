@@ -26,161 +26,446 @@ class ESPNService:
     BASE_URL = "https://site.web.api.espn.com/apis/site/v2/sports"
     
     SPORT_ENDPOINTS = {
+        # ==================== BASKETBALL ====================
         "nba": "basketball/nba",
+        "wnba": "basketball/wnba",
+        "ncaab": "basketball/mens-college-basketball",
+        "ncaaw": "basketball/womens-college-basketball",
+        "nba_gleague": "basketball/nba-g-league",
+        "euroleague": "basketball/eur.euroleague",
+        "eurocup": "basketball/eur.eurocup",
+        "spanish_acb": "basketball/esp.acb",
+        "australian_nbl": "basketball/aus.nbl",
+        "fiba": "basketball/fiba.world",
+        
+        # ==================== FOOTBALL ====================
         "nfl": "football/nfl",
+        "ncaaf": "football/college-football",
+        "cfl": "football/cfl",
+        "xfl": "football/xfl",
+        "usfl": "football/usfl",
+        
+        # ==================== BASEBALL ====================
         "mlb": "baseball/mlb",
+        "ncaa_baseball": "baseball/college-baseball",
+        "npb": "baseball/jpn.npb",  # Japanese baseball
+        "kbo": "baseball/kor.kbo",  # Korean baseball
+        "mexican_baseball": "baseball/mex.lmb",
+        
+        # ==================== HOCKEY ====================
         "nhl": "hockey/nhl",
+        "ahl": "hockey/ahl",
+        "khl": "hockey/rus.khl",
+        "shl": "hockey/swe.shl",  # Swedish Hockey League
+        "ncaa_hockey": "hockey/college-hockey",
+        "iihf": "hockey/iihf.world",
+        
+        # ==================== SOCCER - EUROPE ====================
+        "epl": "soccer/eng.1",              # English Premier League
+        "championship": "soccer/eng.2",     # English Championship
+        "league_one": "soccer/eng.3",       # English League One
+        "league_two": "soccer/eng.4",       # English League Two
+        "fa_cup": "soccer/eng.fa",          # FA Cup
+        "efl_cup": "soccer/eng.league_cup", # EFL Cup / Carabao Cup
+        "laliga": "soccer/esp.1",           # La Liga (Spain)
+        "laliga2": "soccer/esp.2",          # La Liga 2
+        "copa_del_rey": "soccer/esp.copa_del_rey",
+        "bundesliga": "soccer/ger.1",       # Bundesliga (Germany)
+        "bundesliga2": "soccer/ger.2",      # 2. Bundesliga
+        "dfb_pokal": "soccer/ger.dfb_pokal",
+        "seriea": "soccer/ita.1",           # Serie A (Italy)
+        "serieb": "soccer/ita.2",           # Serie B
+        "coppa_italia": "soccer/ita.coppa_italia",
+        "ligue1": "soccer/fra.1",           # Ligue 1 (France)
+        "ligue2": "soccer/fra.2",           # Ligue 2
+        "coupe_de_france": "soccer/fra.coupe_de_france",
+        "eredivisie": "soccer/ned.1",       # Eredivisie (Netherlands)
+        "liga_portugal": "soccer/por.1",    # Liga Portugal
+        "scottish": "soccer/sco.1",         # Scottish Premiership
+        "belgian": "soccer/bel.1",          # Belgian Pro League
+        "turkish": "soccer/tur.1",          # Turkish Super Lig
+        "russian": "soccer/rus.1",          # Russian Premier League
+        "greek": "soccer/gre.1",            # Greek Super League
+        "austrian": "soccer/aut.1",         # Austrian Bundesliga
+        "swiss": "soccer/sui.1",            # Swiss Super League
+        "danish": "soccer/den.1",           # Danish Superliga
+        "norwegian": "soccer/nor.1",        # Norwegian Eliteserien
+        "swedish": "soccer/swe.1",          # Swedish Allsvenskan
+        "polish": "soccer/pol.1",           # Polish Ekstraklasa
+        "czech": "soccer/cze.1",            # Czech First League
+        "ukrainian": "soccer/ukr.1",        # Ukrainian Premier League
+        
+        # ==================== SOCCER - UEFA COMPETITIONS ====================
+        "ucl": "soccer/uefa.champions",           # UEFA Champions League
+        "europa": "soccer/uefa.europa",           # UEFA Europa League
+        "conference": "soccer/uefa.europa.conf", # UEFA Conference League
+        "nations_league": "soccer/uefa.nations",  # UEFA Nations League
+        "euro_qualifiers": "soccer/uefa.euroq",   # Euro Qualifiers
+        "euros": "soccer/uefa.euro",              # UEFA European Championship
+        
+        # ==================== SOCCER - AMERICAS ====================
+        "mls": "soccer/usa.1",              # MLS
+        "usl": "soccer/usa.usl.1",          # USL Championship
+        "nwsl": "soccer/usa.nwsl",          # NWSL (Women's)
+        "us_open_cup": "soccer/usa.open",   # US Open Cup
+        "brazilian": "soccer/bra.1",        # Brasileirao Serie A
+        "brazilian_b": "soccer/bra.2",      # Brasileirao Serie B
+        "copa_brazil": "soccer/bra.copa_do_brazil",
+        "libertadores": "soccer/conmebol.libertadores", # Copa Libertadores
+        "sudamericana": "soccer/conmebol.sudamericana", # Copa Sudamericana
+        "argentine": "soccer/arg.1",        # Argentine Primera Division
+        "mexican": "soccer/mex.1",          # Liga MX
+        "liga_mx_cup": "soccer/mex.copa_mx",
+        "colombian": "soccer/col.1",        # Colombian Primera A
+        "chilean": "soccer/chi.1",          # Chilean Primera Division
+        "peruvian": "soccer/per.1",         # Peruvian Primera Division
+        "copa_america": "soccer/conmebol.america", # Copa America
+        
+        # ==================== SOCCER - OTHER ====================
+        "saudi": "soccer/sau.1",            # Saudi Pro League
+        "japanese": "soccer/jpn.1",         # J1 League
+        "korean": "soccer/kor.1",           # K League 1
+        "chinese": "soccer/chn.1",          # Chinese Super League
+        "australian_aleague": "soccer/aus.1", # A-League
+        "indian": "soccer/ind.1",           # Indian Super League
+        "afc_champions": "soccer/afc.champions", # AFC Champions League
+        
+        # ==================== SOCCER - INTERNATIONAL ====================
+        "world_cup": "soccer/fifa.world",   # FIFA World Cup
+        "world_cup_qualifiers": "soccer/fifa.worldq", # World Cup Qualifiers
+        "club_world_cup": "soccer/fifa.cwc", # FIFA Club World Cup
+        "womens_world_cup": "soccer/fifa.wwc", # FIFA Women's World Cup
+        "concacaf_gold": "soccer/concacaf.gold", # CONCACAF Gold Cup
+        "concacaf_nations": "soccer/concacaf.nations_league", # CONCACAF Nations League
+        
+        # ==================== TENNIS ====================
+        "atp": "tennis/atp",
+        "wta": "tennis/wta",
+        "australian_open": "tennis/aus_open",
+        "french_open": "tennis/roland_garros",
+        "wimbledon": "tennis/wimbledon",
+        "us_open_tennis": "tennis/us_open",
+        "davis_cup": "tennis/davis_cup",
+        
+        # ==================== GOLF ====================
+        "pga": "golf/pga",
+        "lpga": "golf/lpga",
+        "european_tour": "golf/euro",
+        "masters": "golf/masters",
+        "us_open_golf": "golf/us_open",
+        "british_open": "golf/british_open",
+        "pga_championship": "golf/pga_champ",
+        "liv_golf": "golf/liv",
+        
+        # ==================== MMA / COMBAT SPORTS ====================
+        "ufc": "mma/ufc",
+        "bellator": "mma/bellator",
+        "pfl": "mma/pfl",
+        "one_championship": "mma/one",
+        "boxing": "boxing/boxing",
+        
+        # ==================== MOTORSPORTS ====================
+        "f1": "racing/f1",
+        "nascar": "racing/nascar",
+        "indycar": "racing/irl",
+        "motogp": "racing/motogp",
+        
+        # ==================== OTHER SPORTS ====================
+        "rugby_union": "rugby/rugby-union",
+        "rugby_league": "rugby-league/nrl",
+        "cricket": "cricket/cricket",
+        "afl": "australian-football/afl",
+        
+        # Legacy mappings for backwards compatibility
+        "soccer": "soccer/usa.1",
         "tennis": "tennis/atp",
         "mma": "mma/ufc",
         "golf": "golf/pga",
-        # Additional leagues
-        "wnba": "basketball/wnba",
-        "ncaab": "basketball/mens-college-basketball",
-        "ncaaf": "football/college-football",
-        # Soccer Leagues - All major leagues
-        "soccer": "soccer/usa.1",      # MLS (default soccer)
-        "mls": "soccer/usa.1",         # MLS explicit
-        "epl": "soccer/eng.1",         # English Premier League
-        "laliga": "soccer/esp.1",      # La Liga (Spain)
-        "bundesliga": "soccer/ger.1",  # Bundesliga (Germany)
-        "seriea": "soccer/ita.1",      # Serie A (Italy)
-        "ligue1": "soccer/fra.1",      # Ligue 1 (France)
-        "ucl": "soccer/uefa.champions",      # UEFA Champions League
-        "europa": "soccer/uefa.europa",      # UEFA Europa League
-        "conference": "soccer/uefa.europa.conf",  # UEFA Conference League
-        "eredivisie": "soccer/ned.1",        # Eredivisie (Netherlands)
-        "liga_portugal": "soccer/por.1",     # Liga Portugal
-        "scottish": "soccer/sco.1",          # Scottish Premiership
-        "belgian": "soccer/bel.1",           # Belgian Pro League
-        "turkish": "soccer/tur.1",           # Turkish Super Lig
-        "russian": "soccer/rus.1",           # Russian Premier League
-        "brazilian": "soccer/bra.1",         # Brasileirao Serie A
-        "argentine": "soccer/arg.1",         # Argentine Primera Division
-        "mexican": "soccer/mex.1",           # Liga MX
-        "saudi": "soccer/sau.1",             # Saudi Pro League
-        "world_cup": "soccer/fifa.world",    # FIFA World Cup
-        "euros": "soccer/uefa.euro",         # UEFA European Championship
-        "copa_america": "soccer/conmebol.america",  # Copa America
     }
     
     # Human-readable names for leagues (for UI display)
     LEAGUE_DISPLAY_NAMES = {
+        # Basketball
         "nba": "NBA",
-        "nfl": "NFL",
-        "mlb": "MLB",
-        "nhl": "NHL",
         "wnba": "WNBA",
-        "ncaab": "College Basketball",
+        "ncaab": "College Basketball (M)",
+        "ncaaw": "College Basketball (W)",
+        "nba_gleague": "NBA G League",
+        "euroleague": "EuroLeague",
+        "eurocup": "EuroCup",
+        "spanish_acb": "Spanish ACB",
+        "australian_nbl": "Australian NBL",
+        "fiba": "FIBA World Cup",
+        
+        # Football
+        "nfl": "NFL",
         "ncaaf": "College Football",
-        "mls": "MLS",
+        "cfl": "CFL",
+        "xfl": "XFL",
+        "usfl": "USFL",
+        
+        # Baseball
+        "mlb": "MLB",
+        "ncaa_baseball": "College Baseball",
+        "npb": "NPB (Japan)",
+        "kbo": "KBO (Korea)",
+        "mexican_baseball": "Mexican Baseball",
+        
+        # Hockey
+        "nhl": "NHL",
+        "ahl": "AHL",
+        "khl": "KHL (Russia)",
+        "shl": "SHL (Sweden)",
+        "ncaa_hockey": "College Hockey",
+        "iihf": "IIHF World Championship",
+        
+        # Soccer - England
         "epl": "Premier League",
+        "championship": "Championship",
+        "league_one": "League One",
+        "league_two": "League Two",
+        "fa_cup": "FA Cup",
+        "efl_cup": "EFL Cup",
+        
+        # Soccer - Spain
         "laliga": "La Liga",
+        "laliga2": "La Liga 2",
+        "copa_del_rey": "Copa del Rey",
+        
+        # Soccer - Germany
         "bundesliga": "Bundesliga",
+        "bundesliga2": "2. Bundesliga",
+        "dfb_pokal": "DFB-Pokal",
+        
+        # Soccer - Italy
         "seriea": "Serie A",
+        "serieb": "Serie B",
+        "coppa_italia": "Coppa Italia",
+        
+        # Soccer - France
         "ligue1": "Ligue 1",
-        "ucl": "Champions League",
-        "europa": "Europa League",
-        "conference": "Conference League",
+        "ligue2": "Ligue 2",
+        "coupe_de_france": "Coupe de France",
+        
+        # Soccer - Other Europe
         "eredivisie": "Eredivisie",
         "liga_portugal": "Liga Portugal",
         "scottish": "Scottish Premiership",
         "belgian": "Belgian Pro League",
         "turkish": "Turkish Super Lig",
         "russian": "Russian Premier League",
-        "brazilian": "Brasileirao",
+        "greek": "Greek Super League",
+        "austrian": "Austrian Bundesliga",
+        "swiss": "Swiss Super League",
+        "danish": "Danish Superliga",
+        "norwegian": "Eliteserien",
+        "swedish": "Allsvenskan",
+        "polish": "Ekstraklasa",
+        "czech": "Czech First League",
+        "ukrainian": "Ukrainian Premier League",
+        
+        # Soccer - UEFA
+        "ucl": "Champions League",
+        "europa": "Europa League",
+        "conference": "Conference League",
+        "nations_league": "Nations League",
+        "euro_qualifiers": "Euro Qualifiers",
+        "euros": "UEFA Euros",
+        
+        # Soccer - Americas
+        "mls": "MLS",
+        "usl": "USL Championship",
+        "nwsl": "NWSL",
+        "us_open_cup": "US Open Cup",
+        "brazilian": "Brasileirao Serie A",
+        "brazilian_b": "Brasileirao Serie B",
+        "copa_brazil": "Copa do Brasil",
+        "libertadores": "Copa Libertadores",
+        "sudamericana": "Copa Sudamericana",
         "argentine": "Argentine Primera",
         "mexican": "Liga MX",
-        "saudi": "Saudi Pro League",
-        "world_cup": "World Cup",
-        "euros": "UEFA Euros",
+        "liga_mx_cup": "Copa MX",
+        "colombian": "Colombian Primera A",
+        "chilean": "Chilean Primera",
+        "peruvian": "Peruvian Primera",
         "copa_america": "Copa America",
-        "tennis": "ATP Tennis",
-        "mma": "UFC",
-        "golf": "PGA Golf",
+        
+        # Soccer - Other
+        "saudi": "Saudi Pro League",
+        "japanese": "J1 League",
+        "korean": "K League 1",
+        "chinese": "Chinese Super League",
+        "australian_aleague": "A-League",
+        "indian": "Indian Super League",
+        "afc_champions": "AFC Champions League",
+        
+        # Soccer - International
+        "world_cup": "World Cup",
+        "world_cup_qualifiers": "World Cup Qualifiers",
+        "club_world_cup": "Club World Cup",
+        "womens_world_cup": "Women's World Cup",
+        "concacaf_gold": "Gold Cup",
+        "concacaf_nations": "CONCACAF Nations League",
+        
+        # Tennis
+        "atp": "ATP Tour",
+        "wta": "WTA Tour",
+        "australian_open": "Australian Open",
+        "french_open": "French Open",
+        "wimbledon": "Wimbledon",
+        "us_open_tennis": "US Open (Tennis)",
+        "davis_cup": "Davis Cup",
+        
+        # Golf
+        "pga": "PGA Tour",
+        "lpga": "LPGA Tour",
+        "european_tour": "DP World Tour",
+        "masters": "The Masters",
+        "us_open_golf": "US Open (Golf)",
+        "british_open": "The Open Championship",
+        "pga_championship": "PGA Championship",
+        "liv_golf": "LIV Golf",
+        
+        # MMA/Combat
+        "ufc": "UFC",
+        "bellator": "Bellator MMA",
+        "pfl": "PFL",
+        "one_championship": "ONE Championship",
+        "boxing": "Boxing",
+        
+        # Motorsports
+        "f1": "Formula 1",
+        "nascar": "NASCAR",
+        "indycar": "IndyCar",
+        "motogp": "MotoGP",
+        
+        # Other
+        "rugby_union": "Rugby Union",
+        "rugby_league": "Rugby League",
+        "cricket": "Cricket",
+        "afl": "AFL",
     }
     
     # Categorize sports for the UI
     SPORT_CATEGORIES = {
-        "american": ["nba", "nfl", "mlb", "nhl", "wnba", "ncaab", "ncaaf", "mls"],
-        "soccer_europe": ["epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl", "europa", "conference", "eredivisie", "liga_portugal", "scottish", "belgian", "turkish", "russian"],
-        "soccer_americas": ["mls", "brazilian", "argentine", "mexican", "copa_america"],
-        "soccer_other": ["saudi", "world_cup", "euros"],
-        "other": ["tennis", "mma", "golf"],
+        "basketball": ["nba", "wnba", "ncaab", "ncaaw", "nba_gleague", "euroleague", "eurocup", "spanish_acb", "australian_nbl", "fiba"],
+        "football": ["nfl", "ncaaf", "cfl", "xfl", "usfl"],
+        "baseball": ["mlb", "ncaa_baseball", "npb", "kbo", "mexican_baseball"],
+        "hockey": ["nhl", "ahl", "khl", "shl", "ncaa_hockey", "iihf"],
+        "soccer_england": ["epl", "championship", "league_one", "league_two", "fa_cup", "efl_cup"],
+        "soccer_spain": ["laliga", "laliga2", "copa_del_rey"],
+        "soccer_germany": ["bundesliga", "bundesliga2", "dfb_pokal"],
+        "soccer_italy": ["seriea", "serieb", "coppa_italia"],
+        "soccer_france": ["ligue1", "ligue2", "coupe_de_france"],
+        "soccer_europe_other": ["eredivisie", "liga_portugal", "scottish", "belgian", "turkish", "russian", "greek", "austrian", "swiss", "danish", "norwegian", "swedish", "polish", "czech", "ukrainian"],
+        "soccer_uefa": ["ucl", "europa", "conference", "nations_league", "euro_qualifiers", "euros"],
+        "soccer_americas": ["mls", "usl", "nwsl", "us_open_cup", "brazilian", "brazilian_b", "copa_brazil", "libertadores", "sudamericana", "argentine", "mexican", "liga_mx_cup", "colombian", "chilean", "peruvian", "copa_america"],
+        "soccer_asia": ["saudi", "japanese", "korean", "chinese", "australian_aleague", "indian", "afc_champions"],
+        "soccer_international": ["world_cup", "world_cup_qualifiers", "club_world_cup", "womens_world_cup", "concacaf_gold", "concacaf_nations"],
+        "tennis": ["atp", "wta", "australian_open", "french_open", "wimbledon", "us_open_tennis", "davis_cup"],
+        "golf": ["pga", "lpga", "european_tour", "masters", "us_open_golf", "british_open", "pga_championship", "liv_golf"],
+        "combat": ["ufc", "bellator", "pfl", "one_championship", "boxing"],
+        "motorsports": ["f1", "nascar", "indycar", "motogp"],
+        "other": ["rugby_union", "rugby_league", "cricket", "afl"],
     }
     
     # Group IDs for fetching ALL games instead of just Top 25/filtered
     SPORT_GROUPS = {
-        "ncaab": "50",      # Division I Men's Basketball (all D1 games)
-        "ncaaf": "80",      # FBS (Division I-A) Football (all FBS games)
-        # Soccer leagues - use "all" to fetch all games
-        "soccer": "all",
-        "mls": "all",
-        "epl": "all",
-        "laliga": "all",
-        "bundesliga": "all",
-        "seriea": "all",
-        "ligue1": "all",
-        "ucl": "all",
-        "europa": "all",
-        "conference": "all",
-        "eredivisie": "all",
-        "liga_portugal": "all",
-        "scottish": "all",
-        "belgian": "all",
-        "turkish": "all",
-        "russian": "all",
-        "brazilian": "all",
-        "argentine": "all",
-        "mexican": "all",
-        "saudi": "all",
-        "world_cup": "all",
-        "euros": "all",
-        "copa_america": "all",
+        # College sports need specific group IDs
+        "ncaab": "50",       # Division I Men's Basketball
+        "ncaaw": "50",       # Division I Women's Basketball
+        "ncaaf": "80",       # FBS Football
+        "ncaa_baseball": "50",
+        "ncaa_hockey": "50",
     }
     
+    # Default segment mappings by sport type
+    # Individual league overrides can be added as needed
     SEGMENT_MAPPING = {
+        # Basketball - quarters
         "nba": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
         "wnba": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "nba_gleague": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "euroleague": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "eurocup": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "spanish_acb": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "australian_nbl": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "fiba": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
         "ncaab": {1: "h1", 2: "h2"},  # College basketball uses halves
+        "ncaaw": {1: "h1", 2: "h2"},
+        
+        # Football - quarters
         "nfl": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
         "ncaaf": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "cfl": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "xfl": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        "usfl": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
+        
+        # Hockey - periods
         "nhl": {1: "p1", 2: "p2", 3: "p3"},
-        # All soccer leagues use halves
-        "soccer": {1: "h1", 2: "h2"},
-        "mls": {1: "h1", 2: "h2"},
-        "epl": {1: "h1", 2: "h2"},
-        "laliga": {1: "h1", 2: "h2"},
-        "bundesliga": {1: "h1", 2: "h2"},
-        "seriea": {1: "h1", 2: "h2"},
-        "ligue1": {1: "h1", 2: "h2"},
-        "ucl": {1: "h1", 2: "h2"},
-        "europa": {1: "h1", 2: "h2"},
-        "conference": {1: "h1", 2: "h2"},
-        "eredivisie": {1: "h1", 2: "h2"},
-        "liga_portugal": {1: "h1", 2: "h2"},
-        "scottish": {1: "h1", 2: "h2"},
-        "belgian": {1: "h1", 2: "h2"},
-        "turkish": {1: "h1", 2: "h2"},
-        "russian": {1: "h1", 2: "h2"},
-        "brazilian": {1: "h1", 2: "h2"},
-        "argentine": {1: "h1", 2: "h2"},
-        "mexican": {1: "h1", 2: "h2"},
-        "saudi": {1: "h1", 2: "h2"},
-        "world_cup": {1: "h1", 2: "h2"},
-        "euros": {1: "h1", 2: "h2"},
-        "copa_america": {1: "h1", 2: "h2"},
-        "tennis": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
-        "mma": {1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5"},
-        "golf": {},  # Golf uses holes, not periods
+        "ahl": {1: "p1", 2: "p2", 3: "p3"},
+        "khl": {1: "p1", 2: "p2", 3: "p3"},
+        "shl": {1: "p1", 2: "p2", 3: "p3"},
+        "ncaa_hockey": {1: "p1", 2: "p2", 3: "p3"},
+        "iihf": {1: "p1", 2: "p2", 3: "p3"},
+        
+        # Baseball - innings (handled dynamically)
+        "mlb": {},
+        "ncaa_baseball": {},
+        "npb": {},
+        "kbo": {},
+        "mexican_baseball": {},
+        
+        # Tennis - sets
+        "atp": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
+        "wta": {1: "set_1", 2: "set_2", 3: "set_3"},
+        "australian_open": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
+        "french_open": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
+        "wimbledon": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
+        "us_open_tennis": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
+        "davis_cup": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
+        
+        # MMA - rounds
+        "ufc": {1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5"},
+        "bellator": {1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5"},
+        "pfl": {1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5"},
+        "one_championship": {1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5"},
+        "boxing": {1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5", 6: "r6", 7: "r7", 8: "r8", 9: "r9", 10: "r10", 11: "r11", 12: "r12"},
+        
+        # Golf - no periods, uses holes
+        "pga": {},
+        "lpga": {},
+        "european_tour": {},
+        "masters": {},
+        "us_open_golf": {},
+        "british_open": {},
+        "pga_championship": {},
+        "liv_golf": {},
+        
+        # Motorsports - laps
+        "f1": {},
+        "nascar": {},
+        "indycar": {},
+        "motogp": {},
     }
     
-    # Sports where clock counts UP instead of DOWN
-    CLOCK_COUNTUP_SPORTS = {
-        "soccer", "mls", "epl", "laliga", "bundesliga", "seriea", "ligue1", 
-        "ucl", "europa", "conference", "eredivisie", "liga_portugal", "scottish",
-        "belgian", "turkish", "russian", "brazilian", "argentine", "mexican",
-        "saudi", "world_cup", "euros", "copa_america"
-    }
+    # All soccer leagues use halves - generate dynamically
+    SOCCER_SEGMENT = {1: "h1", 2: "h2"}
+    
+    # Add all soccer leagues to segment mapping
+    for category in ["soccer_england", "soccer_spain", "soccer_germany", "soccer_italy", 
+                     "soccer_france", "soccer_europe_other", "soccer_uefa", "soccer_americas",
+                     "soccer_asia", "soccer_international"]:
+        for league in SPORT_CATEGORIES.get(category, []):
+            SEGMENT_MAPPING[league] = SOCCER_SEGMENT
+    
+    # Sports where clock counts UP instead of DOWN (all soccer leagues)
+    CLOCK_COUNTUP_SPORTS = set()
+    for category in ["soccer_england", "soccer_spain", "soccer_germany", "soccer_italy", 
+                     "soccer_france", "soccer_europe_other", "soccer_uefa", "soccer_americas",
+                     "soccer_asia", "soccer_international"]:
+        for league in SPORT_CATEGORIES.get(category, []):
+            CLOCK_COUNTUP_SPORTS.add(league)
     
     @classmethod
     def get_available_leagues(cls) -> list[dict]:
@@ -205,9 +490,16 @@ class ESPNService:
         """
         soccer_leagues = []
         soccer_keys = (
-            cls.SPORT_CATEGORIES.get("soccer_europe", []) +
+            cls.SPORT_CATEGORIES.get("soccer_england", []) +
+            cls.SPORT_CATEGORIES.get("soccer_spain", []) +
+            cls.SPORT_CATEGORIES.get("soccer_germany", []) +
+            cls.SPORT_CATEGORIES.get("soccer_italy", []) +
+            cls.SPORT_CATEGORIES.get("soccer_france", []) +
+            cls.SPORT_CATEGORIES.get("soccer_europe_other", []) +
+            cls.SPORT_CATEGORIES.get("soccer_uefa", []) +
             cls.SPORT_CATEGORIES.get("soccer_americas", []) +
-            cls.SPORT_CATEGORIES.get("soccer_other", [])
+            cls.SPORT_CATEGORIES.get("soccer_asia", []) +
+            cls.SPORT_CATEGORIES.get("soccer_international", [])
         )
         for sport_key in soccer_keys:
             if sport_key in cls.LEAGUE_DISPLAY_NAMES:
@@ -216,6 +508,61 @@ class ESPNService:
                     "name": cls.LEAGUE_DISPLAY_NAMES[sport_key],
                 })
         return soccer_leagues
+    
+    @classmethod
+    def get_leagues_by_category(cls, category: str) -> list[dict]:
+        """
+        Returns leagues for a specific sport category.
+        
+        Args:
+            category: Category key (basketball, football, hockey, baseball, 
+                     soccer_england, tennis, golf, combat, motorsports, etc.)
+        
+        Returns:
+            List of leagues in that category with id and display name
+        """
+        leagues = []
+        category_keys = cls.SPORT_CATEGORIES.get(category, [])
+        for sport_key in category_keys:
+            if sport_key in cls.LEAGUE_DISPLAY_NAMES:
+                leagues.append({
+                    "id": sport_key,
+                    "name": cls.LEAGUE_DISPLAY_NAMES[sport_key],
+                })
+        return leagues
+    
+    @classmethod
+    def get_all_categories(cls) -> list[dict]:
+        """
+        Returns all available sport categories with their display names.
+        Used by frontend to build category tabs/dropdowns.
+        """
+        category_display = {
+            "basketball": "Basketball",
+            "football": "Football",
+            "baseball": "Baseball",
+            "hockey": "Hockey",
+            "soccer_england": "Soccer - England",
+            "soccer_spain": "Soccer - Spain",
+            "soccer_germany": "Soccer - Germany",
+            "soccer_italy": "Soccer - Italy",
+            "soccer_france": "Soccer - France",
+            "soccer_europe_other": "Soccer - Other Europe",
+            "soccer_uefa": "Soccer - UEFA",
+            "soccer_americas": "Soccer - Americas",
+            "soccer_asia": "Soccer - Asia/Other",
+            "soccer_international": "Soccer - International",
+            "tennis": "Tennis",
+            "golf": "Golf",
+            "combat": "MMA / Combat",
+            "motorsports": "Motorsports",
+            "other": "Other Sports",
+        }
+        
+        return [
+            {"id": cat, "name": category_display.get(cat, cat.title()), "leagues": cls.get_leagues_by_category(cat)}
+            for cat in cls.SPORT_CATEGORIES.keys()
+        ]
     
     def __init__(self):
         """
