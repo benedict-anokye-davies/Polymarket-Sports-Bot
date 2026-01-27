@@ -157,7 +157,7 @@ class ApiClient {
   }
 
   // Auth endpoints
-  async login(email: string, password: string): Promise<{ access_token: string; token_type: string }> {
+  async login(email: string, password: string): Promise<{ access_token: string; refresh_token?: string; token_type: string }> {
     const formData = new URLSearchParams();
     formData.append('username', email);
     formData.append('password', password);
@@ -1111,10 +1111,10 @@ export interface GameSelection {
 
 export interface BotConfigRequest {
   sport: string;
-  game: GameSelection;
+  game?: GameSelection;
   // Additional games for multi-sport support
   additional_games?: GameSelection[];
-  parameters: TradingParameters;
+  parameters?: TradingParameters;
   simulation_mode?: boolean;
 }
 
@@ -1122,7 +1122,9 @@ export interface BotConfigResponse {
   is_running: boolean;
   sport?: string;
   game?: GameSelection;
-  parameters: TradingParameters;
+  // Additional games for multi-sport support
+  additional_games?: GameSelection[];
+  parameters?: TradingParameters;
   simulation_mode?: boolean;
   last_updated?: string;
 }

@@ -600,7 +600,7 @@ async def test_discord_webhook(
 # ============================================================================
 
 from src.db.crud.polymarket_account import PolymarketAccountCRUD
-from src.core.encryption import decrypt_value
+from src.core.encryption import decrypt_credential
 from src.schemas.settings import WalletStatusResponse, WalletUpdateRequest
 
 
@@ -628,7 +628,7 @@ async def get_wallet_status(
     masked = None
     try:
         if account.platform == "kalshi" and account.api_key_encrypted:
-            decrypted = decrypt_value(account.api_key_encrypted)
+            decrypted = decrypt_credential(account.api_key_encrypted)
             if decrypted and len(decrypted) > 4:
                 masked = f"{'*' * (len(decrypted) - 4)}{decrypted[-4:]}"
             else:

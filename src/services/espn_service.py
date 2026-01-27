@@ -510,24 +510,36 @@ class ESPNService:
         return soccer_leagues
     
     @classmethod
+    def get_sport_type(cls, league_key: str) -> str:
+        """Returns the sport type for a league key (basketball, soccer, football, etc.)."""
+        for category, leagues in cls.SPORT_CATEGORIES.items():
+            if league_key in leagues:
+                if category.startswith("soccer"):
+                    return "soccer"
+                return category
+        return "other"
+
+    @classmethod
     def get_leagues_by_category(cls, category: str) -> list[dict]:
         """
         Returns leagues for a specific sport category.
-        
+
         Args:
-            category: Category key (basketball, football, hockey, baseball, 
+            category: Category key (basketball, football, hockey, baseball,
                      soccer_england, tennis, golf, combat, motorsports, etc.)
-        
+
         Returns:
-            List of leagues in that category with id and display name
+            List of leagues in that category with league_key and display_name
         """
         leagues = []
         category_keys = cls.SPORT_CATEGORIES.get(category, [])
         for sport_key in category_keys:
             if sport_key in cls.LEAGUE_DISPLAY_NAMES:
                 leagues.append({
-                    "id": sport_key,
-                    "name": cls.LEAGUE_DISPLAY_NAMES[sport_key],
+                    "league_key": sport_key,
+                    "display_name": cls.LEAGUE_DISPLAY_NAMES[sport_key],
+                    "sport_type": cls.get_sport_type(sport_key),
+                    "category": category,
                 })
         return leagues
     
@@ -558,9 +570,13 @@ class ESPNService:
             "motorsports": "Motorsports",
             "other": "Other Sports",
         }
-        
+
         return [
-            {"id": cat, "name": category_display.get(cat, cat.title()), "leagues": cls.get_leagues_by_category(cat)}
+            {
+                "category": cat,
+                "display_name": category_display.get(cat, cat.title()),
+                "leagues": cls.get_leagues_by_category(cat)
+            }
             for cat in cls.SPORT_CATEGORIES.keys()
         ]
     

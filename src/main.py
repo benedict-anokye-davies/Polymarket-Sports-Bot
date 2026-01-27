@@ -33,9 +33,9 @@ from src.api.routes.websocket import router as websocket_router
 # Production infrastructure imports
 from src.core.rate_limiter import RateLimitMiddleware, RateLimitConfig
 from src.core.logging_service import (
-    setup_json_logging,
+    setup_structured_logging,
     RequestLoggingMiddleware,
-    get_context_logger,
+    get_logger,
     log_system_event,
 )
 from src.core.validation import RequestValidationMiddleware, create_validation_config
@@ -61,7 +61,7 @@ app_settings = get_settings()
 
 # Configure structured JSON logging for production
 if not app_settings.debug:
-    setup_json_logging()
+    setup_structured_logging(level="INFO", json_output=True)
 else:
     logging.basicConfig(
         level=logging.DEBUG,

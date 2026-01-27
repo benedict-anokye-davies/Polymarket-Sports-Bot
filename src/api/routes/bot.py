@@ -511,13 +511,20 @@ async def get_bot_config(db: DbSession, current_user: OnboardedUser) -> BotConfi
     game_data = config.get("game")
     game = GameSelection(**game_data) if game_data else None
     
+    # Get additional games
+    all_games = config.get("games", [])
+    additional_games = None
+    if all_games and len(all_games) > 1:
+        additional_games = [GameSelection(**g) for g in all_games[1:]]
+    
     params_data = config.get("parameters")
-    params = TradingParameters(**params_data) if params_data else TradingParameters()
+    params = TradingParameters(**params_data) if params_data else None
     
     return BotConfigResponse(
         is_running=is_running,
         sport=config.get("sport"),
         game=game,
+        additional_games=additional_games,
         parameters=params,
         simulation_mode=simulation_mode,
         last_updated=config.get("last_updated")
@@ -541,7 +548,9 @@ async def save_bot_config(
     user_id = str(current_user.id)
     
     # Build list of all games to track
-    all_games = [request.game.model_dump()]
+    all_games = []
+    if request.game:
+        all_games.append(request.game.model_dump())
     
     # Add additional games from other sports
     if request.additional_games:
@@ -550,9 +559,9 @@ async def save_bot_config(
     
     _bot_configs[user_id] = {
         "sport": request.sport,
-        "game": request.game.model_dump(),
+        "game": request.game.model_dump() if request.game else None,
         "games": all_games,  # Store ALL games for multi-sport tracking
-        "parameters": request.parameters.model_dump(),
+        "parameters": request.parameters.model_dump() if request.parameters else None,
         "simulation_mode": request.simulation_mode,
         "last_updated": datetime.now().isoformat()
     }
@@ -572,8 +581,10 @@ async def save_bot_config(
     games_count = len(all_games)
     if games_count > 1:
         log_msg = f"[{mode_str}] Configuration updated: {games_count} games selected across multiple sports"
-    else:
+    elif games_count == 1 and request.game:
         log_msg = f"[{mode_str}] Configuration updated for {request.sport}: {request.game.away_team} @ {request.game.home_team}"
+    else:
+        log_msg = f"[{mode_str}] Game selection cleared"
     
     await ActivityLogCRUD.info(
         db,
@@ -585,10 +596,16 @@ async def save_bot_config(
     status_info = get_bot_status(current_user.id)
     is_running = bool(status_info and status_info.get("state") == BotState.RUNNING.value)
     
+    # Build additional_games list for response
+    additional_games_response = None
+    if request.additional_games:
+        additional_games_response = request.additional_games
+    
     return BotConfigResponse(
         is_running=is_running,
         sport=request.sport,
         game=request.game,
+        additional_games=additional_games_response,
         parameters=request.parameters,
         simulation_mode=request.simulation_mode,
         last_updated=_bot_configs[user_id]["last_updated"]
@@ -756,44 +773,55 @@ async def get_live_espn_games(
     """
     Fetch live and upcoming games directly from ESPN API.
     Returns real-time game data including scores, periods, and times.
-    
+
     This endpoint is PUBLIC - no authentication required since ESPN data is public.
-    
+
+    Supports ALL 100+ leagues/sports from ESPNService including:
+    - Basketball: nba, wnba, ncaab, ncaaw, euroleague, etc.
+    - Football: nfl, ncaaf, cfl, xfl
+    - Baseball: mlb, ncaa_baseball, npb, kbo
+    - Hockey: nhl, ahl, khl, ncaa_hockey
+    - Soccer: epl, laliga, bundesliga, seriea, ligue1, mls, ucl, etc.
+    - And many more...
+
     Args:
-        sport: Sport identifier (nba, nfl, mlb, nhl, soccer, ncaab, etc.)
-    
+        sport: Sport/league identifier (nba, nfl, epl, ncaab, etc.)
+
     Returns:
         List of games with current state
     """
     import httpx
-    
-    SPORT_ENDPOINTS = {
-        "nba": "basketball/nba",
-        "nfl": "football/nfl",
-        "mlb": "baseball/mlb",
-        "nhl": "hockey/nhl",
-        "soccer": "soccer/usa.1",
-        "ncaab": "basketball/mens-college-basketball",
-        "ncaaf": "football/college-football",
-        "tennis": "tennis/atp",
-        "mma": "mma/ufc",
-        "cricket": "cricket",
-        "ufc": "mma/ufc",
-    }
-    
+
     sport_lower = sport.lower()
-    endpoint = SPORT_ENDPOINTS.get(sport_lower)
-    
+
+    # Use the full ESPNService configuration
+    endpoint = ESPNService.SPORT_ENDPOINTS.get(sport_lower)
+
     if not endpoint:
-        logger.warning(f"Unsupported sport requested: {sport}")
+        logger.warning(f"Unsupported sport/league requested: {sport}")
         return []
-    
+
+    # CRITICAL: Add groups parameter for college sports to fetch ALL games
+    # Without this, ESPN only returns Top 25 ranked teams for college sports
+    SPORT_GROUPS = {
+        "ncaab": "50",       # Division I Men's Basketball - ALL teams
+        "ncaaw": "50",       # Division I Women's Basketball - ALL teams
+        "ncaaf": "80",       # FBS Football - ALL teams
+        "ncaa_baseball": "50",
+        "ncaa_hockey": "50",
+    }
+
+    params = {}
+    if sport_lower in SPORT_GROUPS:
+        params["groups"] = SPORT_GROUPS[sport_lower]
+        params["limit"] = "200"  # Fetch more games
+
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             url = f"https://site.web.api.espn.com/apis/site/v2/sports/{endpoint}/scoreboard"
-            response = await client.get(url)
+            response = await client.get(url, params=params if params else None)
             response.raise_for_status()
-            
+
             data = response.json()
             events = data.get("events", [])
             
@@ -833,7 +861,7 @@ async def get_live_espn_games(
                 period = status.get("period", 0)
                 clock_display = status.get("displayClock", "0:00")
                 
-                # Show appropriate period info based on status
+                # Show appropriate period info based on status and sport type
                 if game_status == 'upcoming':
                     current_period = 'Pre-game'
                     clock = ''
@@ -841,7 +869,18 @@ async def get_live_espn_games(
                     current_period = 'Final'
                     clock = ''
                 else:
-                    current_period = f"Q{period}" if sport_lower in ['nba', 'nfl'] else f"P{period}"
+                    # Determine period label based on sport type
+                    if sport_lower in ['nba', 'wnba', 'nba_gleague', 'nfl', 'ncaaf', 'cfl', 'xfl', 'usfl']:
+                        current_period = f"Q{period}"
+                    elif sport_lower in ['ncaab', 'ncaaw'] or sport_lower in ESPNService.CLOCK_COUNTUP_SPORTS:
+                        # College basketball uses halves, soccer uses halves
+                        current_period = f"H{period}" if period <= 2 else f"OT{period-2}"
+                    elif sport_lower in ['nhl', 'ahl', 'khl', 'shl', 'ncaa_hockey', 'iihf']:
+                        current_period = f"P{period}"
+                    elif sport_lower in ['mlb', 'ncaa_baseball', 'npb', 'kbo']:
+                        current_period = f"Inning {period}"
+                    else:
+                        current_period = f"P{period}"
                     clock = clock_display
                 
                 start_time = event.get("date")

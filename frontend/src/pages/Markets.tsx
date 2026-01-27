@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  Search, 
-  RefreshCw, 
-  Eye, 
-  EyeOff, 
-  Loader2, 
-  Check, 
+import {
+  Search,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Loader2,
+  Check,
   CheckCheck,
   X,
   Calendar,
@@ -42,34 +42,53 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { apiClient, AvailableGame, GameListResponse, SportCategory, LeagueInfo } from '@/api/client';
+import { apiClient, SportCategory, LeagueInfo, ESPNGame } from '@/api/client';
 import { TableSkeleton } from '@/components/TableSkeleton';
 
 const statusStyles = {
-  LIVE: 'bg-primary/10 text-primary border-primary/20',
-  UPCOMING: 'bg-info/10 text-info border-info/20',
-  FINISHED: 'bg-muted text-muted-foreground border-border',
+  live: 'bg-primary/10 text-primary border-primary/20',
+  upcoming: 'bg-info/10 text-info border-info/20',
+  final: 'bg-muted text-muted-foreground border-border',
 };
 
+// Game data from ESPN - transformed for display
+interface GameData {
+  id: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeAbbr: string;
+  awayAbbr: string;
+  homeScore: number;
+  awayScore: number;
+  startTime: string;
+  status: 'upcoming' | 'live' | 'final';
+  currentPeriod: string;
+  clock: string;
+  homeOdds: number;
+  awayOdds: number;
+  volume: number;
+  sport: string;
+  isSelected: boolean;
+}
+
 export default function Markets() {
-  const [gameData, setGameData] = useState<GameListResponse>({
-    selected: [],
-    available: [],
-    total_selected: 0,
-    total_available: 0,
-  });
+  // All available games from ESPN
+  const [allGames, setAllGames] = useState<GameData[]>([]);
+  // Selected game IDs (persisted to bot config)
+  const [selectedGameIds, setSelectedGameIds] = useState<Set<string>>(new Set());
+  
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<string>('selected');
+  const [activeTab, setActiveTab] = useState<string>('available');
   const [selectingAll, setSelectingAll] = useState(false);
 
   // League selection state
   const [categories, setCategories] = useState<SportCategory[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
+  const [selectedCategory, setSelectedCategory] = useState<string>('basketball');
+  const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set(['nba']));
   const [loadingCategories, setLoadingCategories] = useState(true);
 
   // Load categories on mount
@@ -88,6 +107,35 @@ export default function Markets() {
     loadCategories();
   }, []);
 
+  // Load existing bot config to get selected games
+  useEffect(() => {
+    const loadSelectedGames = async () => {
+      try {
+        const config = await apiClient.getBotConfig();
+        const selectedIds = new Set<string>();
+        
+        // Get the main game if exists
+        if (config.game?.game_id) {
+          selectedIds.add(config.game.game_id);
+        }
+        
+        // Get additional games if exist
+        if (config.additional_games) {
+          for (const game of config.additional_games) {
+            if (game.game_id) {
+              selectedIds.add(game.game_id);
+            }
+          }
+        }
+        
+        setSelectedGameIds(selectedIds);
+      } catch (err) {
+        console.log('No existing config found');
+      }
+    };
+    loadSelectedGames();
+  }, []);
+
   // Get leagues for current category
   const getCurrentLeagues = useCallback((): LeagueInfo[] => {
     if (selectedCategory === 'all') {
@@ -97,28 +145,71 @@ export default function Markets() {
     return category?.leagues || [];
   }, [categories, selectedCategory]);
 
+  // Fetch games from ESPN for all selected leagues
   const fetchGames = useCallback(async () => {
+    if (selectedLeagues.size === 0) {
+      setAllGames([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      // If specific leagues selected, fetch for each league
-      // Otherwise fetch all or by category
-      let sport: string | undefined;
+      const allFetchedGames: GameData[] = [];
       
-      if (selectedLeagues.size > 0) {
-        // For now, use the first league's sport type
-        // Backend should be updated to accept multiple leagues
-        const firstLeague = Array.from(selectedLeagues)[0];
-        sport = firstLeague;
-      } else if (selectedCategory !== 'all') {
-        // Use category's first league as sport filter
-        const categoryLeagues = getCurrentLeagues();
-        if (categoryLeagues.length > 0) {
-          sport = categoryLeagues[0].sport_type;
+      // Fetch games from each selected league in parallel
+      const leaguePromises = Array.from(selectedLeagues).map(async (league) => {
+        try {
+          const games = await apiClient.getLiveGames(league);
+          // Transform ESPN games to our GameData format
+          return games.map((g: ESPNGame): GameData => ({
+            id: g.id,
+            homeTeam: g.homeTeam,
+            awayTeam: g.awayTeam,
+            homeAbbr: g.homeAbbr || g.homeTeam.substring(0, 3).toUpperCase(),
+            awayAbbr: g.awayAbbr || g.awayTeam.substring(0, 3).toUpperCase(),
+            homeScore: g.homeScore || 0,
+            awayScore: g.awayScore || 0,
+            startTime: g.startTime 
+              ? new Date(g.startTime).toLocaleString('en-US', { 
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric', 
+                  minute: '2-digit', 
+                  timeZoneName: 'short' 
+                })
+              : 'TBD',
+            status: g.status,
+            currentPeriod: g.currentPeriod || '',
+            clock: g.clock || '',
+            homeOdds: g.homeOdds || 50,
+            awayOdds: g.awayOdds || 50,
+            volume: g.volume || 0,
+            sport: league,
+            isSelected: selectedGameIds.has(g.id),
+          }));
+        } catch (err) {
+          console.error(`Failed to fetch games for ${league}:`, err);
+          return [];
         }
-      }
-      
-      const data = await apiClient.getAllGames(sport);
-      setGameData(data);
+      });
+
+      const results = await Promise.all(leaguePromises);
+      results.forEach(games => allFetchedGames.push(...games));
+
+      // Sort by start time, live games first
+      allFetchedGames.sort((a, b) => {
+        // Live games first
+        if (a.status === 'live' && b.status !== 'live') return -1;
+        if (b.status === 'live' && a.status !== 'live') return 1;
+        // Then upcoming
+        if (a.status === 'upcoming' && b.status === 'final') return -1;
+        if (b.status === 'upcoming' && a.status === 'final') return 1;
+        return 0;
+      });
+
+      setAllGames(allFetchedGames);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load games');
@@ -126,7 +217,7 @@ export default function Markets() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedCategory, selectedLeagues, getCurrentLeagues]);
+  }, [selectedLeagues, selectedGameIds]);
 
   useEffect(() => {
     fetchGames();
@@ -158,45 +249,69 @@ export default function Markets() {
     setSelectedLeagues(new Set());
   };
 
-  const toggleGameSelection = async (game: AvailableGame) => {
+  // Filter games by search query
+  const filterGames = (games: GameData[]) => {
+    if (!searchQuery) return games;
+    const searchLower = searchQuery.toLowerCase();
+    return games.filter((game) => (
+      game.homeTeam.toLowerCase().includes(searchLower) ||
+      game.awayTeam.toLowerCase().includes(searchLower) ||
+      game.homeAbbr.toLowerCase().includes(searchLower) ||
+      game.awayAbbr.toLowerCase().includes(searchLower) ||
+      game.sport.toLowerCase().includes(searchLower)
+    ));
+  };
+
+  // Split into selected and available
+  const filteredGames = filterGames(allGames);
+  const selectedGames = filteredGames.filter(g => selectedGameIds.has(g.id));
+  const availableGames = filteredGames.filter(g => !selectedGameIds.has(g.id));
+
+  // Toggle game selection and save to bot config
+  const toggleGameSelection = async (game: GameData) => {
     try {
       setTogglingIds(prev => new Set(prev).add(game.id));
       
-      if (game.is_user_selected) {
-        await apiClient.unselectGame(game.id);
+      const newSelectedIds = new Set(selectedGameIds);
+      if (newSelectedIds.has(game.id)) {
+        newSelectedIds.delete(game.id);
       } else {
-        await apiClient.selectGame(game.id);
+        newSelectedIds.add(game.id);
       }
       
-      // Update local state
-      setGameData(prev => {
-        const updatedGame = { ...game, is_user_selected: !game.is_user_selected };
-        
-        if (game.is_user_selected) {
-          // Moving from selected to available
-          return {
-            ...prev,
-            selected: prev.selected.filter(g => g.id !== game.id),
-            available: [...prev.available, updatedGame].sort((a, b) => 
-              new Date(a.game_start_time || 0).getTime() - new Date(b.game_start_time || 0).getTime()
-            ),
-            total_selected: prev.total_selected - 1,
-            total_available: prev.total_available + 1,
-          };
-        } else {
-          // Moving from available to selected
-          return {
-            ...prev,
-            available: prev.available.filter(g => g.id !== game.id),
-            selected: [...prev.selected, updatedGame].sort((a, b) =>
-              new Date(a.game_start_time || 0).getTime() - new Date(b.game_start_time || 0).getTime()
-            ),
-            total_selected: prev.total_selected + 1,
-            total_available: prev.total_available - 1,
-          };
-        }
-      });
+      // Update local state immediately for responsiveness
+      setSelectedGameIds(newSelectedIds);
+      
+      // Build the games array for API
+      const selectedGamesArray = allGames
+        .filter(g => newSelectedIds.has(g.id))
+        .map(g => ({
+          game_id: g.id,
+          sport: g.sport,
+          home_team: g.homeTeam,
+          away_team: g.awayTeam,
+          start_time: g.startTime,
+          selected_side: 'home' as const, // Default to home team
+        }));
+
+      if (selectedGamesArray.length > 0) {
+        const firstGame = selectedGamesArray[0];
+        const additionalGames = selectedGamesArray.slice(1);
+
+        await apiClient.saveBotConfig({
+          sport: firstGame.sport,
+          game: firstGame,
+          additional_games: additionalGames.length > 0 ? additionalGames : undefined,
+        });
+      } else {
+        // Clear config when no games selected
+        await apiClient.saveBotConfig({
+          sport: Array.from(selectedLeagues)[0] || 'nba',
+          game: undefined,
+        });
+      }
     } catch (err) {
+      // Revert on error
       setError(err instanceof Error ? err.message : 'Failed to update game selection');
     } finally {
       setTogglingIds(prev => {
@@ -207,24 +322,37 @@ export default function Markets() {
     }
   };
 
-  const selectAllForSport = async () => {
-    if (selectedLeagues.size === 0 && selectedCategory === 'all') {
-      setError('Please select a category or specific leagues first');
-      return;
-    }
-    
+  // Select all visible games
+  const selectAllGames = async () => {
     try {
       setSelectingAll(true);
-      // Use first selected league or category's sport type
-      const sportFilter = selectedLeagues.size > 0 
-        ? Array.from(selectedLeagues)[0]
-        : getCurrentLeagues()[0]?.sport_type;
       
-      if (sportFilter) {
-        const result = await apiClient.selectAllGamesForSport(sportFilter);
-        if (result.success) {
-          fetchGames();
-        }
+      const newSelectedIds = new Set(selectedGameIds);
+      filteredGames.forEach(g => newSelectedIds.add(g.id));
+      
+      setSelectedGameIds(newSelectedIds);
+      
+      // Build and save config
+      const selectedGamesArray = allGames
+        .filter(g => newSelectedIds.has(g.id))
+        .map(g => ({
+          game_id: g.id,
+          sport: g.sport,
+          home_team: g.homeTeam,
+          away_team: g.awayTeam,
+          start_time: g.startTime,
+          selected_side: 'home' as const,
+        }));
+
+      if (selectedGamesArray.length > 0) {
+        const firstGame = selectedGamesArray[0];
+        const additionalGames = selectedGamesArray.slice(1);
+
+        await apiClient.saveBotConfig({
+          sport: firstGame.sport,
+          game: firstGame,
+          additional_games: additionalGames.length > 0 ? additionalGames : undefined,
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to select all games');
@@ -233,23 +361,42 @@ export default function Markets() {
     }
   };
 
-  const unselectAllForSport = async () => {
-    if (selectedLeagues.size === 0 && selectedCategory === 'all') {
-      setError('Please select a category or specific leagues first');
-      return;
-    }
-    
+  // Unselect all visible games
+  const unselectAllGames = async () => {
     try {
       setSelectingAll(true);
-      const sportFilter = selectedLeagues.size > 0 
-        ? Array.from(selectedLeagues)[0]
-        : getCurrentLeagues()[0]?.sport_type;
       
-      if (sportFilter) {
-        const result = await apiClient.unselectAllGamesForSport(sportFilter);
-        if (result.success) {
-          fetchGames();
-        }
+      const newSelectedIds = new Set(selectedGameIds);
+      filteredGames.forEach(g => newSelectedIds.delete(g.id));
+      
+      setSelectedGameIds(newSelectedIds);
+      
+      // Build and save config
+      const selectedGamesArray = allGames
+        .filter(g => newSelectedIds.has(g.id))
+        .map(g => ({
+          game_id: g.id,
+          sport: g.sport,
+          home_team: g.homeTeam,
+          away_team: g.awayTeam,
+          start_time: g.startTime,
+          selected_side: 'home' as const,
+        }));
+
+      if (selectedGamesArray.length > 0) {
+        const firstGame = selectedGamesArray[0];
+        const additionalGames = selectedGamesArray.slice(1);
+
+        await apiClient.saveBotConfig({
+          sport: firstGame.sport,
+          game: firstGame,
+          additional_games: additionalGames.length > 0 ? additionalGames : undefined,
+        });
+      } else {
+        await apiClient.saveBotConfig({
+          sport: Array.from(selectedLeagues)[0] || 'nba',
+          game: undefined,
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unselect all games');
@@ -258,55 +405,24 @@ export default function Markets() {
     }
   };
 
-  const filterGames = (games: AvailableGame[]) => {
-    return games.filter((game) => {
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch = 
-        game.question?.toLowerCase().includes(searchLower) ||
-        game.home_team?.toLowerCase().includes(searchLower) ||
-        game.away_team?.toLowerCase().includes(searchLower) ||
-        game.home_abbrev?.toLowerCase().includes(searchLower) ||
-        game.away_abbrev?.toLowerCase().includes(searchLower);
-      return matchesSearch;
-    });
-  };
-
-  const formatGameTime = (dateString: string | null) => {
-    if (!dateString) return 'TBD';
-    const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
-
-  const getGameStatus = (game: AvailableGame) => {
-    if (game.is_finished) return 'FINISHED';
-    if (game.is_live) return 'LIVE';
-    return 'UPCOMING';
-  };
-
-  const GameRow = ({ game }: { game: AvailableGame }) => {
-    const status = getGameStatus(game);
+  const GameRow = ({ game }: { game: GameData }) => {
     const isToggling = togglingIds.has(game.id);
+    const isSelected = selectedGameIds.has(game.id);
     
     return (
       <tr className="hover:bg-muted/20 transition-colors">
         <td className="py-3 px-4">
           <div className="flex flex-col">
             <span className="text-sm font-medium text-foreground">
-              {game.away_team && game.home_team 
-                ? `${game.away_abbrev || game.away_team} @ ${game.home_abbrev || game.home_team}`
-                : game.question || 'Unknown Game'}
+              {game.awayAbbr} @ {game.homeAbbr}
             </span>
-            {game.game_start_time && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                <Calendar className="w-3 h-3" />
-                {formatGameTime(game.game_start_time)}
-              </span>
-            )}
+            <span className="text-xs text-muted-foreground">
+              {game.awayTeam} vs {game.homeTeam}
+            </span>
+            <span className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+              <Calendar className="w-3 h-3" />
+              {game.startTime}
+            </span>
           </div>
         </td>
         <td className="py-3 px-4">
@@ -315,45 +431,41 @@ export default function Markets() {
           </Badge>
         </td>
         <td className="py-3 px-4 text-right">
-          <span className="text-sm font-mono text-foreground">
-            {game.current_price_yes !== null 
-              ? `${(game.current_price_yes * 100).toFixed(0)}%` 
-              : '-'}
-          </span>
-        </td>
-        <td className="py-3 px-4 text-center">
-          <Badge className={cn('border', statusStyles[status])}>
-            {status === 'LIVE' && <Zap className="w-3 h-3 mr-1" />}
-            {status}
-          </Badge>
-        </td>
-        <td className="py-3 px-4 text-center">
-          {game.match_confidence !== null && (
-            <span className={cn(
-              'text-xs font-medium',
-              game.match_confidence >= 0.9 ? 'text-profit' : 
-              game.match_confidence >= 0.7 ? 'text-warning' : 'text-muted-foreground'
-            )}>
-              {(game.match_confidence * 100).toFixed(0)}%
+          {game.status === 'live' || game.status === 'final' ? (
+            <span className="text-sm font-mono text-foreground">
+              {game.awayScore} - {game.homeScore}
             </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">-</span>
+          )}
+        </td>
+        <td className="py-3 px-4 text-center">
+          <Badge className={cn('border', statusStyles[game.status])}>
+            {game.status === 'live' && <Zap className="w-3 h-3 mr-1" />}
+            {game.status.toUpperCase()}
+          </Badge>
+          {game.status === 'live' && game.currentPeriod && (
+            <div className="text-xs text-muted-foreground mt-1">
+              {game.currentPeriod} {game.clock}
+            </div>
           )}
         </td>
         <td className="py-3 px-4 text-center">
           <Button
-            variant={game.is_user_selected ? 'default' : 'outline'}
+            variant={isSelected ? 'default' : 'outline'}
             size="sm"
             onClick={() => toggleGameSelection(game)}
             disabled={isToggling}
             className={cn(
               'gap-1.5 min-w-[100px]',
-              game.is_user_selected 
+              isSelected 
                 ? 'bg-primary hover:bg-primary/90' 
                 : 'border-border hover:bg-muted'
             )}
           >
             {isToggling ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : game.is_user_selected ? (
+            ) : isSelected ? (
               <>
                 <Check className="w-3.5 h-3.5" />
                 Selected
@@ -371,17 +483,15 @@ export default function Markets() {
   };
 
   const GamesTable = ({ games, emptyMessage }: { 
-    games: AvailableGame[]; 
+    games: GameData[]; 
     emptyMessage: string;
   }) => {
-    const filteredGames = filterGames(games);
-    
-    if (filteredGames.length === 0) {
+    if (games.length === 0) {
       return (
         <div className="text-center py-16">
           <p className="text-muted-foreground">{emptyMessage}</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {searchQuery ? 'Try a different search term' : 'Games will appear here when discovered by the bot'}
+            {searchQuery ? 'Try a different search term' : 'Select leagues above to see games'}
           </p>
         </div>
       );
@@ -392,15 +502,14 @@ export default function Markets() {
         <thead>
           <tr className="border-b border-border bg-muted/30">
             <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Game</th>
-            <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Sport</th>
-            <th className="text-right py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Price</th>
+            <th className="text-left py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">League</th>
+            <th className="text-right py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Score</th>
             <th className="text-center py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Status</th>
-            <th className="text-center py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Match</th>
             <th className="text-center py-3 px-4 text-xs uppercase tracking-wider text-muted-foreground font-medium">Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {filteredGames.map((game) => (
+          {games.map((game) => (
             <GameRow key={game.id} game={game} />
           ))}
         </tbody>
@@ -416,16 +525,16 @@ export default function Markets() {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Game Selection</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Choose which games the bot should trade on
+              Choose which games the bot should trade on across multiple leagues
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
               <Check className="w-3 h-3 mr-1" />
-              {gameData.total_selected} Selected
+              {selectedGames.length} Selected
             </Badge>
             <Badge variant="outline" className="border-border">
-              {gameData.total_available} Available
+              {availableGames.length} Available
             </Badge>
           </div>
         </div>
@@ -448,12 +557,20 @@ export default function Markets() {
               value={selectedCategory} 
               onValueChange={(value) => {
                 setSelectedCategory(value);
-                setSelectedLeagues(new Set()); // Clear league selection when category changes
+                // Auto-select first league in new category
+                if (value !== 'all') {
+                  const cat = categories.find(c => c.category === value);
+                  if (cat && cat.leagues.length > 0) {
+                    setSelectedLeagues(new Set([cat.leagues[0].league_key]));
+                  }
+                } else {
+                  setSelectedLeagues(new Set());
+                }
               }}
             >
               <SelectTrigger className="w-48 bg-muted border-border">
                 <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="All Categories" />
+                <SelectValue placeholder="Select Category" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
@@ -538,13 +655,13 @@ export default function Markets() {
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2 ml-auto">
-              {(selectedLeagues.size > 0 || selectedCategory !== 'all') && (
+              {selectedLeagues.size > 0 && (
                 <>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={selectAllForSport}
-                    disabled={selectingAll || gameData.available.length === 0}
+                    onClick={selectAllGames}
+                    disabled={selectingAll || availableGames.length === 0}
                     className="border-border hover:bg-muted gap-1.5"
                   >
                     {selectingAll ? (
@@ -557,8 +674,8 @@ export default function Markets() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={unselectAllForSport}
-                    disabled={selectingAll || gameData.selected.length === 0}
+                    onClick={unselectAllGames}
+                    disabled={selectingAll || selectedGames.length === 0}
                     className="border-border hover:bg-muted gap-1.5"
                   >
                     <EyeOff className="w-3.5 h-3.5" />
@@ -577,6 +694,32 @@ export default function Markets() {
               </Button>
             </div>
           </div>
+
+          {/* Selected leagues display */}
+          {selectedLeagues.size > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border">
+              {Array.from(selectedLeagues).map(league => {
+                const leagueInfo = getCurrentLeagues().find(l => l.league_key === league);
+                return (
+                  <Badge 
+                    key={league} 
+                    variant="secondary"
+                    className="gap-1 pr-1"
+                  >
+                    {leagueInfo?.display_name || league.toUpperCase()}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-4 w-4 p-0 hover:bg-transparent"
+                      onClick={() => toggleLeagueSelection(league)}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </Badge>
+                );
+              })}
+            </div>
+          )}
         </Card>
 
         {/* Games Tabs */}
@@ -584,11 +727,11 @@ export default function Markets() {
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="selected" className="gap-2">
               <Check className="w-4 h-4" />
-              Selected ({gameData.total_selected})
+              Selected ({selectedGames.length})
             </TabsTrigger>
             <TabsTrigger value="available" className="gap-2">
               <Eye className="w-4 h-4" />
-              Available ({gameData.total_available})
+              Available ({availableGames.length})
             </TabsTrigger>
           </TabsList>
 
@@ -602,10 +745,10 @@ export default function Markets() {
               </div>
               <div className="overflow-x-auto">
                 {loading ? (
-                  <TableSkeleton columns={6} rows={5} />
+                  <TableSkeleton columns={5} rows={5} />
                 ) : (
                   <GamesTable 
-                    games={gameData.selected} 
+                    games={selectedGames} 
                     emptyMessage="No games selected for trading" 
                   />
                 )}
@@ -618,15 +761,15 @@ export default function Markets() {
               <div className="p-4 border-b border-border bg-muted/20">
                 <h3 className="font-medium text-foreground">Available Games</h3>
                 <p className="text-sm text-muted-foreground">
-                  Discovered games you can select for trading - click "Select" to enable trading
+                  Live and upcoming games from selected leagues - click "Select" to enable trading
                 </p>
               </div>
               <div className="overflow-x-auto">
                 {loading ? (
-                  <TableSkeleton columns={6} rows={5} />
+                  <TableSkeleton columns={5} rows={5} />
                 ) : (
                   <GamesTable 
-                    games={gameData.available} 
+                    games={availableGames} 
                     emptyMessage="No available games found" 
                   />
                 )}
@@ -644,10 +787,11 @@ export default function Markets() {
             <div>
               <h4 className="font-medium text-foreground">How Game Selection Works</h4>
               <ul className="text-sm text-muted-foreground mt-1 space-y-1">
-                <li>• The bot automatically discovers sports markets from Polymarket</li>
-                <li>• Select specific games you want the bot to trade on</li>
-                <li>• Only selected games will be evaluated against your trading thresholds</li>
-                <li>• Use "Select All" to enable all games for a specific sport</li>
+                <li>1. Select leagues from the dropdown to see available games</li>
+                <li>2. You can select multiple leagues across different sports</li>
+                <li>3. Select specific games you want the bot to trade on</li>
+                <li>4. Only selected games will be evaluated against your trading thresholds</li>
+                <li>5. Games auto-refresh - live data comes directly from ESPN</li>
               </ul>
             </div>
           </div>

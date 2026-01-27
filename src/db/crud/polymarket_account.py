@@ -103,6 +103,39 @@ class PolymarketAccountCRUD:
         return result
     
     @staticmethod
+    async def update(
+        db: AsyncSession,
+        account_id: uuid.UUID,
+        **kwargs
+    ) -> PolymarketAccount:
+        """
+        Updates an existing trading account with provided fields.
+
+        Args:
+            db: Database session
+            account_id: The account ID to update
+            **kwargs: Fields to update (platform, api_key_encrypted, etc.)
+
+        Returns:
+            Updated PolymarketAccount instance
+        """
+        result = await db.execute(
+            select(PolymarketAccount).where(PolymarketAccount.id == account_id)
+        )
+        account = result.scalar_one_or_none()
+
+        if not account:
+            raise NotFoundError("Trading account not found")
+
+        for key, value in kwargs.items():
+            if hasattr(account, key):
+                setattr(account, key, value)
+
+        await db.commit()
+        await db.refresh(account)
+        return account
+
+    @staticmethod
     async def update_api_credentials(
         db: AsyncSession,
         user_id: uuid.UUID,

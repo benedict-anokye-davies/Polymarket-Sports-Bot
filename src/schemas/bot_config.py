@@ -76,13 +76,13 @@ class GameSelection(BaseModel):
 class BotConfigRequest(BaseModel):
     """Request to update bot configuration"""
     sport: str = Field(..., description="Primary sport identifier (nba, nfl, etc.)")
-    game: GameSelection = Field(..., description="Primary selected game to trade")
+    game: Optional[GameSelection] = Field(default=None, description="Primary selected game to trade")
     # Support multiple games from different sports
     additional_games: Optional[List[GameSelection]] = Field(
         default=None,
         description="Additional games to trade (can be from different sports)"
     )
-    parameters: TradingParameters = Field(..., description="Trading parameters")
+    parameters: Optional[TradingParameters] = Field(default=None, description="Trading parameters")
     simulation_mode: bool = Field(default=True, description="Paper trading mode - simulate trades without real money")
 
 
@@ -91,7 +91,9 @@ class BotConfigResponse(BaseModel):
     is_running: bool
     sport: Optional[str] = None
     game: Optional[GameSelection] = None
-    parameters: TradingParameters
+    # Support multiple games from different sports
+    additional_games: Optional[List[GameSelection]] = None
+    parameters: Optional[TradingParameters] = None
     simulation_mode: bool = True
     last_updated: Optional[str] = None
 
