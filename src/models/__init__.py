@@ -9,6 +9,7 @@ from src.models.global_settings import GlobalSettings
 from src.models.activity_log import ActivityLog
 from src.models.market_config import MarketConfig
 from src.models.backtest import PriceSnapshot, BacktestResult
+from src.models.refresh_token import RefreshToken
 
 __all__ = [
     "User",
@@ -22,4 +23,5 @@ __all__ = [
     "MarketConfig",
     "PriceSnapshot",
     "BacktestResult",
+    "RefreshToken",
 ]

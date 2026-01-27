@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
+import { MobileHeader, MobileBottomNav } from './MobileNav';
 import { useAppStore } from '@/stores/useAppStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { apiClient } from '@/api/client';
@@ -44,15 +45,30 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar />
+      {/* Mobile Navigation */}
+      <MobileHeader />
+      <MobileBottomNav />
+      
+      {/* Desktop Sidebar - hidden on mobile */}
+      <div className="hidden md:block">
+        <Sidebar />
+      </div>
+      
       <div
         className={cn(
           'transition-all duration-300',
-          sidebarCollapsed ? 'ml-16' : 'ml-sidebar'
+          // Desktop: margin for sidebar
+          'md:ml-sidebar',
+          sidebarCollapsed && 'md:ml-16',
+          // Mobile: no margin, but pad for fixed header/bottom nav
+          'pt-14 pb-16 md:pt-0 md:pb-0'
         )}
       >
-        <StatusBar />
-        <main className="p-6">
+        {/* Status bar - hidden on mobile */}
+        <div className="hidden md:block">
+          <StatusBar />
+        </div>
+        <main className="p-4 md:p-6">
           {children}
         </main>
       </div>

@@ -54,6 +54,11 @@ class Position(Base):
         String(10),
         nullable=False
     )
+    sport: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Sport identifier for analytics grouping"
+    )
     team: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True

@@ -46,6 +46,19 @@ class ESPNService:
         "ucl": "soccer/uefa.champions",
     }
     
+    # Group IDs for fetching ALL games instead of just Top 25/filtered
+    # These allow us to get all Division I games, not just ranked teams
+    SPORT_GROUPS = {
+        "ncaab": "50",      # Division I Men's Basketball (all D1 games)
+        "ncaaf": "80",      # FBS (Division I-A) Football (all FBS games)
+        "soccer": "all",    # All soccer leagues/games
+        "epl": "1",         # English Premier League
+        "laliga": "15",     # La Liga
+        "bundesliga": "10", # Bundesliga
+        "seriea": "12",     # Serie A
+        "ligue1": "9",      # Ligue 1
+    }
+    
     SEGMENT_MAPPING = {
         "nba": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
         "wnba": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
@@ -96,8 +109,11 @@ class ESPNService:
         Fetches the current scoreboard for a sport.
         Uses retry logic with circuit breaker for resilience.
         
+        For college sports (ncaab, ncaaf), uses groups parameter to fetch
+        ALL Division I games, not just Top 25 ranked teams.
+        
         Args:
-            sport: Sport identifier (nba, nfl, mlb, nhl)
+            sport: Sport identifier (nba, nfl, mlb, nhl, ncaab, etc.)
         
         Returns:
             List of game data dictionaries
@@ -106,9 +122,24 @@ class ESPNService:
             client = await self._get_client()
             endpoint = self._get_sport_endpoint(sport)
             
+            # Build query parameters
+            params = {}
+            sport_lower = sport.lower()
+            
+            # Add groups parameter for sports that need it to fetch all games
+            # Without this, college sports only return Top 25 ranked teams
+            if sport_lower in self.SPORT_GROUPS:
+                group_id = self.SPORT_GROUPS[sport_lower]
+                if group_id != "all":
+                    params["groups"] = group_id
+                # For "all", we use limit parameter instead
+                else:
+                    params["limit"] = "200"  # Fetch up to 200 games
+            
             response = await retry_async(
                 client.get,
                 f"{self.BASE_URL}/{endpoint}/scoreboard",
+                params=params if params else None,
                 max_retries=3,
                 base_delay=0.5,
                 circuit_breaker=espn_circuit

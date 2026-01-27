@@ -199,9 +199,9 @@ class Backtester:
         markets = result.scalars().all()
         
         return {
-            m.condition_id: float(m.baseline_price)
+            m.condition_id: float(m.baseline_price_yes)
             for m in markets
-            if m.baseline_price
+            if m.baseline_price_yes
         }
     
     async def _process_snapshot(

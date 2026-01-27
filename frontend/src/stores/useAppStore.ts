@@ -14,6 +14,7 @@ interface BotState {
 
 interface ConnectionState {
   sseConnected: boolean;
+  wsConnected: boolean;
   lastHeartbeat: Date | null;
 }
 
@@ -36,6 +37,7 @@ interface AppState {
   toggleBot: () => void;
   setBotStatus: (running: boolean, activeMarkets?: number) => void;
   setSseConnected: (connected: boolean) => void;
+  setWsConnected: (connected: boolean) => void;
   toggleSidebar: () => void;
   updateLastUpdate: () => void;
   startTour: () => void;
@@ -57,6 +59,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
   connection: {
     sseConnected: false,
+    wsConnected: false,
     lastHeartbeat: null,
   },
   tour: {
@@ -93,6 +96,11 @@ export const useAppStore = create<AppState>((set) => ({
   setSseConnected: (connected) =>
     set((state) => ({
       connection: { ...state.connection, sseConnected: connected, lastHeartbeat: new Date() },
+    })),
+
+  setWsConnected: (connected) =>
+    set((state) => ({
+      connection: { ...state.connection, wsConnected: connected, lastHeartbeat: new Date() },
     })),
 
   toggleSidebar: () =>

@@ -381,3 +381,112 @@ async def test_discord_webhook(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to send test message: {str(e)}"
         )
+
+
+# ============================================================================
+# Wallet/Credential Management Endpoints
+# ============================================================================
+
+from src.db.crud.polymarket_account import PolymarketAccountCRUD
+from src.core.encryption import decrypt_value
+from src.schemas.settings import WalletStatusResponse, WalletUpdateRequest
+
+
+@router.get("/wallet", response_model=WalletStatusResponse)
+async def get_wallet_status(
+    db: DbSession,
+    current_user: CurrentUser
+) -> WalletStatusResponse:
+    """
+    Returns wallet connection status without exposing raw credentials.
+    Shows masked identifier and connection status.
+    """
+    account = await PolymarketAccountCRUD.get_by_user_id(db, current_user.id)
+
+    if not account:
+        return WalletStatusResponse(
+            is_connected=False,
+            platform=None,
+            masked_identifier=None,
+            last_tested_at=None,
+            connection_error=None
+        )
+
+    # Mask the identifier based on platform
+    masked = None
+    try:
+        if account.platform == "kalshi" and account.api_key_encrypted:
+            decrypted = decrypt_value(account.api_key_encrypted)
+            if decrypted and len(decrypted) > 4:
+                masked = f"{'*' * (len(decrypted) - 4)}{decrypted[-4:]}"
+            else:
+                masked = "****"
+        elif account.platform == "polymarket" and account.funder_address:
+            addr = account.funder_address
+            if len(addr) > 10:
+                masked = f"{addr[:6]}...{addr[-4:]}"
+            else:
+                masked = addr
+    except Exception:
+        masked = "****"
+
+    return WalletStatusResponse(
+        is_connected=account.is_connected,
+        platform=account.platform,
+        masked_identifier=masked,
+        last_tested_at=account.updated_at,
+        connection_error=getattr(account, 'connection_error', None)
+    )
+
+
+@router.put("/wallet", response_model=WalletStatusResponse)
+async def update_wallet_credentials(
+    wallet_data: WalletUpdateRequest,
+    db: DbSession,
+    current_user: CurrentUser
+) -> WalletStatusResponse:
+    """
+    Updates wallet credentials for the user.
+    Encrypts credentials before storing.
+    """
+    from src.core.encryption import encrypt_value
+
+    account = await PolymarketAccountCRUD.get_by_user_id(db, current_user.id)
+
+    update_data = {"platform": wallet_data.platform}
+
+    if wallet_data.platform == "kalshi":
+        if wallet_data.api_key:
+            update_data["api_key_encrypted"] = encrypt_value(wallet_data.api_key)
+        if wallet_data.api_secret:
+            update_data["api_secret_encrypted"] = encrypt_value(wallet_data.api_secret)
+        # Clear polymarket fields
+        update_data["private_key_encrypted"] = None
+        update_data["funder_address"] = None
+    else:  # polymarket
+        if wallet_data.private_key:
+            update_data["private_key_encrypted"] = encrypt_value(wallet_data.private_key)
+        if wallet_data.funder_address:
+            update_data["funder_address"] = wallet_data.funder_address
+        # Clear kalshi fields
+        update_data["api_key_encrypted"] = None
+        update_data["api_secret_encrypted"] = None
+
+    update_data["is_connected"] = True
+
+    if account:
+        # Update existing account
+        await PolymarketAccountCRUD.update(db, account.id, **update_data)
+    else:
+        # Create new account
+        await PolymarketAccountCRUD.create(db, user_id=current_user.id, **update_data)
+
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "WALLET",
+        f"Updated {wallet_data.platform} credentials"
+    )
+
+    # Return updated status
+    return await get_wallet_status(db, current_user)

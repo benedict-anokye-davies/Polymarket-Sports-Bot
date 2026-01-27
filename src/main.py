@@ -28,6 +28,7 @@ from src.api.routes.market_config import router as market_config_router
 from src.api.routes.analytics import router as analytics_router
 from src.api.routes.backtest import router as backtest_router
 from src.api.routes.accounts import router as accounts_router
+from src.api.routes.websocket import router as websocket_router
 
 # Production infrastructure imports
 from src.core.rate_limiter import RateLimitMiddleware, RateLimitConfig
@@ -51,6 +52,7 @@ from src.core.audit import audit_logger, AuditEventType, AuditSeverity
 # Advanced infrastructure imports
 from src.core.prometheus import metrics, get_prometheus_metrics, get_json_metrics
 from src.core.incident_management import setup_incident_management, incident_manager
+from src.core.security_headers import SecurityHeadersMiddleware, create_security_headers_config
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -169,13 +171,19 @@ app.add_middleware(
 # 3. Request logging - observability
 app.add_middleware(RequestLoggingMiddleware)
 
-# 4. CORS - handle cross-origin requests
+# 4. CORS - handle cross-origin requests (REQ-SEC-004: Configurable CORS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=app_settings.cors_origins_list,
+    allow_credentials=app_settings.cors_allow_credentials,
+    allow_methods=app_settings.cors_methods_list,
+    allow_headers=app_settings.cors_headers_list,
+)
+
+# 5. Security Headers - protect against common web vulnerabilities (REQ-SEC-008)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    config=create_security_headers_config(debug=app_settings.debug),
 )
 
 app.include_router(auth_router, prefix="/api/v1")
@@ -189,6 +197,7 @@ app.include_router(market_config_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
 app.include_router(backtest_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
+app.include_router(websocket_router, prefix="/api/v1")
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 

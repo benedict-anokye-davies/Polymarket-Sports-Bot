@@ -145,18 +145,18 @@ async def create_account(
     
     Encrypts private key and API credentials before storage.
     """
-    encrypted_key = encrypt_credential(request.private_key, settings.SECRET_KEY)
+    encrypted_key = encrypt_credential(request.private_key)
     
     encrypted_api_key = None
     encrypted_api_secret = None
     encrypted_api_passphrase = None
     
     if request.api_key:
-        encrypted_api_key = encrypt_credential(request.api_key, settings.SECRET_KEY)
+        encrypted_api_key = encrypt_credential(request.api_key)
     if request.api_secret:
-        encrypted_api_secret = encrypt_credential(request.api_secret, settings.SECRET_KEY)
+        encrypted_api_secret = encrypt_credential(request.api_secret)
     if request.api_passphrase:
-        encrypted_api_passphrase = encrypt_credential(request.api_passphrase, settings.SECRET_KEY)
+        encrypted_api_passphrase = encrypt_credential(request.api_passphrase)
     
     if request.is_primary:
         clear_stmt = (

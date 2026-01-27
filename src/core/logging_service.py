@@ -1,6 +1,7 @@
 """
 Structured logging service with correlation ID tracking.
 Provides JSON-formatted logs for production observability.
+Integrates sensitive data redaction (REQ-SEC-007).
 """
 
 import json
@@ -13,6 +14,8 @@ from typing import Any
 from functools import lru_cache
 
 from fastapi import Request
+
+from src.core.redaction import redact_sensitive, RedactionConfig
 
 
 # Context variable for request correlation ID
@@ -37,7 +40,8 @@ def set_correlation_id(correlation_id: str | None = None) -> str:
 class JSONFormatter(logging.Formatter):
     """
     Custom log formatter that outputs JSON-structured logs.
-    
+    Automatically redacts sensitive data (REQ-SEC-007).
+
     Includes standard fields:
     - timestamp: ISO format timestamp
     - level: Log level name
@@ -47,7 +51,7 @@ class JSONFormatter(logging.Formatter):
     - module/function/line: Source location
     - extra: Any additional context
     """
-    
+
     RESERVED_ATTRS = {
         "name", "msg", "args", "created", "filename", "funcName",
         "levelname", "levelno", "lineno", "module", "msecs",
@@ -55,32 +59,35 @@ class JSONFormatter(logging.Formatter):
         "stack_info", "exc_info", "exc_text", "thread", "threadName",
         "taskName",
     }
-    
+
     def __init__(
         self,
         include_source: bool = True,
         include_process: bool = False,
         include_thread: bool = False,
+        redact_sensitive_data: bool = True,
     ):
         super().__init__()
         self.include_source = include_source
         self.include_process = include_process
         self.include_thread = include_thread
-    
+        self.redact_sensitive_data = redact_sensitive_data
+        self.redaction_config = RedactionConfig() if redact_sensitive_data else None
+
     def format(self, record: logging.LogRecord) -> str:
-        """Format log record as JSON string."""
+        """Format log record as JSON string with sensitive data redaction."""
         log_data = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
         }
-        
+
         # Add correlation ID if available
         cid = get_correlation_id()
         if cid:
             log_data["correlation_id"] = cid
-        
+
         # Add source location
         if self.include_source:
             log_data["source"] = {
@@ -88,24 +95,24 @@ class JSONFormatter(logging.Formatter):
                 "function": record.funcName,
                 "line": record.lineno,
             }
-        
+
         # Add process/thread info if requested
         if self.include_process:
             log_data["process"] = {
                 "id": record.process,
                 "name": record.processName,
             }
-        
+
         if self.include_thread:
             log_data["thread"] = {
                 "id": record.thread,
                 "name": record.threadName,
             }
-        
+
         # Add exception info if present
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
-        
+
         # Add any extra fields from the log call
         extra = {}
         for key, value in record.__dict__.items():
@@ -115,10 +122,14 @@ class JSONFormatter(logging.Formatter):
                     extra[key] = value
                 except (TypeError, ValueError):
                     extra[key] = str(value)
-        
+
         if extra:
             log_data["extra"] = extra
-        
+
+        # Apply sensitive data redaction (REQ-SEC-007)
+        if self.redact_sensitive_data and self.redaction_config:
+            log_data = redact_sensitive(log_data, self.redaction_config)
+
         return json.dumps(log_data)
 
 

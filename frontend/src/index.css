@@ -162,6 +162,45 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: hsl(0 0% 35%);
   }
+
+  /* Mobile-responsive table wrapper */
+  .table-responsive {
+    @apply overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0;
+  }
+
+  /* Safe area padding for mobile devices with notches */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0);
+  }
+
+  /* Touch-friendly tap targets */
+  .tap-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+
+  /* Hide on mobile, show on desktop */
+  .desktop-only {
+    @apply hidden md:block;
+  }
+
+  /* Show on mobile, hide on desktop */
+  .mobile-only {
+    @apply block md:hidden;
+  }
+
+  /* Responsive text truncation */
+  .truncate-mobile {
+    @apply truncate md:whitespace-normal md:overflow-visible;
+  }
+
+  /* Stack on mobile, row on desktop */
+  .stack-mobile {
+    @apply flex flex-col gap-2 md:flex-row md:items-center;
+  }
 }
 
 /* Animations */

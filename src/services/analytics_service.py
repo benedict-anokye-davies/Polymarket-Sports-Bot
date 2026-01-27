@@ -378,6 +378,10 @@ class AnalyticsService:
         peak = initial_capital
         
         for pos in positions:
+            # Skip positions without a closed_at timestamp
+            if pos.closed_at is None:
+                continue
+                
             pnl = self._calculate_position_pnl(pos)
             equity += pnl
             peak = max(peak, equity)

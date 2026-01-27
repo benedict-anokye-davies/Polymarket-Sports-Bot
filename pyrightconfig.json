@@ -1,0 +1,17 @@
+{
+  "include": ["src"],
+  "exclude": ["**/node_modules", "**/__pycache__", "alembic/versions"],
+  "reportMissingImports": "warning",
+  "reportOptionalMemberAccess": "warning",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownArgumentType": false,
+  "reportPrivateUsage": false,
+  "reportConstantRedefinition": false,
+  "reportIncompatibleMethodOverride": false,
+  "reportIncompatibleVariableOverride": false,
+  "reportGeneralTypeIssues": "warning"
+}

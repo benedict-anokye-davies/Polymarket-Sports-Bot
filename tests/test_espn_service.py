@@ -433,3 +433,38 @@ class TestHTTPClientInitialization:
         
         # Cleanup
         await client1.aclose()
+
+
+class TestSportGroups:
+    """Tests for sport group configuration to fetch all games."""
+    
+    def test_ncaab_has_groups_parameter(self):
+        """NCAA Basketball should have groups=50 for Division I."""
+        service = ESPNService()
+        
+        assert "ncaab" in service.SPORT_GROUPS
+        assert service.SPORT_GROUPS["ncaab"] == "50"
+    
+    def test_ncaaf_has_groups_parameter(self):
+        """NCAA Football should have groups=80 for FBS."""
+        service = ESPNService()
+        
+        assert "ncaaf" in service.SPORT_GROUPS
+        assert service.SPORT_GROUPS["ncaaf"] == "80"
+    
+    def test_pro_sports_no_groups(self):
+        """Pro sports (NBA, NFL, etc.) should NOT have groups parameter."""
+        service = ESPNService()
+        
+        assert "nba" not in service.SPORT_GROUPS
+        assert "nfl" not in service.SPORT_GROUPS
+        assert "mlb" not in service.SPORT_GROUPS
+        assert "nhl" not in service.SPORT_GROUPS
+    
+    def test_soccer_leagues_have_groups(self):
+        """European soccer leagues should have group IDs."""
+        service = ESPNService()
+        
+        assert "epl" in service.SPORT_GROUPS
+        assert "laliga" in service.SPORT_GROUPS
+        assert "bundesliga" in service.SPORT_GROUPS

@@ -14,6 +14,8 @@ interface ApiError {
 
 class ApiClient {
   private baseUrl: string;
+  private isRefreshing = false;
+  private refreshPromise: Promise<boolean> | null = null;
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
@@ -23,10 +25,73 @@ class ApiClient {
     return localStorage.getItem('auth_token');
   }
 
+  private getRefreshToken(): string | null {
+    return localStorage.getItem('refresh_token');
+  }
+
+  private setTokens(accessToken: string, refreshToken?: string): void {
+    localStorage.setItem('auth_token', accessToken);
+    if (refreshToken) {
+      localStorage.setItem('refresh_token', refreshToken);
+    }
+  }
+
+  private clearTokens(): void {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('refresh_token');
+  }
+
+  /**
+   * Attempt to refresh the access token using the refresh token.
+   * Uses a singleton pattern to prevent multiple concurrent refresh attempts.
+   */
+  private async attemptTokenRefresh(): Promise<boolean> {
+    // If already refreshing, wait for that to complete
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    const refreshToken = this.getRefreshToken();
+    if (!refreshToken) {
+      return false;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = this.doTokenRefresh(refreshToken);
+
+    try {
+      return await this.refreshPromise;
+    } finally {
+      this.isRefreshing = false;
+      this.refreshPromise = null;
+    }
+  }
+
+  private async doTokenRefresh(refreshToken: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = await response.json();
+      this.setTokens(data.access_token, data.refresh_token);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    timeoutMs: number = DEFAULT_TIMEOUT_MS
+    timeoutMs: number = DEFAULT_TIMEOUT_MS,
+    isRetry: boolean = false
   ): Promise<T> {
     const token = this.getToken();
 
@@ -50,8 +115,22 @@ class ApiClient {
       });
 
       if (!response.ok) {
+        // On 401, attempt token refresh (but only once)
+        if (response.status === 401 && !isRetry) {
+          const refreshed = await this.attemptTokenRefresh();
+          if (refreshed) {
+            // Retry the original request with the new token
+            return this.request<T>(endpoint, options, timeoutMs, true);
+          }
+
+          // Refresh failed, clear tokens and redirect to login
+          this.clearTokens();
+          window.location.href = '/login';
+          throw new Error('Unauthorized');
+        }
+
         if (response.status === 401) {
-          localStorage.removeItem('auth_token');
+          this.clearTokens();
           window.location.href = '/login';
           throw new Error('Unauthorized');
         }
@@ -334,6 +413,40 @@ class ApiClient {
     return this.request('/settings/discord/test', { method: 'POST' });
   }
 
+  // Wallet/Credential Status endpoints
+  async getWalletStatus(): Promise<WalletStatusResponse> {
+    return this.request('/settings/wallet');
+  }
+
+  async updateWalletCredentials(credentials: WalletUpdateRequest): Promise<WalletStatusResponse> {
+    return this.request('/settings/wallet', {
+      method: 'PUT',
+      body: JSON.stringify(credentials),
+    });
+  }
+
+  // Session Management endpoints (REQ-SEC-003)
+  async getActiveSessions(): Promise<SessionInfo[]> {
+    return this.request('/auth/sessions');
+  }
+
+  async revokeSession(sessionId: string): Promise<{ message: string }> {
+    return this.request(`/auth/sessions/${sessionId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async logoutAllDevices(): Promise<{ message: string }> {
+    const refreshToken = localStorage.getItem('refresh_token');
+    return this.request('/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({
+        logout_all_devices: true,
+        refresh_token: refreshToken,
+      }),
+    });
+  }
+
   // Legacy Settings endpoints (for backwards compatibility)
   async getSettings(): Promise<Settings> {
     return this.request('/settings');
@@ -565,6 +678,35 @@ export interface GlobalSettingsUpdate {
   current_losing_streak?: number;
   max_losing_streak?: number;
   streak_reduction_pct?: number;
+}
+
+// Wallet/Credential Status Types
+export interface WalletStatusResponse {
+  is_connected: boolean;
+  platform: 'kalshi' | 'polymarket' | null;
+  masked_identifier: string | null;
+  last_tested_at: string | null;
+  connection_error: string | null;
+}
+
+export interface WalletUpdateRequest {
+  platform: 'kalshi' | 'polymarket';
+  // Kalshi credentials
+  api_key?: string;
+  api_secret?: string;
+  // Polymarket credentials
+  private_key?: string;
+  funder_address?: string;
+}
+
+// Session Management Types (REQ-SEC-003)
+export interface SessionInfo {
+  id: string;
+  device_info: string | null;
+  ip_address: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string;
 }
 
 export interface PositionSummary {
@@ -904,6 +1046,270 @@ export interface ESPNGame {
   close_time?: string;
 }
 
-// Export singleton instance
+// =============================================================================
+// WebSocket Client (REQ-UX-002)
+// =============================================================================
+
+export type WebSocketEventType =
+  | 'trade_executed'
+  | 'position_opened'
+  | 'position_closed'
+  | 'position_updated'
+  | 'order_placed'
+  | 'order_filled'
+  | 'order_cancelled'
+  | 'bot_started'
+  | 'bot_stopped'
+  | 'bot_error'
+  | 'bot_status_changed'
+  | 'market_alert'
+  | 'price_update'
+  | 'connection_established'
+  | 'heartbeat'
+  | 'error'
+  | 'daily_loss_warning'
+  | 'kill_switch_activated';
+
+export interface WebSocketMessage {
+  event: WebSocketEventType;
+  data: Record<string, unknown>;
+  timestamp: string;
+  correlation_id?: string;
+}
+
+export type WebSocketEventHandler = (message: WebSocketMessage) => void;
+
+export interface WebSocketClientOptions {
+  reconnect?: boolean;
+  maxReconnectAttempts?: number;
+  initialReconnectDelay?: number;
+  maxReconnectDelay?: number;
+  heartbeatInterval?: number;
+}
+
+/**
+ * WebSocket client with automatic reconnection and exponential backoff.
+ *
+ * Usage:
+ *   const wsClient = new WebSocketClient();
+ *   wsClient.on('trade_executed', (msg) => console.log('Trade:', msg.data));
+ *   wsClient.connect();
+ */
+export class WebSocketClient {
+  private ws: WebSocket | null = null;
+  private baseUrl: string;
+  private options: Required<WebSocketClientOptions>;
+  private eventHandlers: Map<WebSocketEventType | '*', Set<WebSocketEventHandler>> = new Map();
+  private reconnectAttempts = 0;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private isConnecting = false;
+  private manualDisconnect = false;
+
+  constructor(options: WebSocketClientOptions = {}) {
+    // Convert HTTP URL to WebSocket URL
+    const httpUrl = API_BASE_URL.replace(/\/api\/v1$/, '');
+    this.baseUrl = httpUrl.replace(/^http/, 'ws');
+
+    this.options = {
+      reconnect: options.reconnect ?? true,
+      maxReconnectAttempts: options.maxReconnectAttempts ?? 10,
+      initialReconnectDelay: options.initialReconnectDelay ?? 1000,
+      maxReconnectDelay: options.maxReconnectDelay ?? 30000,
+      heartbeatInterval: options.heartbeatInterval ?? 30000,
+    };
+  }
+
+  /**
+   * Connect to the WebSocket server.
+   */
+  connect(): void {
+    if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) {
+      return;
+    }
+
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      console.warn('WebSocket: No auth token, skipping connection');
+      return;
+    }
+
+    this.isConnecting = true;
+    this.manualDisconnect = false;
+
+    const wsUrl = `${this.baseUrl}/api/v1/ws?token=${encodeURIComponent(token)}`;
+
+    try {
+      this.ws = new WebSocket(wsUrl);
+      this.setupEventListeners();
+    } catch (error) {
+      console.error('WebSocket connection error:', error);
+      this.isConnecting = false;
+      this.scheduleReconnect();
+    }
+  }
+
+  /**
+   * Disconnect from the WebSocket server.
+   */
+  disconnect(): void {
+    this.manualDisconnect = true;
+    this.clearReconnectTimeout();
+    this.clearHeartbeat();
+
+    if (this.ws) {
+      this.ws.close(1000, 'Client disconnect');
+      this.ws = null;
+    }
+  }
+
+  /**
+   * Register an event handler.
+   * Use '*' to listen to all events.
+   */
+  on(event: WebSocketEventType | '*', handler: WebSocketEventHandler): void {
+    if (!this.eventHandlers.has(event)) {
+      this.eventHandlers.set(event, new Set());
+    }
+    this.eventHandlers.get(event)!.add(handler);
+  }
+
+  /**
+   * Remove an event handler.
+   */
+  off(event: WebSocketEventType | '*', handler: WebSocketEventHandler): void {
+    this.eventHandlers.get(event)?.delete(handler);
+  }
+
+  /**
+   * Send a message to the server.
+   */
+  send(action: string, data?: Record<string, unknown>): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket: Cannot send, not connected');
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ action, ...data }));
+  }
+
+  /**
+   * Request a ping/heartbeat from the server.
+   */
+  ping(): void {
+    this.send('ping');
+  }
+
+  /**
+   * Check if connected.
+   */
+  get isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  private setupEventListeners(): void {
+    if (!this.ws) return;
+
+    this.ws.onopen = () => {
+      console.log('WebSocket connected');
+      this.isConnecting = false;
+      this.reconnectAttempts = 0;
+      this.startHeartbeat();
+    };
+
+    this.ws.onmessage = (event) => {
+      try {
+        const message: WebSocketMessage = JSON.parse(event.data);
+        this.dispatchEvent(message);
+      } catch (error) {
+        console.error('WebSocket: Failed to parse message:', error);
+      }
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    this.ws.onclose = (event) => {
+      console.log(`WebSocket closed: ${event.code} ${event.reason}`);
+      this.isConnecting = false;
+      this.clearHeartbeat();
+
+      if (!this.manualDisconnect && this.options.reconnect) {
+        this.scheduleReconnect();
+      }
+    };
+  }
+
+  private dispatchEvent(message: WebSocketMessage): void {
+    // Dispatch to specific event handlers
+    const handlers = this.eventHandlers.get(message.event as WebSocketEventType);
+    if (handlers) {
+      handlers.forEach((handler) => {
+        try {
+          handler(message);
+        } catch (error) {
+          console.error('WebSocket event handler error:', error);
+        }
+      });
+    }
+
+    // Dispatch to wildcard handlers
+    const wildcardHandlers = this.eventHandlers.get('*');
+    if (wildcardHandlers) {
+      wildcardHandlers.forEach((handler) => {
+        try {
+          handler(message);
+        } catch (error) {
+          console.error('WebSocket wildcard handler error:', error);
+        }
+      });
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
+      console.error('WebSocket: Max reconnect attempts reached');
+      return;
+    }
+
+    // Exponential backoff with jitter
+    const delay = Math.min(
+      this.options.initialReconnectDelay * Math.pow(2, this.reconnectAttempts) + Math.random() * 1000,
+      this.options.maxReconnectDelay
+    );
+
+    console.log(`WebSocket: Reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts + 1})`);
+
+    this.reconnectTimeout = setTimeout(() => {
+      this.reconnectAttempts++;
+      this.connect();
+    }, delay);
+  }
+
+  private clearReconnectTimeout(): void {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+  }
+
+  private startHeartbeat(): void {
+    this.clearHeartbeat();
+    this.heartbeatInterval = setInterval(() => {
+      this.ping();
+    }, this.options.heartbeatInterval);
+  }
+
+  private clearHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+}
+
+// Export singleton instances
 export const apiClient = new ApiClient();
+export const wsClient = new WebSocketClient();
 export default apiClient;

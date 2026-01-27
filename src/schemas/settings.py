@@ -5,7 +5,29 @@ Settings schemas for sport configs and global settings.
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from pydantic import BaseModel, Field
+
+
+# Wallet/Credential schemas
+class WalletStatusResponse(BaseModel):
+    """Response schema for wallet connection status."""
+    is_connected: bool
+    platform: Literal["kalshi", "polymarket"] | None = None
+    masked_identifier: str | None = None  # "XXXX...1234" or "0x1234...abcd"
+    last_tested_at: datetime | None = None
+    connection_error: str | None = None
+
+
+class WalletUpdateRequest(BaseModel):
+    """Request schema for updating wallet credentials."""
+    platform: Literal["kalshi", "polymarket"]
+    # Kalshi credentials
+    api_key: str | None = None
+    api_secret: str | None = None  # RSA private key for Kalshi
+    # Polymarket credentials
+    private_key: str | None = None
+    funder_address: str | None = None
 
 
 # Expanded list of supported sports

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Eye, EyeOff, Bell, Shield, Wallet, TestTube2, Save, Loader2, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, Bell, Shield, Wallet, TestTube2, Save, Loader2, ShieldAlert, RefreshCw, Monitor, Smartphone, Trash2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { apiClient, SportConfigResponse } from '@/api/client';
+import { apiClient, SportConfigResponse, WalletStatusResponse, SessionInfo } from '@/api/client';
 import { useSportConfigs, useGlobalSettings, useUpdateSportConfig, useUpdateGlobalSettings } from '@/hooks/useApi';
 
 // Wallet credentials interface
@@ -48,7 +48,12 @@ export default function Settings() {
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
 
-  // Wallet credentials
+  // Wallet status from server
+  const [walletStatus, setWalletStatus] = useState<WalletStatusResponse | null>(null);
+  const [loadingWalletStatus, setLoadingWalletStatus] = useState(true);
+  const [showCredentialForm, setShowCredentialForm] = useState(false);
+
+  // Wallet credentials for editing
   const [wallet, setWallet] = useState<WalletCredentials>({
     platform: 'kalshi',
     api_key: '',
@@ -57,6 +62,89 @@ export default function Settings() {
     funder_address: '',
   });
   const [walletConnected, setWalletConnected] = useState(false);
+
+  // Session management state
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [revokingSession, setRevokingSession] = useState<string | null>(null);
+
+  // Fetch wallet status on mount
+  useEffect(() => {
+    const fetchWalletStatus = async () => {
+      try {
+        setLoadingWalletStatus(true);
+        const status = await apiClient.getWalletStatus();
+        setWalletStatus(status);
+        setWalletConnected(status.is_connected);
+        if (status.is_connected && status.platform) {
+          setWallet(prev => ({ ...prev, platform: status.platform! }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch wallet status:', error);
+      } finally {
+        setLoadingWalletStatus(false);
+      }
+    };
+    fetchWalletStatus();
+  }, []);
+
+  // Fetch active sessions on mount
+  useEffect(() => {
+    const fetchSessions = async () => {
+      try {
+        setLoadingSessions(true);
+        const activeSessions = await apiClient.getActiveSessions();
+        setSessions(activeSessions);
+      } catch (error) {
+        console.error('Failed to fetch sessions:', error);
+      } finally {
+        setLoadingSessions(false);
+      }
+    };
+    fetchSessions();
+  }, []);
+
+  // Handle session revocation
+  const handleRevokeSession = async (sessionId: string) => {
+    try {
+      setRevokingSession(sessionId);
+      await apiClient.revokeSession(sessionId);
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      toast({
+        title: 'Session Revoked',
+        description: 'The session has been logged out.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to revoke session.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRevokingSession(null);
+    }
+  };
+
+  // Handle logout all devices
+  const handleLogoutAllDevices = async () => {
+    try {
+      await apiClient.logoutAllDevices();
+      toast({
+        title: 'Success',
+        description: 'All devices have been logged out. You will be redirected to login.',
+      });
+      // Clear local auth and redirect
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
+      window.location.href = '/login';
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to logout all devices.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // React Query hooks
   const { data: sportConfigsData, isLoading: loadingSports } = useSportConfigs();
@@ -186,6 +274,21 @@ export default function Settings() {
         funderAddress: !isKalshi ? wallet.funder_address : undefined,
       });
       setWalletConnected(true);
+
+      // Refresh wallet status to show connected state
+      const updatedStatus = await apiClient.getWalletStatus();
+      setWalletStatus(updatedStatus);
+
+      // Hide credential form and clear fields
+      setShowCredentialForm(false);
+      setWallet({
+        platform: updatedStatus.platform || 'kalshi',
+        api_key: '',
+        api_secret: '',
+        api_passphrase: '',
+        funder_address: '',
+      });
+
       toast({
         title: 'Success',
         description: `${isKalshi ? 'Kalshi' : 'Polymarket'} connection successful.`,
@@ -292,42 +395,99 @@ export default function Settings() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Platform Selector */}
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">Trading Platform</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setWallet(prev => ({ ...prev, platform: 'kalshi' }))}
-                  className={`p-3 rounded-lg border text-left transition-all ${
-                    wallet.platform === 'kalshi'
-                      ? 'bg-primary/10 border-primary/50'
-                      : 'bg-muted/30 border-border hover:border-primary/30'
-                  }`}
-                >
-                  <span className={`font-medium ${wallet.platform === 'kalshi' ? 'text-primary' : 'text-foreground'}`}>
-                    Kalshi
-                  </span>
-                  <p className="text-xs text-muted-foreground mt-1">US-regulated prediction market</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWallet(prev => ({ ...prev, platform: 'polymarket' }))}
-                  className={`p-3 rounded-lg border text-left transition-all ${
-                    wallet.platform === 'polymarket'
-                      ? 'bg-primary/10 border-primary/50'
-                      : 'bg-muted/30 border-border hover:border-primary/30'
-                  }`}
-                >
-                  <span className={`font-medium ${wallet.platform === 'polymarket' ? 'text-primary' : 'text-foreground'}`}>
-                    Polymarket
-                  </span>
-                  <p className="text-xs text-muted-foreground mt-1">Crypto-based prediction market</p>
-                </button>
+            {/* Show Connected State or Credential Form */}
+            {loadingWalletStatus ? (
+              <div className="space-y-3">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
               </div>
-            </div>
+            ) : walletStatus?.is_connected && !showCredentialForm ? (
+              /* Connected State - Show wallet info */
+              <div className="p-4 bg-primary/10 border border-primary/30 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-3 h-3 bg-primary rounded-full animate-pulse" />
+                    <div>
+                      <p className="font-medium text-foreground">
+                        {walletStatus.platform === 'kalshi' ? 'Kalshi' : 'Polymarket'} Connected
+                      </p>
+                      <p className="text-sm text-muted-foreground font-mono">
+                        {walletStatus.masked_identifier || 'Credentials saved'}
+                      </p>
+                      {walletStatus.last_tested_at && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Last verified: {new Date(walletStatus.last_tested_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="border-border hover:bg-muted"
+                    onClick={() => setShowCredentialForm(true)}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Update Credentials
+                  </Button>
+                </div>
+                {walletStatus.connection_error && (
+                  <p className="text-sm text-destructive mt-2">{walletStatus.connection_error}</p>
+                )}
+              </div>
+            ) : (
+              /* Credential Form - Show when not connected or updating */
+              <>
+                {showCredentialForm && walletStatus?.is_connected && (
+                  <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg mb-4">
+                    <span className="text-sm text-muted-foreground">
+                      Currently connected to {walletStatus.platform === 'kalshi' ? 'Kalshi' : 'Polymarket'}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowCredentialForm(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
 
-            <Separator />
+                {/* Platform Selector */}
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground">Trading Platform</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setWallet(prev => ({ ...prev, platform: 'kalshi' }))}
+                      className={`p-3 rounded-lg border text-left transition-all ${
+                        wallet.platform === 'kalshi'
+                          ? 'bg-primary/10 border-primary/50'
+                          : 'bg-muted/30 border-border hover:border-primary/30'
+                      }`}
+                    >
+                      <span className={`font-medium ${wallet.platform === 'kalshi' ? 'text-primary' : 'text-foreground'}`}>
+                        Kalshi
+                      </span>
+                      <p className="text-xs text-muted-foreground mt-1">US-regulated prediction market</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWallet(prev => ({ ...prev, platform: 'polymarket' }))}
+                      className={`p-3 rounded-lg border text-left transition-all ${
+                        wallet.platform === 'polymarket'
+                          ? 'bg-primary/10 border-primary/50'
+                          : 'bg-muted/30 border-border hover:border-primary/30'
+                      }`}
+                    >
+                      <span className={`font-medium ${wallet.platform === 'polymarket' ? 'text-primary' : 'text-foreground'}`}>
+                        Polymarket
+                      </span>
+                      <p className="text-xs text-muted-foreground mt-1">Crypto-based prediction market</p>
+                    </button>
+                  </div>
+                </div>
+
+                <Separator />
 
             {/* Kalshi Credentials */}
             {wallet.platform === 'kalshi' ? (
@@ -447,6 +607,8 @@ export default function Settings() {
                 Test Connection
               </Button>
             </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -873,6 +1035,103 @@ export default function Settings() {
                   discord_alerts_enabled: checked
                 } : null)}
               />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Session Management (REQ-SEC-003) */}
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+              <Monitor className="w-5 h-5 text-primary" />
+              Active Sessions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Manage devices where you're currently logged in. Revoke access to any device you don't recognize.
+            </p>
+
+            {loadingSessions ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <Monitor className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No active sessions found</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sessions.map((session) => {
+                  const isCurrentSession = session.id === 'current'; // You might want to mark the current session
+                  const isMobile = session.device_info?.toLowerCase().includes('mobile') ||
+                                   session.device_info?.toLowerCase().includes('android') ||
+                                   session.device_info?.toLowerCase().includes('iphone');
+
+                  return (
+                    <div
+                      key={session.id}
+                      className="flex items-center justify-between p-3 bg-muted/30 border border-border rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        {isMobile ? (
+                          <Smartphone className="w-5 h-5 text-muted-foreground" />
+                        ) : (
+                          <Monitor className="w-5 h-5 text-muted-foreground" />
+                        )}
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            {session.device_info || 'Unknown Device'}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            {session.ip_address && <span>{session.ip_address}</span>}
+                            {session.ip_address && session.last_used_at && <span>•</span>}
+                            {session.last_used_at && (
+                              <span>Last active: {new Date(session.last_used_at).toLocaleDateString()}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Expires: {new Date(session.expires_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => handleRevokeSession(session.id)}
+                        disabled={revokingSession === session.id}
+                      >
+                        {revokingSession === session.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <Separator className="bg-border" />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">Logout All Devices</p>
+                <p className="text-xs text-muted-foreground">End all sessions including this one</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-destructive text-destructive hover:bg-destructive/10"
+                onClick={handleLogoutAllDevices}
+              >
+                Logout All
+              </Button>
             </div>
           </CardContent>
         </Card>

@@ -6,12 +6,13 @@ Implements RSA-signed authentication and order management.
 import base64
 import json
 import time
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, cast
 from datetime import datetime, timezone
 from dataclasses import dataclass
 import httpx
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.backends import default_backend
 
 from src.core.exceptions import TradingError, RateLimitError
@@ -82,11 +83,17 @@ class KalshiAuthenticator:
         
         try:
             key_bytes = private_key_pem.encode() if isinstance(private_key_pem, str) else private_key_pem
-            self.private_key = serialization.load_pem_private_key(
+            loaded_key = serialization.load_pem_private_key(
                 key_bytes,
                 password=None,
                 backend=default_backend()
             )
+            # Kalshi requires RSA keys specifically
+            if not isinstance(loaded_key, RSAPrivateKey):
+                raise TradingError(
+                    "Kalshi requires an RSA private key. The provided key is not an RSA key."
+                )
+            self.private_key: RSAPrivateKey = loaded_key
         except ValueError as e:
             raise TradingError(
                 f"Invalid RSA private key format. The key must be in PEM format "

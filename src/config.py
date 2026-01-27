@@ -37,7 +37,39 @@ class Settings(BaseSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
-    
+
+    # CORS Configuration
+    # Comma-separated list of allowed origins, or "*" for all (not recommended for production)
+    # Includes localhost for development and common deployment platforms
+    cors_allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173,https://polymarket-sports-bot.netlify.app,https://polymarket-sports-bot.vercel.app,https://polymarket-sports-bot.pages.dev"
+    cors_allow_credentials: bool = True
+    cors_allow_methods: str = "GET,POST,PUT,DELETE,PATCH,OPTIONS"
+    cors_allow_headers: str = "Authorization,Content-Type,X-Request-ID"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """
+        Parses comma-separated CORS origins into a list.
+        Returns ["*"] if cors_allowed_origins is set to "*".
+        """
+        if self.cors_allowed_origins.strip() == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def cors_methods_list(self) -> list[str]:
+        """Parses comma-separated CORS methods into a list."""
+        if self.cors_allow_methods.strip() == "*":
+            return ["*"]
+        return [method.strip() for method in self.cors_allow_methods.split(",") if method.strip()]
+
+    @property
+    def cors_headers_list(self) -> list[str]:
+        """Parses comma-separated CORS headers into a list."""
+        if self.cors_allow_headers.strip() == "*":
+            return ["*"]
+        return [header.strip() for header in self.cors_allow_headers.split(",") if header.strip()]
+
     # Discord webhook for alerts
     discord_webhook_url: str | None = None
     

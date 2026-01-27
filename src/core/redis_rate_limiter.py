@@ -401,7 +401,7 @@ async def create_redis_rate_limiter(
         Configured RedisRateLimiter instance
     """
     try:
-        import redis.asyncio as aioredis
+        import redis.asyncio as aioredis  # type: ignore[import-untyped]
         
         client = aioredis.from_url(
             redis_url,

@@ -193,28 +193,33 @@ class AccountManager:
             return None
         
         try:
-            private_key = decrypt_credential(
-                account.encrypted_private_key,
-                settings.SECRET_KEY
-            )
+            private_key = decrypt_credential(account.private_key_encrypted) if account.private_key_encrypted else None
+            
+            if not private_key:
+                logger.error(f"No private key found for account {account_id}")
+                return None
+            
+            if not account.funder_address:
+                logger.error(f"No funder address found for account {account_id}")
+                return None
             
             api_key = None
             api_secret = None
             api_passphrase = None
             
-            if account.encrypted_api_key:
-                api_key = decrypt_credential(account.encrypted_api_key, settings.SECRET_KEY)
-            if account.encrypted_api_secret:
-                api_secret = decrypt_credential(account.encrypted_api_secret, settings.SECRET_KEY)
-            if account.encrypted_api_passphrase:
-                api_passphrase = decrypt_credential(account.encrypted_api_passphrase, settings.SECRET_KEY)
+            if account.api_key_encrypted:
+                api_key = decrypt_credential(account.api_key_encrypted)
+            if account.api_secret_encrypted:
+                api_secret = decrypt_credential(account.api_secret_encrypted)
+            if account.api_passphrase_encrypted:
+                api_passphrase = decrypt_credential(account.api_passphrase_encrypted)
             
             client = PolymarketClient(
                 private_key=private_key,
                 funder_address=account.funder_address,
                 api_key=api_key,
                 api_secret=api_secret,
-                api_passphrase=api_passphrase,
+                passphrase=api_passphrase,
             )
             
             self._clients_cache[account_id] = client

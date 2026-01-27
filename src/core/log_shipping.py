@@ -95,7 +95,7 @@ class CloudWatchDestination(LogDestination):
             return
         
         try:
-            import boto3
+            import boto3  # type: ignore[import-untyped]
             
             self._client = boto3.client("logs", region_name=self._region)
             
@@ -196,7 +196,7 @@ class ElasticsearchDestination(LogDestination):
         """Get or create Elasticsearch client."""
         if self._client is None:
             try:
-                from elasticsearch import AsyncElasticsearch
+                from elasticsearch import AsyncElasticsearch  # type: ignore[import-untyped]
                 
                 kwargs = {
                     "hosts": self._hosts,
