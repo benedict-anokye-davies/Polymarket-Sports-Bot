@@ -5,7 +5,7 @@ Core logic for automated trading decisions.
 
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,9 @@ from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
 from src.db.crud.market_config import MarketConfigCRUD
 from src.services.polymarket_client import PolymarketClient
+from src.services.confidence_scorer import ConfidenceScorer, ConfidenceResult
+from src.services.kelly_calculator import KellyCalculator, KellyResult
+from src.services.balance_guardian import BalanceGuardian
 
 
 logger = logging.getLogger(__name__)
@@ -105,6 +108,21 @@ class EffectiveConfig:
     def allowed_entry_segments(self) -> list[str]:
         """Get allowed entry segments from sport config."""
         return self.sport_config.allowed_entry_segments
+    
+    @property
+    def use_kelly_sizing(self) -> bool:
+        """Check if Kelly criterion sizing is enabled."""
+        return getattr(self.sport_config, 'use_kelly_sizing', False)
+    
+    @property
+    def kelly_fraction(self) -> float:
+        """Get Kelly fraction for position sizing."""
+        return float(getattr(self.sport_config, 'kelly_fraction', Decimal('0.25')))
+    
+    @property
+    def min_entry_confidence_score(self) -> float:
+        """Get minimum confidence score required for entry."""
+        return float(getattr(self.sport_config, 'min_entry_confidence_score', Decimal('0.6')))
 
 
 class TradingEngine:
@@ -114,6 +132,11 @@ class TradingEngine:
     
     Supports per-market configuration overrides that take precedence
     over sport-level defaults.
+    
+    Integrates:
+    - Confidence scoring for entry signal quality
+    - Kelly criterion for optimal position sizing
+    - Balance guardian for risk management
     """
     
     def __init__(
@@ -123,7 +146,8 @@ class TradingEngine:
         polymarket_client: PolymarketClient,
         global_settings: GlobalSettings,
         sport_configs: dict[str, SportConfig],
-        market_configs: dict[str, MarketConfig] | None = None
+        market_configs: dict[str, MarketConfig] | None = None,
+        balance_guardian: Optional[BalanceGuardian] = None,
     ):
         """
         Initializes the trading engine.
@@ -135,6 +159,7 @@ class TradingEngine:
             global_settings: User's global settings
             sport_configs: Dictionary of sport -> config mappings
             market_configs: Dictionary of condition_id -> market config overrides
+            balance_guardian: Optional balance guardian for risk checks
         """
         self.db = db
         self.user_id = user_id
@@ -142,6 +167,10 @@ class TradingEngine:
         self.settings = global_settings
         self.sport_configs = sport_configs
         self.market_configs = market_configs or {}
+        self.balance_guardian = balance_guardian
+        
+        self.confidence_scorer = ConfidenceScorer()
+        self.kelly_calculator = KellyCalculator()
     
     def _get_effective_config(self, market: TrackedMarket) -> EffectiveConfig | None:
         """
@@ -170,6 +199,8 @@ class TradingEngine:
         Evaluates whether entry conditions are met for a market.
         Uses market-specific config if available, otherwise sport defaults.
         
+        Includes confidence scoring and optional Kelly sizing.
+        
         Args:
             market: Tracked market to evaluate
             game_state: Current game state from ESPN
@@ -185,6 +216,13 @@ class TradingEngine:
         if not config.auto_trade:
             logger.debug(f"Auto-trade disabled for market {market.condition_id}")
             return None
+        
+        # Check balance guardian kill switch
+        if self.balance_guardian:
+            status = await self.balance_guardian.get_status()
+            if status.get("kill_switch", {}).get("triggered"):
+                logger.warning("Kill switch active - blocking entry")
+                return None
         
         if not game_state.get("is_live"):
             return None
@@ -212,6 +250,36 @@ class TradingEngine:
             return None
         
         entry_signal = self._check_price_conditions(market, config)
+        
+        if entry_signal:
+            # Calculate confidence score
+            confidence_result = self._calculate_confidence(
+                market, game_state, config
+            )
+            
+            if confidence_result.overall_score < config.min_entry_confidence_score:
+                logger.info(
+                    f"Confidence score {confidence_result.overall_score:.2f} below "
+                    f"threshold {config.min_entry_confidence_score:.2f}"
+                )
+                return None
+            
+            entry_signal["confidence_score"] = confidence_result.overall_score
+            entry_signal["confidence_breakdown"] = confidence_result.breakdown
+            entry_signal["confidence_recommendation"] = confidence_result.recommendation
+            
+            # Calculate position size with Kelly if enabled
+            position_size = await self._calculate_position_size(
+                config, confidence_result, market
+            )
+            entry_signal["position_size"] = position_size
+            
+            # Apply streak reduction if applicable
+            if self.balance_guardian:
+                multiplier = await self.balance_guardian.calculate_streak_adjustment()
+                if multiplier < 1.0:
+                    entry_signal["position_size"] *= multiplier
+                    entry_signal["streak_adjustment"] = multiplier
         
         return entry_signal
     
@@ -261,6 +329,99 @@ class TradingEngine:
             }
         
         return None
+    
+    def _calculate_confidence(
+        self,
+        market: TrackedMarket,
+        game_state: dict[str, Any],
+        config: EffectiveConfig,
+    ) -> ConfidenceResult:
+        """
+        Calculate multi-factor confidence score for entry.
+        
+        Args:
+            market: Market being evaluated
+            game_state: Current game state
+            config: Effective configuration
+        
+        Returns:
+            ConfidenceResult with overall score and factor breakdown
+        """
+        current_price = market.current_price_yes or Decimal("0.5")
+        baseline_price = market.baseline_price_yes or Decimal("0.5")
+        
+        time_remaining = game_state.get("time_remaining_seconds", 0)
+        total_period = game_state.get("total_period_seconds", 720)
+        current_period = game_state.get("period", 1)
+        total_periods = game_state.get("total_periods", 4)
+        
+        score_diff = game_state.get("score_diff")
+        
+        return self.confidence_scorer.calculate_confidence(
+            current_price=current_price,
+            baseline_price=baseline_price,
+            time_remaining_seconds=time_remaining,
+            total_period_seconds=total_period,
+            orderbook=None,
+            recent_prices=None,
+            game_score_diff=score_diff,
+            current_period=current_period,
+            total_periods=total_periods,
+        )
+    
+    async def _calculate_position_size(
+        self,
+        config: EffectiveConfig,
+        confidence: ConfidenceResult,
+        market: TrackedMarket,
+    ) -> float:
+        """
+        Calculate optimal position size using Kelly criterion or default.
+        
+        Args:
+            config: Effective configuration
+            confidence: Confidence score result
+            market: Market being traded
+        
+        Returns:
+            Position size in USDC
+        """
+        default_size = float(config.default_position_size_usdc)
+        
+        if not config.use_kelly_sizing:
+            return default_size
+        
+        try:
+            balance = await self.client.get_balance()
+            bankroll = Decimal(str(balance.get("balance", 1000) if isinstance(balance, dict) else balance or 1000))
+            
+            current_price = market.current_price_yes or Decimal("0.5")
+            
+            win_prob = 0.5 + (confidence.overall_score - 0.5) * 0.3
+            
+            trade_stats = await PositionCRUD.get_trade_stats(self.db, self.user_id)
+            historical_win_rate = trade_stats.get("win_rate") if trade_stats else None
+            sample_size = trade_stats.get("total_trades", 0) if trade_stats else 0
+            
+            self.kelly_calculator.kelly_fraction = config.kelly_fraction
+            
+            kelly_result = self.kelly_calculator.calculate(
+                bankroll=bankroll,
+                current_price=current_price,
+                estimated_win_prob=win_prob,
+                historical_win_rate=historical_win_rate,
+                historical_sample_size=sample_size,
+                max_position_size=Decimal(str(default_size * 2)),
+            )
+            
+            if kelly_result.recommended_contracts > 0:
+                kelly_size = kelly_result.adjusted_size
+                return min(kelly_size, default_size * 2)
+            
+        except Exception as e:
+            logger.warning(f"Kelly calculation failed, using default: {e}")
+        
+        return default_size
     
     async def evaluate_exit(
         self,
@@ -350,6 +511,9 @@ class TradingEngine:
         
         size = position_size / price if price > 0 else 0
         
+        confidence_score = entry_signal.get("confidence_score")
+        confidence_breakdown = entry_signal.get("confidence_breakdown")
+        
         try:
             if dry_run:
                 # Simulate order in paper trading mode
@@ -378,7 +542,10 @@ class TradingEngine:
                 entry_reason=entry_signal["reason"],
                 entry_order_id=result.get("id"),
                 tracked_market_id=market.id,
-                team=market.home_team if side == "YES" else market.away_team
+                team=market.home_team if side == "YES" else market.away_team,
+                requested_entry_price=Decimal(str(price)),
+                entry_confidence_score=Decimal(str(confidence_score)) if confidence_score else None,
+                entry_confidence_breakdown=confidence_breakdown,
             )
             
             mode_prefix = "[PAPER] " if dry_run else ""
@@ -471,6 +638,11 @@ class TradingEngine:
             )
             
             pnl = closed_position.realized_pnl_usdc
+            
+            # Record trade outcome for streak tracking
+            if self.balance_guardian and pnl is not None:
+                is_win = float(pnl) > 0
+                await self.balance_guardian.record_trade_outcome(is_win)
             
             mode_prefix = "[PAPER] " if dry_run else ""
             await ActivityLogCRUD.info(

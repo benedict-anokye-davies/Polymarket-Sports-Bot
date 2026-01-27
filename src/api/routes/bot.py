@@ -585,13 +585,13 @@ async def place_manual_order(
             # Use Kalshi client
             from src.services.kalshi_client import KalshiClient
             
-            kalshi_key = credentials.get("kalshi_api_key")
-            kalshi_private = credentials.get("kalshi_private_key")
+            kalshi_key = credentials.get("api_key")
+            kalshi_private = credentials.get("api_secret")
             
             if not kalshi_key or not kalshi_private:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Kalshi credentials not configured"
+                    detail="Kalshi credentials not configured. Please complete onboarding with Kalshi API key and secret."
                 )
             
             client = KalshiClient(kalshi_key, kalshi_private)

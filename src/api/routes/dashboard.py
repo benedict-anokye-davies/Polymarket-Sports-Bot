@@ -43,14 +43,35 @@ async def get_dashboard_stats(db: DbSession, current_user: OnboardedUser) -> Das
     
     if credentials:
         try:
-            from src.services.polymarket_client import PolymarketClient
-            client = PolymarketClient(
-                private_key=credentials["private_key"],
-                funder_address=credentials["funder_address"]
-            )
-            balance_usdc = await client.get_balance()
-        except Exception:
-            pass
+            platform = credentials.get("platform", "polymarket")
+            
+            if platform == "kalshi":
+                from src.services.kalshi_client import KalshiClient
+                api_key = credentials.get("api_key")
+                api_secret = credentials.get("api_secret")
+                
+                if api_key and api_secret:
+                    client = KalshiClient(
+                        api_key_id=api_key,
+                        private_key_pem=api_secret
+                    )
+                    balance_data = await client.get_balance()
+                    await client.close()
+                    # Kalshi returns dict with available_balance in cents, convert to dollars
+                    balance_usdc = Decimal(str(balance_data.get("available_balance", 0) / 100))
+            else:
+                from src.services.polymarket_client import PolymarketClient
+                private_key = credentials.get("private_key")
+                funder_address = credentials.get("funder_address")
+                
+                if private_key and funder_address:
+                    client = PolymarketClient(
+                        private_key=private_key,
+                        funder_address=funder_address
+                    )
+                    balance_usdc = await client.get_balance()
+        except Exception as e:
+            logger.warning(f"Failed to fetch balance for user {current_user.id}: {e}")
     
     open_exposure = await PositionCRUD.get_open_exposure(db, current_user.id)
     daily_pnl = await PositionCRUD.get_daily_pnl(db, current_user.id)

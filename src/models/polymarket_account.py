@@ -32,8 +32,25 @@ class PolymarketAccount(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        unique=True,
         nullable=False
+    )
+    
+    # Multi-account support
+    account_name: Mapped[str] = mapped_column(
+        String(100),
+        default="Primary"
+    )
+    is_primary: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True
+    )
+    allocation_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        default=Decimal("100.0")
     )
 
     # Platform selection: 'polymarket' or 'kalshi'

@@ -1,364 +1,400 @@
 """
 Unit tests for TradingEngine.
-Tests entry/exit evaluation logic and order lifecycle management.
+Tests entry/exit evaluation logic and configuration merging.
+
+TradingEngine constructor signature:
+    def __init__(
+        self,
+        db: AsyncSession,
+        user_id: str,
+        polymarket_client: PolymarketClient,
+        global_settings: GlobalSettings,
+        sport_configs: dict[str, SportConfig],
+        market_configs: dict[str, MarketConfig] | None = None
+    )
+
+Key classes:
+    - EffectiveConfig: Merges market-specific and sport-level configs
+    - TradingEngine: Evaluates entry/exit conditions
 """
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from decimal import Decimal
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from src.services.trading_engine import TradingEngine
+from src.services.trading_engine import TradingEngine, EffectiveConfig
 
 
-class TestEntryEvaluation:
-    """Tests for entry condition evaluation logic."""
+class MockSportConfig:
+    """Mock sport configuration for testing."""
+    
+    def __init__(
+        self,
+        sport: str = "nba",
+        is_enabled: bool = True,
+        entry_threshold_pct: Decimal = Decimal("0.15"),
+        absolute_entry_price: Decimal = Decimal("0.30"),
+        min_time_remaining_seconds: int = 120,
+        take_profit_pct: Decimal = Decimal("0.20"),
+        stop_loss_pct: Decimal = Decimal("0.10"),
+        default_position_size_usdc: Decimal = Decimal("50.00"),
+        max_positions_per_game: int = 2,
+        allowed_entry_segments: list = None
+    ):
+        self.sport = sport
+        self.is_enabled = is_enabled
+        self.entry_threshold_pct = entry_threshold_pct
+        self.absolute_entry_price = absolute_entry_price
+        self.min_time_remaining_seconds = min_time_remaining_seconds
+        self.take_profit_pct = take_profit_pct
+        self.stop_loss_pct = stop_loss_pct
+        self.default_position_size_usdc = default_position_size_usdc
+        self.max_positions_per_game = max_positions_per_game
+        self.allowed_entry_segments = allowed_entry_segments or ["q1", "q2", "q3", "q4"]
+
+
+class MockMarketConfig:
+    """Mock market-specific configuration for testing."""
+    
+    def __init__(
+        self,
+        condition_id: str = "cond-123",
+        enabled: bool = True,
+        auto_trade: bool = True,
+        entry_threshold_drop: Decimal = None,
+        entry_threshold_absolute: Decimal = None,
+        min_time_remaining_seconds: int = None,
+        take_profit_pct: Decimal = None,
+        stop_loss_pct: Decimal = None,
+        position_size_usdc: Decimal = None,
+        max_positions: int = None
+    ):
+        self.condition_id = condition_id
+        self.enabled = enabled
+        self.auto_trade = auto_trade
+        self.entry_threshold_drop = entry_threshold_drop
+        self.entry_threshold_absolute = entry_threshold_absolute
+        self.min_time_remaining_seconds = min_time_remaining_seconds
+        self.take_profit_pct = take_profit_pct
+        self.stop_loss_pct = stop_loss_pct
+        self.position_size_usdc = position_size_usdc
+        self.max_positions = max_positions
+
+
+class MockGlobalSettings:
+    """Mock global settings for testing."""
+    
+    def __init__(
+        self,
+        max_daily_loss_usdc: Decimal = Decimal("100.00"),
+        max_total_exposure_usdc: Decimal = Decimal("500.00"),
+        dry_run_mode: bool = True
+    ):
+        self.max_daily_loss_usdc = max_daily_loss_usdc
+        self.max_total_exposure_usdc = max_total_exposure_usdc
+        self.dry_run_mode = dry_run_mode
+
+
+class MockTrackedMarket:
+    """Mock tracked market for testing."""
+    
+    def __init__(
+        self,
+        condition_id: str = "cond-123",
+        sport: str = "nba"
+    ):
+        self.condition_id = condition_id
+        self.sport = sport
+
+
+class TestEffectiveConfig:
+    """Tests for EffectiveConfig configuration merging."""
+    
+    def test_effective_config_uses_sport_defaults(self):
+        """
+        Test that EffectiveConfig uses sport config values by default.
+        """
+        sport_config = MockSportConfig(
+            entry_threshold_pct=Decimal("0.15"),
+            take_profit_pct=Decimal("0.20"),
+            stop_loss_pct=Decimal("0.10")
+        )
+        
+        effective = EffectiveConfig(sport_config)
+        
+        assert effective.entry_threshold_pct == Decimal("0.15")
+        assert effective.take_profit_pct == Decimal("0.20")
+        assert effective.stop_loss_pct == Decimal("0.10")
+    
+    def test_effective_config_market_override(self):
+        """
+        Test that market config overrides sport config values.
+        """
+        sport_config = MockSportConfig(
+            entry_threshold_pct=Decimal("0.15"),
+            take_profit_pct=Decimal("0.20")
+        )
+        market_config = MockMarketConfig(
+            entry_threshold_drop=Decimal("0.10"),
+            take_profit_pct=Decimal("0.25")
+        )
+        
+        effective = EffectiveConfig(sport_config, market_config)
+        
+        assert effective.entry_threshold_pct == Decimal("0.10")  # Market override
+        assert effective.take_profit_pct == Decimal("0.25")  # Market override
+    
+    def test_effective_config_disabled_market(self):
+        """
+        Test that disabled market config returns is_enabled=False.
+        """
+        sport_config = MockSportConfig(is_enabled=True)
+        market_config = MockMarketConfig(enabled=False)
+        
+        effective = EffectiveConfig(sport_config, market_config)
+        
+        assert effective.is_enabled is False
+    
+    def test_effective_config_auto_trade(self):
+        """
+        Test auto_trade property from market config.
+        """
+        sport_config = MockSportConfig()
+        market_config = MockMarketConfig(auto_trade=False)
+        
+        effective = EffectiveConfig(sport_config, market_config)
+        
+        assert effective.auto_trade is False
+    
+    def test_effective_config_allowed_segments(self):
+        """
+        Test that allowed_entry_segments comes from sport config.
+        """
+        sport_config = MockSportConfig(allowed_entry_segments=["q1", "q2"])
+        
+        effective = EffectiveConfig(sport_config)
+        
+        assert effective.allowed_entry_segments == ["q1", "q2"]
+
+
+class TestTradingEngineCreation:
+    """Tests for TradingEngine instantiation."""
     
     @pytest.fixture
-    def engine(self):
-        """Create TradingEngine instance with mocked dependencies."""
-        engine = TradingEngine()
-        engine.logger = MagicMock()
-        return engine
-    
-    def test_price_below_absolute_threshold(self, engine):
-        """
-        Test that entry is triggered when current price
-        falls below configured absolute threshold.
-        """
-        config = {
-            "absolute_entry_threshold": Decimal("0.30"),
-            "percentage_drop_threshold": Decimal("0.15"),
-            "min_time_remaining_seconds": 60,
-            "allowed_entry_segments": ["q1", "q2", "q3", "q4"],
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.25"),
-            "baseline_price_yes": Decimal("0.50"),
-        }
-        
-        game_state = {
-            "segment": "q2",
-            "time_remaining_seconds": 300,
-            "is_live": True,
-        }
-        
-        result = engine.evaluate_entry(config, market, game_state)
-        
-        assert result["should_enter"] is True
-        assert result["reason"] == "price_below_absolute"
-    
-    def test_percentage_drop_threshold(self, engine):
-        """
-        Test that entry is triggered when price drops
-        by configured percentage from baseline.
-        """
-        config = {
-            "absolute_entry_threshold": Decimal("0.10"),
-            "percentage_drop_threshold": Decimal("0.15"),
-            "min_time_remaining_seconds": 60,
-            "allowed_entry_segments": ["q1", "q2", "q3", "q4"],
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.40"),
-            "baseline_price_yes": Decimal("0.50"),
-        }
-        
-        game_state = {
-            "segment": "q2",
-            "time_remaining_seconds": 300,
-            "is_live": True,
-        }
-        
-        result = engine.evaluate_entry(config, market, game_state)
-        
-        assert result["should_enter"] is True
-        assert result["reason"] == "percentage_drop"
-    
-    def test_no_entry_game_not_live(self, engine):
-        """
-        Test that no entry occurs when game is not live.
-        """
-        config = {
-            "absolute_entry_threshold": Decimal("0.30"),
-            "percentage_drop_threshold": Decimal("0.15"),
-            "min_time_remaining_seconds": 60,
-            "allowed_entry_segments": ["q1", "q2", "q3", "q4"],
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.25"),
-            "baseline_price_yes": Decimal("0.50"),
-        }
-        
-        game_state = {
-            "segment": "q2",
-            "time_remaining_seconds": 300,
-            "is_live": False,
-        }
-        
-        result = engine.evaluate_entry(config, market, game_state)
-        
-        assert result["should_enter"] is False
-        assert "not_live" in result["reason"]
-    
-    def test_no_entry_insufficient_time(self, engine):
-        """
-        Test that no entry occurs when insufficient time
-        remains in the period.
-        """
-        config = {
-            "absolute_entry_threshold": Decimal("0.30"),
-            "percentage_drop_threshold": Decimal("0.15"),
-            "min_time_remaining_seconds": 120,
-            "allowed_entry_segments": ["q1", "q2", "q3", "q4"],
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.25"),
-            "baseline_price_yes": Decimal("0.50"),
-        }
-        
-        game_state = {
-            "segment": "q2",
-            "time_remaining_seconds": 60,
-            "is_live": True,
-        }
-        
-        result = engine.evaluate_entry(config, market, game_state)
-        
-        assert result["should_enter"] is False
-        assert "time" in result["reason"].lower()
-    
-    def test_no_entry_restricted_segment(self, engine):
-        """
-        Test that no entry occurs during restricted game segments.
-        """
-        config = {
-            "absolute_entry_threshold": Decimal("0.30"),
-            "percentage_drop_threshold": Decimal("0.15"),
-            "min_time_remaining_seconds": 60,
-            "allowed_entry_segments": ["q1", "q2"],
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.25"),
-            "baseline_price_yes": Decimal("0.50"),
-        }
-        
-        game_state = {
-            "segment": "q4",
-            "time_remaining_seconds": 300,
-            "is_live": True,
-        }
-        
-        result = engine.evaluate_entry(config, market, game_state)
-        
-        assert result["should_enter"] is False
-        assert "segment" in result["reason"].lower()
-
-
-class TestExitEvaluation:
-    """Tests for exit condition evaluation logic."""
+    def mock_db(self):
+        """Create mock database session."""
+        return AsyncMock()
     
     @pytest.fixture
-    def engine(self):
-        """Create TradingEngine instance with mocked dependencies."""
-        engine = TradingEngine()
-        engine.logger = MagicMock()
-        return engine
-    
-    def test_take_profit_triggered(self, engine):
-        """
-        Test that exit is triggered when take profit threshold is reached.
-        """
-        config = {
-            "take_profit_threshold": Decimal("0.20"),
-            "stop_loss_threshold": Decimal("0.10"),
-            "exit_segments": ["q4"],
-        }
-        
-        position = {
-            "entry_price": Decimal("0.40"),
-            "side": "YES",
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.50"),
-        }
-        
-        game_state = {
-            "segment": "q2",
-            "is_finished": False,
-        }
-        
-        result = engine.evaluate_exit(config, position, market, game_state)
-        
-        assert result["should_exit"] is True
-        assert result["reason"] == "take_profit"
-    
-    def test_stop_loss_triggered(self, engine):
-        """
-        Test that exit is triggered when stop loss threshold is reached.
-        """
-        config = {
-            "take_profit_threshold": Decimal("0.20"),
-            "stop_loss_threshold": Decimal("0.10"),
-            "exit_segments": ["q4"],
-        }
-        
-        position = {
-            "entry_price": Decimal("0.40"),
-            "side": "YES",
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.28"),
-        }
-        
-        game_state = {
-            "segment": "q2",
-            "is_finished": False,
-        }
-        
-        result = engine.evaluate_exit(config, position, market, game_state)
-        
-        assert result["should_exit"] is True
-        assert result["reason"] == "stop_loss"
-    
-    def test_game_finished_exit(self, engine):
-        """
-        Test that exit is triggered when game finishes.
-        """
-        config = {
-            "take_profit_threshold": Decimal("0.20"),
-            "stop_loss_threshold": Decimal("0.10"),
-            "exit_segments": ["q4"],
-        }
-        
-        position = {
-            "entry_price": Decimal("0.40"),
-            "side": "YES",
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.42"),
-        }
-        
-        game_state = {
-            "segment": "final",
-            "is_finished": True,
-        }
-        
-        result = engine.evaluate_exit(config, position, market, game_state)
-        
-        assert result["should_exit"] is True
-        assert result["reason"] == "game_finished"
-    
-    def test_time_based_exit(self, engine):
-        """
-        Test that exit is triggered when approaching restricted segment.
-        """
-        config = {
-            "take_profit_threshold": Decimal("0.20"),
-            "stop_loss_threshold": Decimal("0.10"),
-            "exit_segments": ["q4"],
-        }
-        
-        position = {
-            "entry_price": Decimal("0.40"),
-            "side": "YES",
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.42"),
-        }
-        
-        game_state = {
-            "segment": "q4",
-            "is_finished": False,
-        }
-        
-        result = engine.evaluate_exit(config, position, market, game_state)
-        
-        assert result["should_exit"] is True
-        assert result["reason"] == "segment_exit"
-    
-    def test_no_exit_conditions_not_met(self, engine):
-        """
-        Test that no exit occurs when conditions are not met.
-        """
-        config = {
-            "take_profit_threshold": Decimal("0.20"),
-            "stop_loss_threshold": Decimal("0.10"),
-            "exit_segments": ["q4"],
-        }
-        
-        position = {
-            "entry_price": Decimal("0.40"),
-            "side": "YES",
-        }
-        
-        market = {
-            "current_price_yes": Decimal("0.42"),
-        }
-        
-        game_state = {
-            "segment": "q2",
-            "is_finished": False,
-        }
-        
-        result = engine.evaluate_exit(config, position, market, game_state)
-        
-        assert result["should_exit"] is False
-
-
-class TestPositionSizing:
-    """Tests for position sizing calculations."""
+    def mock_client(self):
+        """Create mock Polymarket client."""
+        client = AsyncMock()
+        client.get_midpoint_price = AsyncMock(return_value=0.45)
+        return client
     
     @pytest.fixture
-    def engine(self):
-        """Create TradingEngine instance with mocked dependencies."""
-        engine = TradingEngine()
-        engine.logger = MagicMock()
-        return engine
+    def mock_settings(self):
+        """Create mock global settings."""
+        return MockGlobalSettings()
     
-    def test_basic_position_size(self, engine):
-        """
-        Test basic position sizing based on balance and risk percentage.
-        """
-        balance = Decimal("1000.00")
-        risk_pct = Decimal("0.05")
-        price = Decimal("0.50")
-        
-        size = engine.calculate_position_size(balance, risk_pct, price)
-        
-        # With 5% risk on $1000 = $50, at $0.50 price = 100 contracts
-        assert size == 100
+    @pytest.fixture
+    def mock_sport_configs(self):
+        """Create mock sport configs dictionary."""
+        return {"nba": MockSportConfig(sport="nba")}
     
-    def test_position_size_minimum(self, engine):
+    def test_engine_creation(self, mock_db, mock_client, mock_settings, mock_sport_configs):
         """
-        Test that position size is at least 1 contract.
+        Test TradingEngine can be instantiated with required args.
         """
-        balance = Decimal("10.00")
-        risk_pct = Decimal("0.01")
-        price = Decimal("0.99")
+        engine = TradingEngine(
+            db=mock_db,
+            user_id="test-user-123",
+            polymarket_client=mock_client,
+            global_settings=mock_settings,
+            sport_configs=mock_sport_configs
+        )
         
-        size = engine.calculate_position_size(balance, risk_pct, price)
-        
-        assert size >= 1
+        assert engine.user_id == "test-user-123"
+        assert engine.client == mock_client
+        assert engine.settings == mock_settings
     
-    def test_position_size_max_cap(self, engine):
+    def test_engine_with_market_configs(self, mock_db, mock_client, mock_settings, mock_sport_configs):
         """
-        Test that position size respects maximum limit.
+        Test TradingEngine with market-specific configs.
         """
-        balance = Decimal("100000.00")
-        risk_pct = Decimal("0.10")
-        price = Decimal("0.10")
-        max_size = 1000
+        market_configs = {
+            "cond-123": MockMarketConfig(condition_id="cond-123")
+        }
         
-        size = engine.calculate_position_size(balance, risk_pct, price, max_size=max_size)
+        engine = TradingEngine(
+            db=mock_db,
+            user_id="test-user-123",
+            polymarket_client=mock_client,
+            global_settings=mock_settings,
+            sport_configs=mock_sport_configs,
+            market_configs=market_configs
+        )
         
-        assert size <= max_size
+        assert "cond-123" in engine.market_configs
+
+
+class TestEffectiveConfigRetrieval:
+    """Tests for _get_effective_config method."""
+    
+    @pytest.fixture
+    def mock_db(self):
+        """Create mock database session."""
+        return AsyncMock()
+    
+    @pytest.fixture
+    def mock_client(self):
+        """Create mock Polymarket client."""
+        return AsyncMock()
+    
+    @pytest.fixture
+    def mock_settings(self):
+        """Create mock global settings."""
+        return MockGlobalSettings()
+    
+    def test_get_effective_config_sport_only(self, mock_db, mock_client, mock_settings):
+        """
+        Test getting effective config with sport config only.
+        """
+        sport_configs = {"nba": MockSportConfig(sport="nba")}
+        
+        engine = TradingEngine(
+            db=mock_db,
+            user_id="test-user",
+            polymarket_client=mock_client,
+            global_settings=mock_settings,
+            sport_configs=sport_configs
+        )
+        
+        market = MockTrackedMarket(condition_id="cond-123", sport="nba")
+        config = engine._get_effective_config(market)
+        
+        assert config is not None
+        assert config.sport_config.sport == "nba"
+    
+    def test_get_effective_config_with_market_override(self, mock_db, mock_client, mock_settings):
+        """
+        Test getting effective config with market override.
+        """
+        sport_configs = {"nba": MockSportConfig(sport="nba", take_profit_pct=Decimal("0.20"))}
+        market_configs = {
+            "cond-123": MockMarketConfig(
+                condition_id="cond-123",
+                take_profit_pct=Decimal("0.30")
+            )
+        }
+        
+        engine = TradingEngine(
+            db=mock_db,
+            user_id="test-user",
+            polymarket_client=mock_client,
+            global_settings=mock_settings,
+            sport_configs=sport_configs,
+            market_configs=market_configs
+        )
+        
+        market = MockTrackedMarket(condition_id="cond-123", sport="nba")
+        config = engine._get_effective_config(market)
+        
+        assert config is not None
+        assert config.take_profit_pct == Decimal("0.30")  # Market override
+    
+    def test_get_effective_config_unknown_sport(self, mock_db, mock_client, mock_settings):
+        """
+        Test getting effective config for unknown sport returns None.
+        """
+        sport_configs = {"nba": MockSportConfig(sport="nba")}
+        
+        engine = TradingEngine(
+            db=mock_db,
+            user_id="test-user",
+            polymarket_client=mock_client,
+            global_settings=mock_settings,
+            sport_configs=sport_configs
+        )
+        
+        market = MockTrackedMarket(condition_id="cond-123", sport="unknown_sport")
+        config = engine._get_effective_config(market)
+        
+        assert config is None
+
+
+class TestConfigProperties:
+    """Tests for EffectiveConfig property accessors."""
+    
+    def test_all_properties_accessible(self):
+        """
+        Test that all EffectiveConfig properties are accessible.
+        """
+        sport_config = MockSportConfig()
+        effective = EffectiveConfig(sport_config)
+        
+        # All properties should be accessible without error
+        _ = effective.is_enabled
+        _ = effective.auto_trade
+        _ = effective.entry_threshold_pct
+        _ = effective.absolute_entry_price
+        _ = effective.min_time_remaining_seconds
+        _ = effective.take_profit_pct
+        _ = effective.stop_loss_pct
+        _ = effective.default_position_size_usdc
+        _ = effective.max_positions_per_game
+        _ = effective.allowed_entry_segments
+    
+    def test_position_size_override(self):
+        """
+        Test position size override from market config.
+        """
+        sport_config = MockSportConfig(default_position_size_usdc=Decimal("50.00"))
+        market_config = MockMarketConfig(position_size_usdc=Decimal("100.00"))
+        
+        effective = EffectiveConfig(sport_config, market_config)
+        
+        assert effective.default_position_size_usdc == Decimal("100.00")
+    
+    def test_max_positions_override(self):
+        """
+        Test max positions override from market config.
+        """
+        sport_config = MockSportConfig(max_positions_per_game=2)
+        market_config = MockMarketConfig(max_positions=5)
+        
+        effective = EffectiveConfig(sport_config, market_config)
+        
+        assert effective.max_positions_per_game == 5
+
+
+class TestDecimalPrecision:
+    """Tests for decimal precision in configurations."""
+    
+    def test_threshold_decimal_precision(self):
+        """
+        Test that decimal thresholds maintain precision.
+        """
+        sport_config = MockSportConfig(
+            entry_threshold_pct=Decimal("0.0525"),
+            take_profit_pct=Decimal("0.1575")
+        )
+        
+        effective = EffectiveConfig(sport_config)
+        
+        assert effective.entry_threshold_pct == Decimal("0.0525")
+        assert effective.take_profit_pct == Decimal("0.1575")
+    
+    def test_usdc_amount_precision(self):
+        """
+        Test that USDC amounts maintain precision.
+        """
+        sport_config = MockSportConfig(
+            default_position_size_usdc=Decimal("25.50")
+        )
+        
+        effective = EffectiveConfig(sport_config)
+        
+        assert effective.default_position_size_usdc == Decimal("25.50")

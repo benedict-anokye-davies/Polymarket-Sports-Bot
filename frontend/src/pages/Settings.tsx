@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Eye, EyeOff, Bell, Shield, Wallet, TestTube2, Save, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Bell, Shield, Wallet, TestTube2, Save, Loader2, ShieldAlert, RefreshCw } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -694,6 +694,133 @@ export default function Settings() {
                 } : null)}
               />
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Balance Guardian */}
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-destructive" />
+              Balance Guardian
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Automatically stops trading when balance drops below threshold or after consecutive losses.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Minimum Balance (USDC)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 100"
+                  className="bg-muted border-border"
+                  value={globalSettings?.min_balance_threshold || ''}
+                  onChange={(e) => setGlobalSettings(prev => prev ? {
+                    ...prev,
+                    min_balance_threshold: parseFloat(e.target.value) || 0
+                  } : null)}
+                />
+                <p className="text-xs text-muted-foreground">Kill switch activates if balance goes below this</p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Max Losing Streak</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="20"
+                  placeholder="e.g. 5"
+                  className="bg-muted border-border"
+                  value={globalSettings?.max_losing_streak || ''}
+                  onChange={(e) => setGlobalSettings(prev => prev ? {
+                    ...prev,
+                    max_losing_streak: parseInt(e.target.value) || 5
+                  } : null)}
+                />
+                <p className="text-xs text-muted-foreground">Reduce position size after this many losses</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Streak Size Reduction (%)</Label>
+              <Input
+                type="number"
+                min="10"
+                max="90"
+                placeholder="e.g. 50"
+                className="bg-muted border-border"
+                value={globalSettings?.streak_reduction_pct ? Math.round(globalSettings.streak_reduction_pct * 100) : ''}
+                onChange={(e) => setGlobalSettings(prev => prev ? {
+                  ...prev,
+                  streak_reduction_pct: (parseFloat(e.target.value) || 50) / 100
+                } : null)}
+              />
+              <p className="text-xs text-muted-foreground">Reduce position size by this percentage during losing streak</p>
+            </div>
+            <Separator className="bg-border" />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground flex items-center gap-2">
+                  Kill Switch Status
+                  {globalSettings?.kill_switch_active && (
+                    <span className="text-xs bg-destructive/20 text-destructive px-2 py-0.5 rounded">ACTIVE</span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {globalSettings?.kill_switch_active 
+                    ? `Activated at ${globalSettings.kill_switch_activated_at ? new Date(globalSettings.kill_switch_activated_at).toLocaleString() : 'unknown time'}`
+                    : 'Not activated'}
+                </p>
+              </div>
+              {globalSettings?.kill_switch_active && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-border hover:bg-muted gap-2"
+                  onClick={async () => {
+                    try {
+                      await fetch('/api/v1/settings/global', {
+                        method: 'PUT',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${localStorage.getItem('token')}`,
+                        },
+                        body: JSON.stringify({
+                          kill_switch_active: false,
+                          current_losing_streak: 0,
+                        }),
+                      });
+                      setGlobalSettings(prev => prev ? {
+                        ...prev,
+                        kill_switch_active: false,
+                        current_losing_streak: 0,
+                      } : null);
+                      toast({
+                        title: 'Kill Switch Reset',
+                        description: 'Trading has been re-enabled.',
+                      });
+                    } catch (err) {
+                      toast({
+                        title: 'Error',
+                        description: 'Failed to reset kill switch.',
+                        variant: 'destructive',
+                      });
+                    }
+                  }}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Reset Kill Switch
+                </Button>
+              )}
+            </div>
+            {globalSettings?.current_losing_streak !== undefined && globalSettings.current_losing_streak > 0 && (
+              <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                <p className="text-sm text-warning">
+                  Current losing streak: {globalSettings.current_losing_streak} trades
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

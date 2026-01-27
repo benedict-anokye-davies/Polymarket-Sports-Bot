@@ -17,6 +17,9 @@ import History from "./pages/History";
 import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
 import BotConfig from "./pages/BotConfig";
+import Analytics from "./pages/Analytics";
+import Accounts from "./pages/Accounts";
+import Backtesting from "./pages/Backtesting";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
 
@@ -128,6 +131,9 @@ const App = () => (
           <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
           <Route path="/positions" element={<ProtectedRoute><Positions /></ProtectedRoute>} />
           <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
+          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+          <Route path="/accounts" element={<ProtectedRoute><Accounts /></ProtectedRoute>} />
+          <Route path="/backtesting" element={<ProtectedRoute><Backtesting /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
           

@@ -6,9 +6,9 @@ Records entry and exit details with P&L calculations.
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, DateTime, Numeric, Text, ForeignKey, func
+from sqlalchemy import String, DateTime, Numeric, Text, ForeignKey, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from src.db.database import Base
 
@@ -34,6 +34,11 @@ class Position(Base):
     tracked_market_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("tracked_markets.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("polymarket_accounts.id", ondelete="SET NULL"),
         nullable=True
     )
     
@@ -72,6 +77,52 @@ class Position(Base):
     )
     entry_order_id: Mapped[str | None] = mapped_column(
         String(100),
+        nullable=True
+    )
+    
+    # Order confirmation tracking
+    requested_entry_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 4),
+        nullable=True
+    )
+    actual_entry_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 4),
+        nullable=True
+    )
+    fill_status: Mapped[str] = mapped_column(
+        String(20),
+        default="filled"
+    )
+    slippage_usdc: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 6),
+        nullable=True
+    )
+    confirmation_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0
+    )
+    
+    # Position sync status for recovery
+    sync_status: Mapped[str] = mapped_column(
+        String(20),
+        default="synced"
+    )
+    recovered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    recovery_source: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True
+    )
+    
+    # Confidence scoring
+    entry_confidence_score: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True
+    )
+    entry_confidence_breakdown: Mapped[dict | None] = mapped_column(
+        JSONB,
         nullable=True
     )
     

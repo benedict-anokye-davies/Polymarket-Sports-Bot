@@ -542,6 +542,14 @@ export interface GlobalSettingsResponse {
   discord_alerts_enabled: boolean;
   poll_interval_seconds: number;
   updated_at: string;
+  // Balance Guardian fields
+  min_balance_threshold: number | null;
+  kill_switch_active: boolean;
+  kill_switch_activated_at: string | null;
+  kill_switch_reason: string | null;
+  current_losing_streak: number;
+  max_losing_streak: number;
+  streak_reduction_pct: number;
 }
 
 export interface GlobalSettingsUpdate {
@@ -551,6 +559,12 @@ export interface GlobalSettingsUpdate {
   discord_webhook_url?: string | null;
   discord_alerts_enabled?: boolean;
   poll_interval_seconds?: number;
+  // Balance Guardian fields
+  min_balance_threshold?: number | null;
+  kill_switch_active?: boolean;
+  current_losing_streak?: number;
+  max_losing_streak?: number;
+  streak_reduction_pct?: number;
 }
 
 export interface PositionSummary {

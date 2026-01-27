@@ -310,14 +310,20 @@ class BotRunner:
         # Load user-selected games from bot config
         await self._load_user_selected_games(user_id)
         
-        # Initialize WebSocket
-        self.websocket = PolymarketWebSocket()
+        # Initialize WebSocket only for Polymarket (Kalshi uses polling)
+        if self.platform == "polymarket":
+            self.websocket = PolymarketWebSocket()
+            logger.info("WebSocket initialized for Polymarket real-time price updates")
+        else:
+            self.websocket = None
+            logger.info("Kalshi mode: using polling for price updates (no WebSocket)")
         
         mode_str = "PAPER TRADING" if self.dry_run else "LIVE TRADING"
         games_count = len(self.user_selected_games)
         logger.info(
             f"Bot initialized for user {user_id}. "
             f"Mode: {mode_str}, "
+            f"Platform: {self.platform.upper()}, "
             f"Sports: {self.enabled_sports}, "
             f"Selected games: {games_count}, "
             f"Entry threshold: {self.entry_threshold:.1%}, "
@@ -484,10 +490,11 @@ class BotRunner:
         
         Only tracks games that the user has explicitly selected in bot config.
         Runs every DISCOVERY_INTERVAL seconds.
+        Uses platform-aware discovery (Polymarket Gamma API or Kalshi Sports API).
         """
         while not self._stop_event.is_set():
             try:
-                logger.debug("Running market discovery...")
+                logger.debug(f"Running market discovery for {self.platform}...")
                 
                 # Skip discovery if no games selected by user
                 if not self.user_selected_games:
@@ -495,7 +502,9 @@ class BotRunner:
                     await asyncio.sleep(self.DISCOVERY_INTERVAL)
                     continue
                 
-                markets = await market_discovery.discover_sports_markets(
+                # Use platform-aware market discovery
+                markets = await market_discovery.discover_markets_for_platform(
+                    platform=self.platform,
                     sports=self.enabled_sports,
                     min_liquidity=2000,
                     max_spread=0.08,

@@ -311,6 +311,26 @@ class SportConfig(Base):
         nullable=True
     )
     
+    # Kelly Criterion position sizing
+    use_kelly_sizing: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False
+    )
+    kelly_fraction: Mapped[Decimal] = mapped_column(
+        Numeric(3, 2),
+        default=Decimal("0.25")
+    )
+    min_kelly_sample_size: Mapped[int] = mapped_column(
+        Integer,
+        default=20
+    )
+    
+    # Confidence scoring threshold
+    min_entry_confidence_score: Mapped[int] = mapped_column(
+        Integer,
+        default=60
+    )
+    
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=func.now(),

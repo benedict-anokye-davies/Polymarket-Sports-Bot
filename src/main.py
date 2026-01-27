@@ -1,19 +1,22 @@
 """
 FastAPI application entry point.
 Configures middleware, routes, and application lifecycle events.
+Integrates production infrastructure for monitoring, security, and observability.
 """
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 import logging
+import asyncio
 
 from src.config import get_settings
-from src.db.database import init_db
+from src.db.database import init_db, engine
 from src.api.routes.auth import router as auth_router
 from src.api.routes.onboarding import router as onboarding_router
 from src.api.routes.dashboard import router as dashboard_router
@@ -22,30 +25,121 @@ from src.api.routes.bot import router as bot_router
 from src.api.routes.trading import router as trading_router
 from src.api.routes.logs import router as logs_router
 from src.api.routes.market_config import router as market_config_router
+from src.api.routes.analytics import router as analytics_router
+from src.api.routes.backtest import router as backtest_router
+from src.api.routes.accounts import router as accounts_router
+
+# Production infrastructure imports
+from src.core.rate_limiter import RateLimitMiddleware, RateLimitConfig
+from src.core.logging_service import (
+    setup_json_logging,
+    RequestLoggingMiddleware,
+    get_context_logger,
+    log_system_event,
+)
+from src.core.validation import RequestValidationMiddleware, create_validation_config
+from src.core.health import (
+    DatabaseHealthMonitor,
+    ServiceHealthAggregator,
+    HealthCheckScheduler,
+    HealthStatus,
+)
+from src.core.shutdown import ShutdownHandler, BotShutdownManager, shutdown_handler
+from src.core.alerts import setup_default_alerts, alert_manager, AlertSeverity
+from src.core.audit import audit_logger, AuditEventType, AuditSeverity
+
+# Advanced infrastructure imports
+from src.core.prometheus import metrics, get_prometheus_metrics, get_json_metrics
+from src.core.incident_management import setup_incident_management, incident_manager
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 app_settings = get_settings()
 
-logging.basicConfig(
-    level=logging.DEBUG if app_settings.debug else logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+# Configure structured JSON logging for production
+if not app_settings.debug:
+    setup_json_logging()
+else:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+
 logger = logging.getLogger(__name__)
+
+# Initialize health monitoring
+health_aggregator = ServiceHealthAggregator()
+health_scheduler: HealthCheckScheduler | None = None
+db_health_monitor: DatabaseHealthMonitor | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Application lifecycle manager.
-    Handles startup and shutdown events for database connections
-    and background tasks.
+    Handles startup and shutdown events for database connections,
+    health monitoring, and background tasks.
     """
+    global health_scheduler, db_health_monitor
+    
+    startup_time = datetime.now(timezone.utc)
     logger.info("Starting Polymarket Sports Trading Bot")
+    
+    # Initialize database
     await init_db()
+    
+    # Setup database health monitoring
+    db_health_monitor = DatabaseHealthMonitor(engine)
+    health_aggregator.register_service("database", db_health_monitor.run_health_check)
+    
+    # Start health check scheduler
+    health_scheduler = HealthCheckScheduler(health_aggregator, interval_seconds=30)
+    await health_scheduler.start()
+    
+    # Setup alert channels
+    discord_webhook = getattr(app_settings, 'discord_webhook_url', None)
+    setup_default_alerts(discord_webhook)
+    
+    # Setup incident management providers (PagerDuty, OpsGenie, Slack)
+    pagerduty_key = getattr(app_settings, 'pagerduty_routing_key', None)
+    opsgenie_key = getattr(app_settings, 'opsgenie_api_key', None)
+    slack_webhook = getattr(app_settings, 'slack_alert_webhook', None)
+    setup_incident_management(
+        pagerduty_routing_key=pagerduty_key,
+        opsgenie_api_key=opsgenie_key,
+        slack_webhook_url=slack_webhook,
+    )
+    
+    # Log system startup
+    await audit_logger.log_system_startup(
+        version="1.0.0",
+        environment="debug" if app_settings.debug else "production",
+    )
+    
+    # Send startup alert
+    await alert_manager.info(
+        "System Started",
+        f"Trading bot started successfully at {startup_time.isoformat()}",
+        category="system",
+    )
+    
+    log_system_event("startup", {"environment": "debug" if app_settings.debug else "production"})
+    
     yield
+    
+    # Graceful shutdown
     logger.info("Shutting down Polymarket Sports Trading Bot")
+    
+    # Stop health scheduler
+    if health_scheduler:
+        await health_scheduler.stop()
+    
+    # Log shutdown
+    await audit_logger.log_system_shutdown("normal")
+    
+    log_system_event("shutdown", {"reason": "normal"})
+    logger.info("Shutdown complete")
 
 
 app = FastAPI(
@@ -55,6 +149,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Production middleware stack (order matters - last added = first executed)
+# 1. Rate limiting - protect against abuse
+app.add_middleware(
+    RateLimitMiddleware,
+    config=RateLimitConfig(
+        requests_per_minute=60,
+        requests_per_hour=1000,
+        burst_limit=20,
+    ),
+)
+
+# 2. Request validation - sanitize inputs
+app.add_middleware(
+    RequestValidationMiddleware,
+    config=create_validation_config(max_body_mb=10, strict_mode=False),
+)
+
+# 3. Request logging - observability
+app.add_middleware(RequestLoggingMiddleware)
+
+# 4. CORS - handle cross-origin requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -71,6 +186,9 @@ app.include_router(bot_router, prefix="/api/v1")
 app.include_router(trading_router, prefix="/api/v1")
 app.include_router(logs_router, prefix="/api/v1")
 app.include_router(market_config_router, prefix="/api/v1")
+app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(backtest_router, prefix="/api/v1")
+app.include_router(accounts_router, prefix="/api/v1")
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
@@ -78,14 +196,101 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 @app.get("/health")
 async def health_check():
     """
-    Health check endpoint for monitoring and load balancers.
-    Returns basic application status.
+    Basic health check endpoint for load balancers.
+    Returns simple status without detailed diagnostics.
     """
     return {
         "status": "healthy",
         "app": app_settings.app_name,
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """
+    Comprehensive health check with service diagnostics.
+    Returns detailed status of all monitored services.
+    """
+    summary = health_aggregator.get_summary()
+    
+    # Determine HTTP status code based on health
+    status_code = 200
+    if summary["overall_status"] == HealthStatus.DEGRADED.value:
+        status_code = 200  # Still operational
+    elif summary["overall_status"] == HealthStatus.UNHEALTHY.value:
+        status_code = 503  # Service unavailable
+    
+    return JSONResponse(
+        content={
+            **summary,
+            "app": app_settings.app_name,
+            "version": "1.0.0",
+        },
+        status_code=status_code,
+    )
+
+
+@app.get("/health/db")
+async def database_health_check():
+    """
+    Database-specific health check.
+    Returns connection pool metrics and query latency.
+    """
+    if db_health_monitor is None:
+        return JSONResponse(
+            content={"status": "unknown", "message": "Health monitor not initialized"},
+            status_code=503,
+        )
+    
+    result = await db_health_monitor.run_health_check()
+    
+    status_code = 200 if result.status == HealthStatus.HEALTHY else (
+        200 if result.status == HealthStatus.DEGRADED else 503
+    )
+    
+    return JSONResponse(content=result.to_dict(), status_code=status_code)
+
+
+@app.get("/metrics")
+async def get_metrics():
+    """
+    Expose internal metrics for monitoring systems.
+    Returns rate limiter, cache, and alert statistics.
+    """
+    from src.services.price_cache import price_cache
+    
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "alerts": alert_manager.get_stats(),
+        "price_cache": price_cache.get_cache_stats(),
+        "health": health_aggregator.get_summary(),
+        "incidents": incident_manager.get_stats() if incident_manager else {},
+    }
+
+
+@app.get("/metrics/prometheus")
+async def get_prometheus_metrics_endpoint():
+    """
+    Prometheus-compatible metrics endpoint.
+    Returns metrics in Prometheus text format for scraping.
+    """
+    from fastapi.responses import PlainTextResponse
+    
+    return PlainTextResponse(
+        content=get_prometheus_metrics(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
+@app.get("/metrics/json")
+async def get_json_metrics_endpoint():
+    """
+    JSON format metrics endpoint.
+    Returns all metrics in JSON format for custom dashboards.
+    """
+    return get_json_metrics()
 
 
 @app.get("/", response_class=HTMLResponse)

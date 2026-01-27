@@ -140,6 +140,12 @@ class GlobalSettingsUpdate(BaseModel):
     emergency_stop: bool | None = None
     max_slippage_pct: Decimal | None = Field(default=None, ge=0, le=0.5)
     order_fill_timeout_seconds: int | None = Field(default=None, ge=10, le=300)
+    # Balance Guardian fields
+    min_balance_threshold: Decimal | None = Field(default=None, ge=0)
+    kill_switch_active: bool | None = None
+    current_losing_streak: int | None = Field(default=None, ge=0)
+    max_losing_streak: int | None = Field(default=None, ge=1, le=50)
+    streak_reduction_pct: Decimal | None = Field(default=None, ge=0, le=1)
 
 
 class GlobalSettingsResponse(BaseModel):
@@ -158,6 +164,14 @@ class GlobalSettingsResponse(BaseModel):
     emergency_stop: bool | None = False
     max_slippage_pct: Decimal | None = None
     order_fill_timeout_seconds: int | None = None
+    # Balance Guardian fields
+    min_balance_threshold: Decimal | None = None
+    kill_switch_active: bool = False
+    kill_switch_activated_at: datetime | None = None
+    kill_switch_reason: str | None = None
+    current_losing_streak: int = 0
+    max_losing_streak: int = 5
+    streak_reduction_pct: Decimal = Decimal("0.5")
     updated_at: datetime
     
     model_config = {"from_attributes": True}

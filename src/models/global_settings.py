@@ -85,6 +85,50 @@ class GlobalSettings(Base):
         default=60
     )
     
+    # Balance Guardian settings
+    min_balance_threshold_usdc: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        default=Decimal("50.0")
+    )
+    balance_check_interval_seconds: Mapped[int] = mapped_column(
+        Integer,
+        default=30
+    )
+    alert_email: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+    alert_phone: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True
+    )
+    kill_switch_triggered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+    kill_switch_reason: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+    
+    # Streak tracking for Kelly adjustment
+    current_losing_streak: Mapped[int] = mapped_column(
+        Integer,
+        default=0
+    )
+    max_losing_streak: Mapped[int] = mapped_column(
+        Integer,
+        default=0
+    )
+    streak_reduction_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False
+    )
+    streak_reduction_pct_per_loss: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        default=Decimal("10.0")
+    )
+    
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=func.now(),

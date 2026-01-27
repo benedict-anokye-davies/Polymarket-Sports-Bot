@@ -186,7 +186,8 @@ async def test_wallet_connection(
     current_user: CurrentUser
 ) -> WalletTestResponse:
     """
-    Tests connection to Polymarket using stored credentials.
+    Tests connection to trading platform using stored credentials.
+    Supports both Kalshi and Polymarket platforms.
     Verifies credentials are valid and returns balance.
     """
     credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
@@ -198,30 +199,80 @@ async def test_wallet_connection(
         )
     
     try:
-        from src.services.polymarket_client import PolymarketClient
+        platform = credentials.get("platform", "polymarket")
         
-        client = PolymarketClient(
-            private_key=credentials["private_key"],
-            funder_address=credentials["funder_address"]
-        )
-        
-        balance = await client.get_balance()
-        
-        await PolymarketAccountCRUD.update_connection_status(db, current_user.id, True)
-        
-        await ActivityLogCRUD.info(
-            db,
-            current_user.id,
-            "WALLET",
-            f"Wallet connection test successful. Balance: {balance} USDC"
-        )
-        
-        return WalletTestResponse(
-            success=True,
-            message="Connection successful",
-            balance_usdc=float(balance),
-            address=credentials["funder_address"]
-        )
+        if platform == "kalshi":
+            from src.services.kalshi_client import KalshiClient
+            
+            api_key = credentials.get("api_key")
+            api_secret = credentials.get("api_secret")
+            
+            if not api_key or not api_secret:
+                return WalletTestResponse(
+                    success=False,
+                    message="Kalshi API key or secret not found in stored credentials."
+                )
+            
+            client = KalshiClient(
+                api_key_id=api_key,
+                private_key_pem=api_secret
+            )
+            
+            balance_data = await client.get_balance()
+            await client.close()
+            
+            # Kalshi returns balance in cents, convert to dollars
+            balance = balance_data.get("available_balance", 0) / 100
+            
+            await PolymarketAccountCRUD.update_connection_status(db, current_user.id, True)
+            
+            await ActivityLogCRUD.info(
+                db,
+                current_user.id,
+                "WALLET",
+                f"Kalshi connection test successful. Balance: ${balance:.2f}"
+            )
+            
+            return WalletTestResponse(
+                success=True,
+                message="Kalshi connection successful",
+                balance_usdc=float(balance),
+                address=api_key[:8] + "..."  # Show partial API key as identifier
+            )
+        else:
+            from src.services.polymarket_client import PolymarketClient
+            
+            private_key = credentials.get("private_key")
+            funder_address = credentials.get("funder_address")
+            
+            if not private_key or not funder_address:
+                return WalletTestResponse(
+                    success=False,
+                    message="Polymarket private key or funder address not found."
+                )
+            
+            client = PolymarketClient(
+                private_key=private_key,
+                funder_address=funder_address
+            )
+            
+            balance = await client.get_balance()
+            
+            await PolymarketAccountCRUD.update_connection_status(db, current_user.id, True)
+            
+            await ActivityLogCRUD.info(
+                db,
+                current_user.id,
+                "WALLET",
+                f"Polymarket connection test successful. Balance: {balance} USDC"
+            )
+            
+            return WalletTestResponse(
+                success=True,
+                message="Polymarket connection successful",
+                balance_usdc=float(balance),
+                address=funder_address
+            )
         
     except Exception as e:
         await PolymarketAccountCRUD.update_connection_status(

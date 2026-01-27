@@ -24,6 +24,14 @@ __all__ = [
     "BotState",
     "get_bot_runner",
     "get_bot_status",
+    "BalanceGuardian",
+    "OrderConfirmation",
+    "PositionReconciler",
+    "ConfidenceScorer",
+    "KellyCalculator",
+    "AnalyticsService",
+    "AccountManager",
+    "Backtester",
 ]
 
 
@@ -59,5 +67,29 @@ def __getattr__(name: str):
     elif name in ("BotRunner", "BotState", "get_bot_runner", "get_bot_status"):
         from src.services import bot_runner as br
         return getattr(br, name)
+    elif name == "BalanceGuardian":
+        from src.services.balance_guardian import BalanceGuardian
+        return BalanceGuardian
+    elif name == "OrderConfirmation":
+        from src.services.order_confirmation import OrderConfirmation
+        return OrderConfirmation
+    elif name == "PositionReconciler":
+        from src.services.position_reconciler import PositionReconciler
+        return PositionReconciler
+    elif name == "ConfidenceScorer":
+        from src.services.confidence_scorer import ConfidenceScorer
+        return ConfidenceScorer
+    elif name == "KellyCalculator":
+        from src.services.kelly_calculator import KellyCalculator
+        return KellyCalculator
+    elif name == "AnalyticsService":
+        from src.services.analytics_service import AnalyticsService
+        return AnalyticsService
+    elif name == "AccountManager":
+        from src.services.account_manager import AccountManager
+        return AccountManager
+    elif name == "Backtester":
+        from src.services.backtester import Backtester
+        return Backtester
     
     raise AttributeError(f"module 'src.services' has no attribute '{name}'")

@@ -64,13 +64,40 @@ class KalshiAuthenticator:
         Args:
             api_key_id: Kalshi API key ID from dashboard
             private_key_pem: RSA private key in PEM format (string)
+        
+        Raises:
+            TradingError: If API key is empty or private key is invalid PEM format
         """
-        self.api_key_id = api_key_id
-        self.private_key = serialization.load_pem_private_key(
-            private_key_pem.encode() if isinstance(private_key_pem, str) else private_key_pem,
-            password=None,
-            backend=default_backend()
-        )
+        if not api_key_id or not api_key_id.strip():
+            raise TradingError(
+                "Kalshi API key is required. Please provide a valid API key from your Kalshi dashboard."
+            )
+        
+        if not private_key_pem or not private_key_pem.strip():
+            raise TradingError(
+                "Kalshi private key is required. Please provide your RSA private key in PEM format."
+            )
+        
+        self.api_key_id = api_key_id.strip()
+        
+        try:
+            key_bytes = private_key_pem.encode() if isinstance(private_key_pem, str) else private_key_pem
+            self.private_key = serialization.load_pem_private_key(
+                key_bytes,
+                password=None,
+                backend=default_backend()
+            )
+        except ValueError as e:
+            raise TradingError(
+                f"Invalid RSA private key format. The key must be in PEM format "
+                f"(starting with '-----BEGIN RSA PRIVATE KEY-----' or '-----BEGIN PRIVATE KEY-----'). "
+                f"Error: {str(e)}"
+            )
+        except Exception as e:
+            raise TradingError(
+                f"Failed to load RSA private key: {str(e)}. "
+                f"Please ensure you've copied the complete private key including header and footer lines."
+            )
     
     def sign_request(self, method: str, path: str, body: str = "") -> Dict[str, str]:
         """
@@ -112,6 +139,38 @@ class KalshiClient:
     Production Kalshi API client for sports trading.
     Handles market discovery, order placement, and position management.
     """
+    
+    @staticmethod
+    def validate_rsa_key(private_key_pem: str) -> tuple[bool, str]:
+        """
+        Validate an RSA private key without creating a full client.
+        Useful for onboarding flow to validate key format before saving.
+        
+        Args:
+            private_key_pem: RSA private key in PEM format
+        
+        Returns:
+            Tuple of (is_valid, error_message). If valid, error_message is empty.
+        """
+        if not private_key_pem or not private_key_pem.strip():
+            return False, "Private key is required. Please provide your RSA private key in PEM format."
+        
+        try:
+            key_bytes = private_key_pem.encode() if isinstance(private_key_pem, str) else private_key_pem
+            serialization.load_pem_private_key(
+                key_bytes,
+                password=None,
+                backend=default_backend()
+            )
+            return True, ""
+        except ValueError as e:
+            return False, (
+                f"Invalid RSA private key format. The key must be in PEM format "
+                f"(starting with '-----BEGIN RSA PRIVATE KEY-----' or '-----BEGIN PRIVATE KEY-----'). "
+                f"Error: {str(e)}"
+            )
+        except Exception as e:
+            return False, f"Failed to load RSA private key: {str(e)}"
     
     def __init__(self, api_key_id: str, private_key_pem: str, dry_run: bool = True):
         """
@@ -340,6 +399,31 @@ class KalshiClient:
         if size < 1:
             raise TradingError(f"Invalid size {size}. Must be at least 1 contract")
         
+        # Generate client order ID
+        order_client_id = client_order_id or f"bot-{int(time.time())}-{ticker[:20]}"
+        
+        # Paper trading mode - simulate order without placing real trade
+        if self.dry_run:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"[DRY RUN] Simulated Kalshi order: {side.upper()} {size} {yes_no.upper()} "
+                f"contracts of {ticker} @ ${price:.2f}"
+            )
+            
+            # Return simulated order response
+            return KalshiOrder(
+                order_id=f"dry-run-{order_client_id}",
+                ticker=ticker,
+                side=side.lower(),
+                yes_no=yes_no.lower(),
+                price=price,
+                size=size,
+                status="filled",  # Simulate immediate fill for paper trading
+                filled_size=size,
+                created_at=datetime.now(timezone.utc)
+            )
+        
         body = {
             "ticker": ticker,
             "side": side.lower(),
@@ -348,12 +432,8 @@ class KalshiClient:
             "price": round(price, 2),
             "size": size,
             "time_in_force": time_in_force.lower(),
+            "client_order_id": order_client_id,
         }
-        
-        if client_order_id:
-            body["client_order_id"] = client_order_id
-        else:
-            body["client_order_id"] = f"bot-{int(time.time())}-{ticker[:20]}"
         
         response = await self._request("POST", "/portfolio/orders", body=body)
         
@@ -510,6 +590,10 @@ class KalshiClient:
         Returns:
             Final order status: "filled", "cancelled", "partial", or "timeout"
         """
+        # In dry run mode, simulate immediate fill
+        if self.dry_run or order_id.startswith("dry-run-"):
+            return "filled"
+        
         import asyncio
         start_time = time.time()
 

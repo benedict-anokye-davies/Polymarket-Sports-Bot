@@ -456,6 +456,203 @@ class MarketDiscovery:
         
         return None
 
+    async def discover_kalshi_markets(
+        self,
+        sports: list[str] | None = None,
+        min_volume: int = 100,
+        hours_ahead: int = 48,
+        include_live: bool = True
+    ) -> list[DiscoveredMarket]:
+        """
+        Discover sports betting markets from Kalshi.
+        
+        Uses KalshiClient to fetch sports markets and converts them to
+        DiscoveredMarket format for compatibility with the trading engine.
+        
+        Args:
+            sports: List of sports to include (None = all)
+            min_volume: Minimum volume threshold
+            hours_ahead: How far ahead to look for games
+            include_live: Include currently live games
+        
+        Returns:
+            List of DiscoveredMarket objects with platform="kalshi"
+        """
+        from src.services.kalshi_client import KalshiClient
+        
+        discovered = []
+        now = datetime.now(timezone.utc)
+        cutoff = now + timedelta(hours=hours_ahead)
+        
+        # Create a temporary unauthenticated client for market discovery
+        # Market data endpoints don't require authentication
+        try:
+            client = await self._get_client()
+            
+            # Kalshi sports endpoint
+            kalshi_api_base = "https://api.elections.kalshi.com/trade-api/v2"
+            
+            params = {
+                "category": "Sports",
+                "status": "open",
+                "limit": 200
+            }
+            
+            response = await client.get(
+                f"{kalshi_api_base}/markets",
+                params=params,
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"Kalshi API returned status {response.status_code}")
+                return []
+            
+            data = response.json()
+            markets = data.get("markets", [])
+            
+            logger.info(f"Fetched {len(markets)} markets from Kalshi Sports category")
+            
+            for market in markets:
+                ticker = market.get("ticker", "")
+                title = market.get("title", "")
+                status = market.get("status", "")
+                
+                # Skip non-open markets
+                if status not in ["open", "active"]:
+                    continue
+                
+                # Detect sport from title or ticker
+                sport = self._detect_sport(title)
+                if not sport:
+                    # Try to detect from ticker (e.g., NBA24_LAL_BOS_W_241230)
+                    ticker_upper = ticker.upper()
+                    if "NBA" in ticker_upper:
+                        sport = "nba"
+                    elif "NFL" in ticker_upper:
+                        sport = "nfl"
+                    elif "MLB" in ticker_upper:
+                        sport = "mlb"
+                    elif "NHL" in ticker_upper:
+                        sport = "nhl"
+                
+                if not sport:
+                    continue
+                
+                # Filter by requested sports
+                if sports and sport not in sports:
+                    continue
+                
+                # Check timing
+                close_ts = market.get("close_ts", 0)
+                event_start_ts = market.get("event_start_ts", 0)
+                
+                if close_ts:
+                    end_date = datetime.fromtimestamp(close_ts, tz=timezone.utc)
+                    
+                    # Skip if already ended
+                    if end_date < now:
+                        continue
+                    
+                    # Skip if too far in future
+                    if end_date > cutoff and not include_live:
+                        continue
+                else:
+                    end_date = None
+                
+                game_start_time = None
+                if event_start_ts:
+                    game_start_time = datetime.fromtimestamp(event_start_ts, tz=timezone.utc)
+                
+                # Get prices
+                yes_price = float(market.get("yes_price", 0.5))
+                no_price = float(market.get("no_price", 0.5))
+                
+                # Calculate spread from yes/no prices
+                spread = abs(yes_price - (1 - no_price))
+                
+                # Volume as liquidity proxy
+                volume = market.get("volume_yes", 0) + market.get("volume_no", 0)
+                if volume < min_volume:
+                    continue
+                
+                # Extract teams from title
+                home_team, away_team = self._extract_teams(title, sport)
+                
+                discovered_market = DiscoveredMarket(
+                    condition_id=ticker,  # Use ticker as condition_id for Kalshi
+                    token_id_yes=f"{ticker}_YES",  # Synthetic token IDs
+                    token_id_no=f"{ticker}_NO",
+                    question=title,
+                    description=market.get("subtitle", ""),
+                    sport=sport,
+                    home_team=home_team,
+                    away_team=away_team,
+                    game_start_time=game_start_time,
+                    end_date=end_date,
+                    volume_24h=float(volume),
+                    liquidity=float(volume * yes_price),  # Approximate liquidity
+                    current_price_yes=yes_price,
+                    current_price_no=no_price,
+                    spread=spread,
+                    ticker=ticker,
+                    platform="kalshi"
+                )
+                
+                discovered.append(discovered_market)
+                logger.debug(f"Discovered Kalshi {sport.upper()} market: {title[:50]}...")
+            
+            # Sort by volume (highest first)
+            discovered.sort(key=lambda m: m.volume_24h, reverse=True)
+            
+            logger.info(f"Discovered {len(discovered)} Kalshi sports markets")
+            return discovered
+            
+        except Exception as e:
+            logger.error(f"Failed to discover Kalshi markets: {e}")
+            return []
+
+    async def discover_markets_for_platform(
+        self,
+        platform: str,
+        sports: list[str] | None = None,
+        min_liquidity: float = 1000,
+        max_spread: float = 0.10,
+        hours_ahead: int = 48,
+        include_live: bool = True
+    ) -> list[DiscoveredMarket]:
+        """
+        Platform-aware market discovery dispatcher.
+        
+        Routes to appropriate discovery method based on platform.
+        
+        Args:
+            platform: "polymarket" or "kalshi"
+            sports: List of sports to include
+            min_liquidity: Minimum liquidity threshold
+            max_spread: Maximum acceptable spread
+            hours_ahead: How far ahead to look
+            include_live: Include live games
+        
+        Returns:
+            List of DiscoveredMarket objects
+        """
+        if platform.lower() == "kalshi":
+            return await self.discover_kalshi_markets(
+                sports=sports,
+                min_volume=int(min_liquidity / 10),  # Adjust threshold for Kalshi
+                hours_ahead=hours_ahead,
+                include_live=include_live
+            )
+        else:
+            return await self.discover_sports_markets(
+                sports=sports,
+                min_liquidity=min_liquidity,
+                max_spread=max_spread,
+                hours_ahead=hours_ahead,
+                include_live=include_live
+            )
+
 
 # Singleton instance
 market_discovery = MarketDiscovery()
