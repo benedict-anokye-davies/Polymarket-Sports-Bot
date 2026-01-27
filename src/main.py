@@ -2,6 +2,8 @@
 FastAPI application entry point.
 Configures middleware, routes, and application lifecycle events.
 Integrates production infrastructure for monitoring, security, and observability.
+
+Build: 2026-01-27-v2
 """
 
 from contextlib import asynccontextmanager
