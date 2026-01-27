@@ -150,11 +150,14 @@ class TestSegmentNormalization:
         assert service._normalize_segment(3, "nhl") == "p3"
     
     def test_soccer_halves(self):
-        """Soccer should use h1, h2 segments."""
+        """Soccer leagues should use h1, h2 segments."""
         service = ESPNService()
         
-        assert service._normalize_segment(1, "soccer") == "h1"
-        assert service._normalize_segment(2, "soccer") == "h2"
+        # Use actual soccer league keys (not generic 'soccer')
+        assert service._normalize_segment(1, "epl") == "h1"
+        assert service._normalize_segment(2, "epl") == "h2"
+        assert service._normalize_segment(1, "laliga") == "h1"
+        assert service._normalize_segment(2, "ucl") == "h2"
     
     def test_college_basketball_halves(self):
         """College basketball should use h1, h2 segments."""
@@ -225,7 +228,7 @@ class TestSportEndpoints:
         service = ESPNService()
         
         with pytest.raises(ValueError) as exc_info:
-            service._get_sport_endpoint("cricket")
+            service._get_sport_endpoint("fake_sport_xyz")
         
         assert "Unsupported sport" in str(exc_info.value)
 
@@ -395,8 +398,11 @@ class TestSegmentMapping:
         """Soccer leagues should be in clock countup set."""
         service = ESPNService()
         
-        assert "soccer" in service.CLOCK_COUNTUP_SPORTS
+        # All individual soccer leagues should be in countup sports
         assert "epl" in service.CLOCK_COUNTUP_SPORTS
+        assert "laliga" in service.CLOCK_COUNTUP_SPORTS
+        assert "bundesliga" in service.CLOCK_COUNTUP_SPORTS
+        assert "mls" in service.CLOCK_COUNTUP_SPORTS
 
 
 class TestHTTPClientInitialization:
@@ -461,10 +467,15 @@ class TestSportGroups:
         assert "mlb" not in service.SPORT_GROUPS
         assert "nhl" not in service.SPORT_GROUPS
     
-    def test_soccer_leagues_have_groups(self):
-        """European soccer leagues should have group IDs."""
+    def test_soccer_leagues_no_groups(self):
+        """Soccer leagues should NOT have groups (they use limit param instead)."""
         service = ESPNService()
         
-        assert "epl" in service.SPORT_GROUPS
-        assert "laliga" in service.SPORT_GROUPS
-        assert "bundesliga" in service.SPORT_GROUPS
+        # Soccer leagues don't need groups parameter - only college sports do
+        assert "epl" not in service.SPORT_GROUPS
+        assert "laliga" not in service.SPORT_GROUPS
+        assert "bundesliga" not in service.SPORT_GROUPS
+        
+        # Verify college sports still have groups
+        assert "ncaab" in service.SPORT_GROUPS
+        assert "ncaaf" in service.SPORT_GROUPS
