@@ -83,6 +83,24 @@ async def _create_bot_dependencies(db, user_id, credentials: dict):
     return trading_client, trading_engine, espn_service
 
 
+@router.get("/leagues", response_model=list)
+async def get_available_leagues() -> list:
+    """
+    Returns all available sports leagues for trading.
+    Includes both American sports and international soccer leagues.
+    """
+    return ESPNService.get_available_leagues()
+
+
+@router.get("/soccer-leagues", response_model=list)
+async def get_soccer_leagues() -> list:
+    """
+    Returns all available soccer leagues for the league selector.
+    Includes EPL, La Liga, Champions League, etc.
+    """
+    return ESPNService.get_soccer_leagues()
+
+
 @router.post("/start", response_model=MessageResponse)
 async def start_bot(
     db: DbSession,

@@ -30,8 +30,6 @@ class ESPNService:
         "nfl": "football/nfl",
         "mlb": "baseball/mlb",
         "nhl": "hockey/nhl",
-        "soccer": "soccer/usa.1",  # MLS, can also use eng.1 for EPL
-        "mls": "soccer/usa.1",     # MLS explicit alias
         "tennis": "tennis/atp",
         "mma": "mma/ufc",
         "golf": "golf/pga",
@@ -39,26 +37,105 @@ class ESPNService:
         "wnba": "basketball/wnba",
         "ncaab": "basketball/mens-college-basketball",
         "ncaaf": "football/college-football",
-        "epl": "soccer/eng.1",
-        "laliga": "soccer/esp.1",
-        "bundesliga": "soccer/ger.1",
-        "seriea": "soccer/ita.1",
-        "ligue1": "soccer/fra.1",
-        "ucl": "soccer/uefa.champions",
+        # Soccer Leagues - All major leagues
+        "soccer": "soccer/usa.1",      # MLS (default soccer)
+        "mls": "soccer/usa.1",         # MLS explicit
+        "epl": "soccer/eng.1",         # English Premier League
+        "laliga": "soccer/esp.1",      # La Liga (Spain)
+        "bundesliga": "soccer/ger.1",  # Bundesliga (Germany)
+        "seriea": "soccer/ita.1",      # Serie A (Italy)
+        "ligue1": "soccer/fra.1",      # Ligue 1 (France)
+        "ucl": "soccer/uefa.champions",      # UEFA Champions League
+        "europa": "soccer/uefa.europa",      # UEFA Europa League
+        "conference": "soccer/uefa.europa.conf",  # UEFA Conference League
+        "eredivisie": "soccer/ned.1",        # Eredivisie (Netherlands)
+        "liga_portugal": "soccer/por.1",     # Liga Portugal
+        "scottish": "soccer/sco.1",          # Scottish Premiership
+        "belgian": "soccer/bel.1",           # Belgian Pro League
+        "turkish": "soccer/tur.1",           # Turkish Super Lig
+        "russian": "soccer/rus.1",           # Russian Premier League
+        "brazilian": "soccer/bra.1",         # Brasileirao Serie A
+        "argentine": "soccer/arg.1",         # Argentine Primera Division
+        "mexican": "soccer/mex.1",           # Liga MX
+        "saudi": "soccer/sau.1",             # Saudi Pro League
+        "world_cup": "soccer/fifa.world",    # FIFA World Cup
+        "euros": "soccer/uefa.euro",         # UEFA European Championship
+        "copa_america": "soccer/conmebol.america",  # Copa America
+    }
+    
+    # Human-readable names for leagues (for UI display)
+    LEAGUE_DISPLAY_NAMES = {
+        "nba": "NBA",
+        "nfl": "NFL",
+        "mlb": "MLB",
+        "nhl": "NHL",
+        "wnba": "WNBA",
+        "ncaab": "College Basketball",
+        "ncaaf": "College Football",
+        "mls": "MLS",
+        "epl": "Premier League",
+        "laliga": "La Liga",
+        "bundesliga": "Bundesliga",
+        "seriea": "Serie A",
+        "ligue1": "Ligue 1",
+        "ucl": "Champions League",
+        "europa": "Europa League",
+        "conference": "Conference League",
+        "eredivisie": "Eredivisie",
+        "liga_portugal": "Liga Portugal",
+        "scottish": "Scottish Premiership",
+        "belgian": "Belgian Pro League",
+        "turkish": "Turkish Super Lig",
+        "russian": "Russian Premier League",
+        "brazilian": "Brasileirao",
+        "argentine": "Argentine Primera",
+        "mexican": "Liga MX",
+        "saudi": "Saudi Pro League",
+        "world_cup": "World Cup",
+        "euros": "UEFA Euros",
+        "copa_america": "Copa America",
+        "tennis": "ATP Tennis",
+        "mma": "UFC",
+        "golf": "PGA Golf",
+    }
+    
+    # Categorize sports for the UI
+    SPORT_CATEGORIES = {
+        "american": ["nba", "nfl", "mlb", "nhl", "wnba", "ncaab", "ncaaf", "mls"],
+        "soccer_europe": ["epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl", "europa", "conference", "eredivisie", "liga_portugal", "scottish", "belgian", "turkish", "russian"],
+        "soccer_americas": ["mls", "brazilian", "argentine", "mexican", "copa_america"],
+        "soccer_other": ["saudi", "world_cup", "euros"],
+        "other": ["tennis", "mma", "golf"],
     }
     
     # Group IDs for fetching ALL games instead of just Top 25/filtered
-    # These allow us to get all Division I games, not just ranked teams
     SPORT_GROUPS = {
         "ncaab": "50",      # Division I Men's Basketball (all D1 games)
         "ncaaf": "80",      # FBS (Division I-A) Football (all FBS games)
-        "soccer": "all",    # All soccer leagues/games
-        "mls": "all",       # MLS - all games
-        "epl": "1",         # English Premier League
-        "laliga": "15",     # La Liga
-        "bundesliga": "10", # Bundesliga
-        "seriea": "12",     # Serie A
-        "ligue1": "9",      # Ligue 1
+        # Soccer leagues - use "all" to fetch all games
+        "soccer": "all",
+        "mls": "all",
+        "epl": "all",
+        "laliga": "all",
+        "bundesliga": "all",
+        "seriea": "all",
+        "ligue1": "all",
+        "ucl": "all",
+        "europa": "all",
+        "conference": "all",
+        "eredivisie": "all",
+        "liga_portugal": "all",
+        "scottish": "all",
+        "belgian": "all",
+        "turkish": "all",
+        "russian": "all",
+        "brazilian": "all",
+        "argentine": "all",
+        "mexican": "all",
+        "saudi": "all",
+        "world_cup": "all",
+        "euros": "all",
+        "copa_america": "all",
     }
     
     SEGMENT_MAPPING = {
@@ -68,20 +145,77 @@ class ESPNService:
         "nfl": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
         "ncaaf": {1: "q1", 2: "q2", 3: "q3", 4: "q4"},
         "nhl": {1: "p1", 2: "p2", 3: "p3"},
+        # All soccer leagues use halves
         "soccer": {1: "h1", 2: "h2"},
+        "mls": {1: "h1", 2: "h2"},
         "epl": {1: "h1", 2: "h2"},
         "laliga": {1: "h1", 2: "h2"},
         "bundesliga": {1: "h1", 2: "h2"},
         "seriea": {1: "h1", 2: "h2"},
         "ligue1": {1: "h1", 2: "h2"},
         "ucl": {1: "h1", 2: "h2"},
+        "europa": {1: "h1", 2: "h2"},
+        "conference": {1: "h1", 2: "h2"},
+        "eredivisie": {1: "h1", 2: "h2"},
+        "liga_portugal": {1: "h1", 2: "h2"},
+        "scottish": {1: "h1", 2: "h2"},
+        "belgian": {1: "h1", 2: "h2"},
+        "turkish": {1: "h1", 2: "h2"},
+        "russian": {1: "h1", 2: "h2"},
+        "brazilian": {1: "h1", 2: "h2"},
+        "argentine": {1: "h1", 2: "h2"},
+        "mexican": {1: "h1", 2: "h2"},
+        "saudi": {1: "h1", 2: "h2"},
+        "world_cup": {1: "h1", 2: "h2"},
+        "euros": {1: "h1", 2: "h2"},
+        "copa_america": {1: "h1", 2: "h2"},
         "tennis": {1: "set_1", 2: "set_2", 3: "set_3", 4: "set_4", 5: "set_5"},
         "mma": {1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5"},
         "golf": {},  # Golf uses holes, not periods
     }
     
     # Sports where clock counts UP instead of DOWN
-    CLOCK_COUNTUP_SPORTS = {"soccer", "epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl"}
+    CLOCK_COUNTUP_SPORTS = {
+        "soccer", "mls", "epl", "laliga", "bundesliga", "seriea", "ligue1", 
+        "ucl", "europa", "conference", "eredivisie", "liga_portugal", "scottish",
+        "belgian", "turkish", "russian", "brazilian", "argentine", "mexican",
+        "saudi", "world_cup", "euros", "copa_america"
+    }
+    
+    @classmethod
+    def get_available_leagues(cls) -> list[dict]:
+        """
+        Returns list of all available leagues with display names.
+        Used by the frontend to populate league selection dropdowns.
+        """
+        leagues = []
+        for sport_key, display_name in cls.LEAGUE_DISPLAY_NAMES.items():
+            if sport_key in cls.SPORT_ENDPOINTS:
+                leagues.append({
+                    "id": sport_key,
+                    "name": display_name,
+                    "is_soccer": sport_key in cls.CLOCK_COUNTUP_SPORTS,
+                })
+        return leagues
+    
+    @classmethod
+    def get_soccer_leagues(cls) -> list[dict]:
+        """
+        Returns only soccer leagues for the soccer league selector.
+        """
+        soccer_leagues = []
+        soccer_keys = (
+            cls.SPORT_CATEGORIES.get("soccer_europe", []) +
+            cls.SPORT_CATEGORIES.get("soccer_americas", []) +
+            cls.SPORT_CATEGORIES.get("soccer_other", [])
+        )
+        for sport_key in soccer_keys:
+            if sport_key in cls.LEAGUE_DISPLAY_NAMES:
+                soccer_leagues.append({
+                    "id": sport_key,
+                    "name": cls.LEAGUE_DISPLAY_NAMES[sport_key],
+                })
+        return soccer_leagues
     
     def __init__(self):
         """
