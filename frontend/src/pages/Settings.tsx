@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Eye, EyeOff, Bell, Shield, Wallet, TestTube2, Save, Loader2, ShieldAlert, RefreshCw, Monitor, Smartphone, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Bell, Shield, Wallet, TestTube2, Save, Loader2, ShieldAlert, RefreshCw, Monitor, Smartphone, Trash2, Globe } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/accordion';
 import { apiClient, SportConfigResponse, WalletStatusResponse, SessionInfo } from '@/api/client';
 import { useSportConfigs, useGlobalSettings, useUpdateSportConfig, useUpdateGlobalSettings } from '@/hooks/useApi';
+import { LeagueSelector } from '@/components/LeagueSelector';
 
 // Wallet credentials interface
 interface WalletCredentials {
@@ -800,6 +801,22 @@ export default function Settings() {
                 No sport configurations found. Complete onboarding to set up your trading parameters.
               </p>
             )}
+          </CardContent>
+        </Card>
+
+        {/* League Selection */}
+        <Card className="bg-card border-border">
+          <CardHeader>
+            <CardTitle className="text-base font-medium text-foreground flex items-center gap-2">
+              <Globe className="w-5 h-5 text-primary" />
+              League Selection
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Choose which leagues to monitor across all sports. 126 leagues available.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <LeagueSelector />
           </CardContent>
         </Card>
 

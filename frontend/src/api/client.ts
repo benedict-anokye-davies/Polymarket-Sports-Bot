@@ -396,6 +396,74 @@ class ApiClient {
     });
   }
 
+  // ==========================================================================
+  // League Selection Endpoints
+  // ==========================================================================
+
+  /**
+   * Get all available leagues with display names
+   */
+  async getAvailableLeagues(): Promise<LeagueInfo[]> {
+    return this.request('/bot/leagues');
+  }
+
+  /**
+   * Get all sport categories with their leagues
+   */
+  async getSportCategories(): Promise<SportCategory[]> {
+    return this.request('/bot/categories');
+  }
+
+  /**
+   * Get leagues for a specific category
+   */
+  async getLeaguesByCategory(category: string): Promise<LeagueInfo[]> {
+    return this.request(`/bot/categories/${category}/leagues`);
+  }
+
+  /**
+   * Get soccer leagues only
+   */
+  async getSoccerLeagues(): Promise<LeagueInfo[]> {
+    return this.request('/bot/soccer-leagues');
+  }
+
+  /**
+   * Get user's league configuration status
+   */
+  async getUserLeagueStatus(): Promise<UserLeagueStatus[]> {
+    return this.request('/settings/leagues/status');
+  }
+
+  /**
+   * Bulk configure multiple leagues with same settings
+   */
+  async bulkConfigureLeagues(config: BulkLeagueConfig): Promise<BulkLeagueConfigResponse> {
+    return this.request('/settings/leagues/bulk', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  /**
+   * Enable or disable multiple leagues at once
+   */
+  async bulkEnableLeagues(leagues: string[], enabled: boolean): Promise<LeagueEnableResponse> {
+    return this.request('/settings/leagues/enable', {
+      method: 'POST',
+      body: JSON.stringify({ leagues, enabled }),
+    });
+  }
+
+  /**
+   * Delete a league configuration
+   */
+  async deleteLeagueConfig(league: string): Promise<{ message: string }> {
+    return this.request(`/settings/leagues/${league}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Global Settings endpoints
   async getGlobalSettings(): Promise<GlobalSettingsResponse> {
     return this.request('/settings/global');
@@ -899,6 +967,76 @@ export interface MarketConfigUpdate {
   max_positions?: number | null;
   enabled?: boolean;
   auto_trade?: boolean;
+}
+
+// =============================================================================
+// League Selection Types
+// =============================================================================
+
+export interface LeagueInfo {
+  league_key: string;
+  display_name: string;
+  sport_type: string;
+  category: string;
+}
+
+export interface SportCategory {
+  category: string;
+  display_name: string;
+  leagues: LeagueInfo[];
+}
+
+export interface UserLeagueConfig {
+  league_key: string;
+  enabled: boolean;
+  entry_threshold_drop: number | null;
+  entry_threshold_absolute: number | null;
+  take_profit_pct: number | null;
+  stop_loss_pct: number | null;
+  position_size_usdc: number | null;
+  min_time_remaining_seconds: number | null;
+  max_positions: number | null;
+}
+
+export interface UserLeagueStatus {
+  configured_leagues: UserLeagueConfig[];
+  available_leagues: LeagueInfo[];
+  enabled_count: number;
+  total_available: number;
+}
+
+export interface BulkLeagueConfigItem {
+  league_key: string;
+  entry_threshold_drop?: number;
+  entry_threshold_absolute?: number;
+  take_profit_pct?: number;
+  stop_loss_pct?: number;
+  position_size_usdc?: number;
+  min_time_remaining_seconds?: number;
+  max_positions?: number;
+}
+
+export interface BulkLeagueConfigRequest {
+  leagues: BulkLeagueConfigItem[];
+  apply_same_settings: boolean;
+}
+
+export interface BulkLeagueConfigResponse {
+  success: boolean;
+  message: string;
+  configured_count: number;
+  leagues: string[];
+}
+
+export interface LeagueEnableRequest {
+  league_keys: string[];
+  enabled: boolean;
+}
+
+export interface LeagueEnableResponse {
+  success: boolean;
+  message: string;
+  updated_count: number;
 }
 
 // =============================================================================
