@@ -31,6 +31,7 @@ class ESPNService:
         "mlb": "baseball/mlb",
         "nhl": "hockey/nhl",
         "soccer": "soccer/usa.1",  # MLS, can also use eng.1 for EPL
+        "mls": "soccer/usa.1",     # MLS explicit alias
         "tennis": "tennis/atp",
         "mma": "mma/ufc",
         "golf": "golf/pga",
@@ -52,6 +53,7 @@ class ESPNService:
         "ncaab": "50",      # Division I Men's Basketball (all D1 games)
         "ncaaf": "80",      # FBS (Division I-A) Football (all FBS games)
         "soccer": "all",    # All soccer leagues/games
+        "mls": "all",       # MLS - all games
         "epl": "1",         # English Premier League
         "laliga": "15",     # La Liga
         "bundesliga": "10", # Bundesliga
