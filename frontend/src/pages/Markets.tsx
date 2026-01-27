@@ -10,7 +10,10 @@ import {
   X,
   Calendar,
   Clock,
-  Zap
+  Zap,
+  ChevronDown,
+  Globe,
+  Filter,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/card';
@@ -30,8 +33,16 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { apiClient, AvailableGame, GameListResponse } from '@/api/client';
+import { apiClient, AvailableGame, GameListResponse, SportCategory, LeagueInfo } from '@/api/client';
 import { TableSkeleton } from '@/components/TableSkeleton';
 
 const statusStyles = {
@@ -39,20 +50,6 @@ const statusStyles = {
   UPCOMING: 'bg-info/10 text-info border-info/20',
   FINISHED: 'bg-muted text-muted-foreground border-border',
 };
-
-const SPORTS_LIST = [
-  { value: 'all', label: 'All Sports' },
-  { value: 'nba', label: 'NBA' },
-  { value: 'nfl', label: 'NFL' },
-  { value: 'mlb', label: 'MLB' },
-  { value: 'nhl', label: 'NHL' },
-  { value: 'ncaab', label: 'NCAA Basketball' },
-  { value: 'ncaaf', label: 'NCAA Football' },
-  { value: 'soccer', label: 'Soccer' },
-  { value: 'tennis', label: 'Tennis' },
-  { value: 'mma', label: 'MMA/UFC' },
-  { value: 'golf', label: 'Golf' },
-];
 
 export default function Markets() {
   const [gameData, setGameData] = useState<GameListResponse>({
@@ -64,16 +61,62 @@ export default function Markets() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sportFilter, setSportFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<string>('selected');
   const [selectingAll, setSelectingAll] = useState(false);
 
+  // League selection state
+  const [categories, setCategories] = useState<SportCategory[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
+  const [loadingCategories, setLoadingCategories] = useState(true);
+
+  // Load categories on mount
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        setLoadingCategories(true);
+        const data = await apiClient.getSportCategories();
+        setCategories(data);
+      } catch (err) {
+        console.error('Failed to load categories:', err);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+    loadCategories();
+  }, []);
+
+  // Get leagues for current category
+  const getCurrentLeagues = useCallback((): LeagueInfo[] => {
+    if (selectedCategory === 'all') {
+      return categories.flatMap(cat => cat.leagues);
+    }
+    const category = categories.find(c => c.category === selectedCategory);
+    return category?.leagues || [];
+  }, [categories, selectedCategory]);
+
   const fetchGames = useCallback(async () => {
     try {
       setLoading(true);
-      const sport = sportFilter !== 'all' ? sportFilter.toLowerCase() : undefined;
+      // If specific leagues selected, fetch for each league
+      // Otherwise fetch all or by category
+      let sport: string | undefined;
+      
+      if (selectedLeagues.size > 0) {
+        // For now, use the first league's sport type
+        // Backend should be updated to accept multiple leagues
+        const firstLeague = Array.from(selectedLeagues)[0];
+        sport = firstLeague;
+      } else if (selectedCategory !== 'all') {
+        // Use category's first league as sport filter
+        const categoryLeagues = getCurrentLeagues();
+        if (categoryLeagues.length > 0) {
+          sport = categoryLeagues[0].sport_type;
+        }
+      }
+      
       const data = await apiClient.getAllGames(sport);
       setGameData(data);
       setError(null);
@@ -83,7 +126,7 @@ export default function Markets() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [sportFilter]);
+  }, [selectedCategory, selectedLeagues, getCurrentLeagues]);
 
   useEffect(() => {
     fetchGames();
@@ -92,6 +135,27 @@ export default function Markets() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchGames();
+  };
+
+  const toggleLeagueSelection = (leagueKey: string) => {
+    setSelectedLeagues(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(leagueKey)) {
+        newSet.delete(leagueKey);
+      } else {
+        newSet.add(leagueKey);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllLeaguesInCategory = () => {
+    const leagues = getCurrentLeagues();
+    setSelectedLeagues(new Set(leagues.map(l => l.league_key)));
+  };
+
+  const clearLeagueSelection = () => {
+    setSelectedLeagues(new Set());
   };
 
   const toggleGameSelection = async (game: AvailableGame) => {
@@ -144,16 +208,23 @@ export default function Markets() {
   };
 
   const selectAllForSport = async () => {
-    if (sportFilter === 'all') {
-      setError('Please select a specific sport to select all games');
+    if (selectedLeagues.size === 0 && selectedCategory === 'all') {
+      setError('Please select a category or specific leagues first');
       return;
     }
     
     try {
       setSelectingAll(true);
-      const result = await apiClient.selectAllGamesForSport(sportFilter);
-      if (result.success) {
-        fetchGames(); // Refresh to get updated state
+      // Use first selected league or category's sport type
+      const sportFilter = selectedLeagues.size > 0 
+        ? Array.from(selectedLeagues)[0]
+        : getCurrentLeagues()[0]?.sport_type;
+      
+      if (sportFilter) {
+        const result = await apiClient.selectAllGamesForSport(sportFilter);
+        if (result.success) {
+          fetchGames();
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to select all games');
@@ -163,16 +234,22 @@ export default function Markets() {
   };
 
   const unselectAllForSport = async () => {
-    if (sportFilter === 'all') {
-      setError('Please select a specific sport to unselect all games');
+    if (selectedLeagues.size === 0 && selectedCategory === 'all') {
+      setError('Please select a category or specific leagues first');
       return;
     }
     
     try {
       setSelectingAll(true);
-      const result = await apiClient.unselectAllGamesForSport(sportFilter);
-      if (result.success) {
-        fetchGames(); // Refresh to get updated state
+      const sportFilter = selectedLeagues.size > 0 
+        ? Array.from(selectedLeagues)[0]
+        : getCurrentLeagues()[0]?.sport_type;
+      
+      if (sportFilter) {
+        const result = await apiClient.unselectAllGamesForSport(sportFilter);
+        if (result.success) {
+          fetchGames();
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unselect all games');
@@ -366,19 +443,89 @@ export default function Markets() {
         {/* Filters */}
         <Card className="p-4 bg-card border-border">
           <div className="flex flex-wrap items-center gap-4">
-            <Select value={sportFilter} onValueChange={setSportFilter}>
-              <SelectTrigger className="w-44 bg-muted border-border">
-                <SelectValue placeholder="All Sports" />
+            {/* Category Selector */}
+            <Select 
+              value={selectedCategory} 
+              onValueChange={(value) => {
+                setSelectedCategory(value);
+                setSelectedLeagues(new Set()); // Clear league selection when category changes
+              }}
+            >
+              <SelectTrigger className="w-48 bg-muted border-border">
+                <Globe className="w-4 h-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
-                {SPORTS_LIST.map(sport => (
-                  <SelectItem key={sport.value} value={sport.value}>
-                    {sport.label}
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.map(cat => (
+                  <SelectItem key={cat.category} value={cat.category}>
+                    {cat.display_name} ({cat.leagues.length})
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
+            {/* League Multi-Select Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-56 justify-between bg-muted border-border">
+                  <span className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-muted-foreground" />
+                    {selectedLeagues.size === 0 
+                      ? 'Select Leagues' 
+                      : `${selectedLeagues.size} League${selectedLeagues.size > 1 ? 's' : ''} Selected`
+                    }
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-64 max-h-80 overflow-y-auto">
+                <DropdownMenuLabel className="flex justify-between items-center">
+                  <span>Select Leagues</span>
+                  <div className="flex gap-1">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-6 text-xs"
+                      onClick={selectAllLeaguesInCategory}
+                    >
+                      All
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-6 text-xs"
+                      onClick={clearLeagueSelection}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {loadingCategories ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                  </div>
+                ) : (
+                  getCurrentLeagues().map(league => (
+                    <DropdownMenuCheckboxItem
+                      key={league.league_key}
+                      checked={selectedLeagues.has(league.league_key)}
+                      onCheckedChange={() => toggleLeagueSelection(league.league_key)}
+                    >
+                      {league.display_name}
+                    </DropdownMenuCheckboxItem>
+                  ))
+                )}
+                {!loadingCategories && getCurrentLeagues().length === 0 && (
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    No leagues in this category
+                  </div>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Search */}
             <div className="relative flex-1 max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -389,8 +536,9 @@ export default function Markets() {
               />
             </div>
 
+            {/* Action Buttons */}
             <div className="flex items-center gap-2 ml-auto">
-              {sportFilter !== 'all' && (
+              {(selectedLeagues.size > 0 || selectedCategory !== 'all') && (
                 <>
                   <Button
                     variant="outline"
@@ -404,7 +552,7 @@ export default function Markets() {
                     ) : (
                       <CheckCheck className="w-3.5 h-3.5" />
                     )}
-                    Select All {sportFilter.toUpperCase()}
+                    Select All
                   </Button>
                   <Button
                     variant="outline"

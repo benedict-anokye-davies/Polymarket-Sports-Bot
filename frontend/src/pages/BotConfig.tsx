@@ -22,6 +22,8 @@ import {
   X,
   FlaskConical,
   Wallet,
+  Globe,
+  ChevronDown,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -38,20 +40,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { apiClient, type TradingParameters, type BotConfigResponse, type ESPNGame } from '@/api/client';
-
-// All supported sports with their configurations
-const SPORTS = [
-  { id: 'nba', name: 'NBA', icon: '🏀', hasGameClock: true },
-  { id: 'nfl', name: 'NFL', icon: '🏈', hasGameClock: true },
-  { id: 'mlb', name: 'MLB', icon: '⚾', hasGameClock: false },
-  { id: 'nhl', name: 'NHL', icon: '🏒', hasGameClock: true },
-  { id: 'soccer', name: 'Soccer', icon: '⚽', hasGameClock: true },
-  { id: 'ncaab', name: 'NCAA CBB', icon: '🏀', hasGameClock: true },
-  { id: 'tennis', name: 'Tennis', icon: '🎾', hasGameClock: false },
-  { id: 'cricket', name: 'Cricket', icon: '🏏', hasGameClock: false },
-  { id: 'ufc', name: 'UFC', icon: '🥊', hasGameClock: true },
-];
+import { apiClient, type TradingParameters, type BotConfigResponse, type ESPNGame, type SportCategory, type LeagueInfo } from '@/api/client';
 
 // Game type for frontend display
 interface GameData {
@@ -135,6 +124,34 @@ export default function BotConfig() {
   // Wallet/credentials connected status
   const [walletConnected, setWalletConnected] = useState<boolean | null>(null);
 
+  // League selection state (new)
+  const [categories, setCategories] = useState<SportCategory[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('basketball');
+  const [selectedLeague, setSelectedLeague] = useState<string>('nba');
+  const [loadingCategories, setLoadingCategories] = useState(true);
+
+  // Load categories on mount
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        setLoadingCategories(true);
+        const data = await apiClient.getSportCategories();
+        setCategories(data);
+      } catch (err) {
+        console.error('Failed to load categories:', err);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+    loadCategories();
+  }, []);
+
+  // Get leagues for current category
+  const getCurrentLeagues = useCallback((): LeagueInfo[] => {
+    const category = categories.find(c => c.category === selectedCategory);
+    return category?.leagues || [];
+  }, [categories, selectedCategory]);
+
   // Check wallet status on mount
   useEffect(() => {
     const checkWalletStatus = async () => {
@@ -171,12 +188,12 @@ export default function BotConfig() {
   const [availableGames, setAvailableGames] = useState<GameData[]>([]);
   const [isLoadingGames, setIsLoadingGames] = useState(false);
 
-  // Fetch games from ESPN API when sport changes
-  const fetchGames = useCallback(async (sport: string) => {
+  // Fetch games from ESPN API when league changes
+  const fetchGames = useCallback(async (league: string) => {
     setIsLoadingGames(true);
     setError(null);
     try {
-      const games = await apiClient.getLiveGames(sport);
+      const games = await apiClient.getLiveGames(league);
       // Transform ESPN games to our GameData format
       const transformed: GameData[] = games.map((g) => ({
         id: g.id,
@@ -206,13 +223,21 @@ export default function BotConfig() {
     }
   }, []);
 
-  // Fetch games when sport changes
+  // Fetch games when league changes
   useEffect(() => {
-    fetchGames(selectedSport);
-  }, [selectedSport, fetchGames]);
+    fetchGames(selectedLeague);
+  }, [selectedLeague, fetchGames]);
 
-  // Get current sport config
-  const currentSport = SPORTS.find(s => s.id === selectedSport);
+  // Get current league info
+  const currentLeague = getCurrentLeagues().find(l => l.league_key === selectedLeague);
+
+  // Determine if current sport has a game clock (for time-based rules)
+  const hasGameClock = (): boolean => {
+    const sportType = currentLeague?.sport_type?.toLowerCase() || selectedLeague.toLowerCase();
+    // Sports without game clocks: baseball, golf, tennis
+    const noClockSports = ['mlb', 'baseball', 'golf', 'tennis'];
+    return !noClockSports.some(s => sportType.includes(s));
+  };
 
   // Get selected games data (from current sport only for display)
   const selectedGamesData = Array.from(selectedGames.values());
@@ -227,7 +252,7 @@ export default function BotConfig() {
         // Default to home team when first selecting
         newMap.set(gameId, {
           game,
-          sport: selectedSport,
+          sport: selectedLeague,
           side: 'home'
         });
       }
@@ -251,7 +276,7 @@ export default function BotConfig() {
   const selectAllGames = () => {
     const newMap = new Map<string, SelectedGame>();
     availableGames.forEach(g => {
-      newMap.set(g.id, { game: g, sport: selectedSport, side: 'home' });
+      newMap.set(g.id, { game: g, sport: selectedLeague, side: 'home' });
     });
     setSelectedGames(newMap);
   };
@@ -261,10 +286,22 @@ export default function BotConfig() {
     setSelectedGames(new Map());
   };
 
-  // Handle sport change - NOTE: Don't clear games from other sports!
-  const handleSportChange = (sportId: string) => {
-    setSelectedSport(sportId);
-    // Don't clear selections - this allows multi-sport support
+  // Handle category change
+  const handleCategoryChange = (category: string) => {
+    setSelectedCategory(category);
+    // Set first league in category as default
+    const cat = categories.find(c => c.category === category);
+    if (cat && cat.leagues.length > 0) {
+      setSelectedLeague(cat.leagues[0].league_key);
+    }
+    setError(null);
+    setSuccessMessage(null);
+  };
+
+  // Handle league change
+  const handleLeagueChange = (league: string) => {
+    setSelectedLeague(league);
+    setSelectedSport(league); // Keep backward compatibility
     setError(null);
     setSuccessMessage(null);
   };
@@ -529,24 +566,50 @@ export default function BotConfig() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Sport Selector */}
-                <div className="space-y-2" data-tour="sport-selector">
-                  <Label>Sport</Label>
-                  <Select value={selectedSport} onValueChange={handleSportChange}>
+                {/* Category Selector */}
+                <div className="space-y-2" data-tour="category-selector">
+                  <Label className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-muted-foreground" />
+                    Category
+                  </Label>
+                  <Select value={selectedCategory} onValueChange={handleCategoryChange}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select sport" />
+                      <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {SPORTS.map(sport => (
-                        <SelectItem key={sport.id} value={sport.id}>
-                          <span className="flex items-center gap-2">
-                            <span>{sport.icon}</span>
-                            <span>{sport.name}</span>
-                          </span>
+                      {loadingCategories ? (
+                        <SelectItem value="loading" disabled>Loading...</SelectItem>
+                      ) : (
+                        categories.map(cat => (
+                          <SelectItem key={cat.category} value={cat.category}>
+                            {cat.display_name} ({cat.leagues.length} leagues)
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* League Selector */}
+                <div className="space-y-2" data-tour="league-selector">
+                  <Label>League</Label>
+                  <Select value={selectedLeague} onValueChange={handleLeagueChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select league" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getCurrentLeagues().map(league => (
+                        <SelectItem key={league.league_key} value={league.league_key}>
+                          {league.display_name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {currentLeague && (
+                    <p className="text-xs text-muted-foreground">
+                      Sport type: {currentLeague.sport_type}
+                    </p>
+                  )}
                 </div>
 
                 {/* Games List Header */}
@@ -924,9 +987,9 @@ export default function BotConfig() {
                   <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
                     <Timer className="w-4 h-4 text-primary" />
                     Time-Based Rules
-                    {!currentSport?.hasGameClock && (
+                    {!hasGameClock() && (
                       <Badge variant="secondary" className="text-xs">
-                        N/A for {currentSport?.name}
+                        N/A for {currentLeague?.display_name || selectedLeague}
                       </Badge>
                     )}
                   </h3>
@@ -951,7 +1014,7 @@ export default function BotConfig() {
                         min={1}
                         max={30}
                         step={1}
-                        disabled={!currentSport?.hasGameClock}
+                        disabled={!hasGameClock()}
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>1 min</span>
@@ -979,7 +1042,7 @@ export default function BotConfig() {
                         min={0}
                         max={15}
                         step={1}
-                        disabled={!currentSport?.hasGameClock}
+                        disabled={!hasGameClock()}
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>0 min</span>
