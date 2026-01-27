@@ -224,7 +224,9 @@ export default function Markets() {
       setAllGames(allFetchedGames);
       
       if (allFetchedGames.length === 0) {
-        setError('No games found for selected leagues. Try selecting different leagues or check back later.');
+        // More helpful messaging based on selected leagues
+        const leagueNames = Array.from(selectedLeagues).join(', ').toUpperCase();
+        setError(`No games currently scheduled for ${leagueNames}. This is normal - games are only shown on days when they are scheduled. Try selecting different leagues with games today.`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load games');
@@ -505,8 +507,13 @@ export default function Markets() {
       return (
         <div className="text-center py-16">
           <p className="text-muted-foreground">{emptyMessage}</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            {searchQuery ? 'Try a different search term' : 'Select leagues above to see games'}
+          <p className="text-sm text-muted-foreground mt-2">
+            {searchQuery 
+              ? 'Try a different search term' 
+              : selectedLeagues.size === 0 
+                ? 'Select a category and leagues above to see games'
+                : 'Tip: Try selecting NBA, MLS, or Premier League for more frequent games'
+            }
           </p>
         </div>
       );

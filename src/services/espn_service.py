@@ -352,6 +352,8 @@ class ESPNService:
         "football": ["nfl", "ncaaf", "cfl", "xfl", "usfl"],
         "baseball": ["mlb", "ncaa_baseball", "npb", "kbo", "mexican_baseball"],
         "hockey": ["nhl", "ahl", "khl", "shl", "ncaa_hockey", "iihf"],
+        # Combined soccer category for convenience - includes major leagues
+        "soccer": ["epl", "laliga", "bundesliga", "seriea", "ligue1", "mls", "ucl", "europa", "conference"],
         "soccer_england": ["epl", "championship", "league_one", "league_two", "fa_cup", "efl_cup"],
         "soccer_spain": ["laliga", "laliga2", "copa_del_rey"],
         "soccer_germany": ["bundesliga", "bundesliga2", "dfb_pokal"],
@@ -366,7 +368,8 @@ class ESPNService:
         "golf": ["pga", "lpga", "european_tour", "masters", "us_open_golf", "british_open", "pga_championship", "liv_golf"],
         "combat": ["ufc", "bellator", "pfl", "one_championship", "boxing"],
         "motorsports": ["f1", "nascar", "indycar", "motogp"],
-        "other": ["rugby_union", "rugby_league", "cricket", "afl"],
+        # Note: cricket removed - ESPN API no longer supports cricket scoreboard
+        "other": ["rugby_union", "rugby_league", "afl"],
     }
     
     # Group IDs for fetching ALL games instead of just Top 25/filtered
@@ -554,6 +557,7 @@ class ESPNService:
             "football": "Football",
             "baseball": "Baseball",
             "hockey": "Hockey",
+            "soccer": "Soccer (Major Leagues)",
             "soccer_england": "Soccer - England",
             "soccer_spain": "Soccer - Spain",
             "soccer_germany": "Soccer - Germany",
