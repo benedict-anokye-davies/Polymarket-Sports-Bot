@@ -90,43 +90,65 @@ async def lifespan(app: FastAPI):
     startup_time = datetime.now(timezone.utc)
     logger.info("Starting Polymarket Sports Trading Bot")
     
-    # Initialize database
-    await init_db()
+    # Initialize database (non-blocking - app starts even if DB fails)
+    try:
+        await init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.warning(f"Database initialization failed (app will continue): {e}")
     
-    # Setup database health monitoring
-    db_health_monitor = DatabaseHealthMonitor(engine)
-    health_aggregator.register_service("database", db_health_monitor.run_health_check)
+    # Setup database health monitoring (skip if no engine)
+    try:
+        db_health_monitor = DatabaseHealthMonitor(engine)
+        health_aggregator.register_service("database", db_health_monitor.run_health_check)
+    except Exception as e:
+        logger.warning(f"Health monitor setup skipped: {e}")
     
-    # Start health check scheduler
-    health_scheduler = HealthCheckScheduler(health_aggregator, interval_seconds=30)
-    await health_scheduler.start()
+    # Start health check scheduler (non-blocking)
+    try:
+        health_scheduler = HealthCheckScheduler(health_aggregator, interval_seconds=30)
+        await health_scheduler.start()
+    except Exception as e:
+        logger.warning(f"Health scheduler setup skipped: {e}")
     
-    # Setup alert channels
-    discord_webhook = getattr(app_settings, 'discord_webhook_url', None)
-    setup_default_alerts(discord_webhook)
+    # Setup alert channels (non-blocking)
+    try:
+        discord_webhook = getattr(app_settings, 'discord_webhook_url', None)
+        setup_default_alerts(discord_webhook)
+    except Exception as e:
+        logger.warning(f"Alert setup skipped: {e}")
     
-    # Setup incident management providers (PagerDuty, OpsGenie, Slack)
-    pagerduty_key = getattr(app_settings, 'pagerduty_routing_key', None)
-    opsgenie_key = getattr(app_settings, 'opsgenie_api_key', None)
-    slack_webhook = getattr(app_settings, 'slack_alert_webhook', None)
-    setup_incident_management(
-        pagerduty_routing_key=pagerduty_key,
-        opsgenie_api_key=opsgenie_key,
-        slack_webhook_url=slack_webhook,
-    )
+    # Setup incident management providers (non-blocking)
+    try:
+        pagerduty_key = getattr(app_settings, 'pagerduty_routing_key', None)
+        opsgenie_key = getattr(app_settings, 'opsgenie_api_key', None)
+        slack_webhook = getattr(app_settings, 'slack_alert_webhook', None)
+        setup_incident_management(
+            pagerduty_routing_key=pagerduty_key,
+            opsgenie_api_key=opsgenie_key,
+            slack_webhook_url=slack_webhook,
+        )
+    except Exception as e:
+        logger.warning(f"Incident management setup skipped: {e}")
     
-    # Log system startup
-    await audit_logger.log_system_startup(
-        version="1.0.0",
-        environment="debug" if app_settings.debug else "production",
-    )
+    # Log system startup (non-blocking)
+    try:
+        await audit_logger.log_system_startup(
+            version="1.0.0",
+            environment="debug" if app_settings.debug else "production",
+        )
+    except Exception as e:
+        logger.warning(f"Audit log skipped: {e}")
     
-    # Send startup alert
-    await alert_manager.info(
-        "System Started",
-        f"Trading bot started successfully at {startup_time.isoformat()}",
-        category="system",
-    )
+    # Send startup alert (non-blocking)
+    try:
+        await alert_manager.info(
+            "System Started",
+            f"Trading bot started successfully at {startup_time.isoformat()}",
+            category="system",
+        )
+    except Exception as e:
+        logger.warning(f"Startup alert skipped: {e}")
     
     log_system_event("startup", {"environment": "debug" if app_settings.debug else "production"})
     
@@ -137,10 +159,16 @@ async def lifespan(app: FastAPI):
     
     # Stop health scheduler
     if health_scheduler:
-        await health_scheduler.stop()
+        try:
+            await health_scheduler.stop()
+        except Exception:
+            pass
     
     # Log shutdown
-    await audit_logger.log_system_shutdown("normal")
+    try:
+        await audit_logger.log_system_shutdown("normal")
+    except Exception:
+        pass
     
     log_system_event("shutdown", {"reason": "normal"})
     logger.info("Shutdown complete")
