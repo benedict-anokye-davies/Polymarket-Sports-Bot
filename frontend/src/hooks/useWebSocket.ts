@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAppStore } from '@/stores/useAppStore';
+import { logger } from '@/lib/logger';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sports-bot-production.up.railway.app/api/v1';
 
@@ -208,7 +209,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       switch (eventType) {
         case WebSocketEventType.CONNECTION_ESTABLISHED:
-          console.log('[WS] Connection established:', data);
+          logger.debug('[WS] Connection established:', data);
           break;
 
         case WebSocketEventType.HEARTBEAT:
@@ -253,7 +254,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           break;
 
         default:
-          console.log('[WS] Unhandled event:', eventType, data);
+          logger.debug('[WS] Unhandled event:', eventType, data);
       }
     } catch (err) {
       console.error('[WS] Failed to parse message:', err);
@@ -281,7 +282,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('[WS] Connected');
+        logger.debug('[WS] Connected');
         setIsConnected(true);
         setConnectionError(null);
         setWsConnected(true);
@@ -300,7 +301,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       };
 
       ws.onclose = (event) => {
-        console.log('[WS] Disconnected:', event.code, event.reason);
+        logger.debug('[WS] Disconnected:', event.code, event.reason);
         setIsConnected(false);
         setWsConnected(false);
         clearTimers();
@@ -314,7 +315,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               BASE_RECONNECT_DELAY_MS * Math.pow(2, attempts),
               MAX_RECONNECT_DELAY_MS
             );
-            console.log(`[WS] Reconnecting in ${delay}ms (attempt ${attempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+            logger.debug(`[WS] Reconnecting in ${delay}ms (attempt ${attempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
             reconnectAttemptsRef.current = attempts + 1;
             reconnectTimeoutRef.current = setTimeout(connect, delay);
           } else {

@@ -113,7 +113,7 @@ export default function Backtesting() {
     try {
       setLoading(true);
       const res = await fetch('/api/v1/backtest/results', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
       });
       if (res.ok) {
         setResults(await res.json());
@@ -136,7 +136,7 @@ export default function Backtesting() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         },
         body: JSON.stringify({
           ...config,
@@ -176,7 +176,7 @@ export default function Backtesting() {
     if (result.status === 'completed') {
       try {
         const res = await fetch(`/api/v1/backtest/results/${result.id}/equity-curve`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
         });
         if (res.ok) {
           setEquityCurve(await res.json());
@@ -191,7 +191,7 @@ export default function Backtesting() {
     try {
       const res = await fetch(`/api/v1/backtest/results/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
       });
 
       if (res.ok) {

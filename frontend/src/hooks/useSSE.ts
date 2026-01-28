@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import apiClient from '@/api/client';
 import { useAppStore } from '@/stores/useAppStore';
+import { logger } from '@/lib/logger';
 
 interface SSEEvent {
   type: 'status' | 'games' | 'positions' | 'heartbeat' | 'error';
@@ -93,7 +94,7 @@ export function useSSE(options: UseSSEOptions = {}) {
       eventSourceRef.current = eventSource;
 
       eventSource.onopen = () => {
-        console.log('[SSE] Connected to event stream');
+        logger.debug('[SSE] Connected to event stream');
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
         setSseConnected(true);
@@ -149,7 +150,7 @@ export function useSSE(options: UseSSEOptions = {}) {
             30000
           );
 
-          console.log(`[SSE] Reconnecting in ${delay}ms (attempt ${attempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+          logger.debug(`[SSE] Reconnecting in ${delay}ms (attempt ${attempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
 
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttemptsRef.current += 1;

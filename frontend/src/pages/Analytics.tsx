@@ -79,16 +79,16 @@ export default function Analytics() {
       
       const [metricsRes, sportsRes, equityRes, dailyRes] = await Promise.all([
         fetch('/api/v1/analytics/performance', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
         }),
         fetch('/api/v1/analytics/sports', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
         }),
         fetch('/api/v1/analytics/equity-curve', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
         }),
         fetch(`/api/v1/analytics/daily-pnl?days=${timeframe}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
         }),
       ]);
 

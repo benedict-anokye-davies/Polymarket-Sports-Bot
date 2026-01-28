@@ -3,6 +3,8 @@
  * Handles all HTTP requests with authentication and error handling
  */
 
+import { logger } from '@/lib/logger';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sports-bot-production.up.railway.app/api/v1';
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -1400,7 +1402,7 @@ export class WebSocketClient {
     if (!this.ws) return;
 
     this.ws.onopen = () => {
-      console.log('WebSocket connected');
+      logger.debug('WebSocket connected');
       this.isConnecting = false;
       this.reconnectAttempts = 0;
       this.startHeartbeat();
@@ -1420,7 +1422,7 @@ export class WebSocketClient {
     };
 
     this.ws.onclose = (event) => {
-      console.log(`WebSocket closed: ${event.code} ${event.reason}`);
+      logger.debug(`WebSocket closed: ${event.code} ${event.reason}`);
       this.isConnecting = false;
       this.clearHeartbeat();
 
@@ -1468,7 +1470,7 @@ export class WebSocketClient {
       this.options.maxReconnectDelay
     );
 
-    console.log(`WebSocket: Reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts + 1})`);
+    logger.debug(`WebSocket: Reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts + 1})`);
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectAttempts++;

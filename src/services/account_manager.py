@@ -384,6 +384,7 @@ class AccountManager:
             account_details.append({
                 "id": str(acc.id),
                 "name": acc.account_name or "Primary",
+                "platform": acc.platform or "polymarket",
                 "is_primary": acc.is_primary,
                 "is_active": acc.is_active,
                 "allocation_pct": float(acc.allocation_pct or 0),

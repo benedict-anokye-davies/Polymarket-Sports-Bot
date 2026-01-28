@@ -18,6 +18,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -33,6 +40,7 @@ import { useToast } from '@/hooks/use-toast';
 interface Account {
   id: string;
   account_name: string;
+  platform: 'polymarket' | 'kalshi';
   is_primary: boolean;
   is_active: boolean;
   allocation_pct: number;
@@ -58,6 +66,7 @@ export default function Accounts() {
 
   const [newAccount, setNewAccount] = useState({
     account_name: '',
+    platform: 'polymarket' as 'polymarket' | 'kalshi',
     private_key: '',
     funder_address: '',
     api_key: '',
@@ -75,7 +84,7 @@ export default function Accounts() {
     try {
       setLoading(true);
       const res = await fetch('/api/v1/accounts/summary', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
       });
       if (res.ok) {
         setSummary(await res.json());
@@ -98,7 +107,7 @@ export default function Accounts() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         },
         body: JSON.stringify(newAccount),
       });
@@ -111,6 +120,7 @@ export default function Accounts() {
         setDialogOpen(false);
         setNewAccount({
           account_name: '',
+          platform: 'polymarket',
           private_key: '',
           funder_address: '',
           api_key: '',
@@ -139,7 +149,7 @@ export default function Accounts() {
     try {
       const res = await fetch(`/api/v1/accounts/${accountId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
       });
 
       if (res.ok) {
@@ -162,7 +172,7 @@ export default function Accounts() {
     try {
       const res = await fetch(`/api/v1/accounts/${accountId}/set-primary`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
       });
 
       if (res.ok) {
@@ -187,7 +197,7 @@ export default function Accounts() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         },
         body: JSON.stringify({ is_active: !currentState }),
       });
@@ -231,7 +241,7 @@ export default function Accounts() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         },
         body: JSON.stringify({ allocations: newAllocations }),
       });
@@ -288,10 +298,25 @@ export default function Accounts() {
               <DialogHeader>
                 <DialogTitle>Add Trading Account</DialogTitle>
                 <DialogDescription>
-                  Connect a new Polymarket account. Your private key will be encrypted.
+                  Connect a new trading account. Your credentials will be encrypted.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="platform">Platform</Label>
+                  <Select
+                    value={newAccount.platform}
+                    onValueChange={(value: 'polymarket' | 'kalshi') => setNewAccount({ ...newAccount, platform: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select platform" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="polymarket">Polymarket</SelectItem>
+                      <SelectItem value="kalshi">Kalshi</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="grid gap-2">
                   <Label htmlFor="name">Account Name</Label>
                   <Input
@@ -301,25 +326,52 @@ export default function Accounts() {
                     onChange={(e) => setNewAccount({ ...newAccount, account_name: e.target.value })}
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="private_key">Private Key</Label>
-                  <Input
-                    id="private_key"
-                    type="password"
-                    placeholder="0x..."
-                    value={newAccount.private_key}
-                    onChange={(e) => setNewAccount({ ...newAccount, private_key: e.target.value })}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="funder">Funder Address</Label>
-                  <Input
-                    id="funder"
-                    placeholder="0x..."
-                    value={newAccount.funder_address}
-                    onChange={(e) => setNewAccount({ ...newAccount, funder_address: e.target.value })}
-                  />
-                </div>
+                {newAccount.platform === 'polymarket' ? (
+                  <>
+                    <div className="grid gap-2">
+                      <Label htmlFor="private_key">Private Key</Label>
+                      <Input
+                        id="private_key"
+                        type="password"
+                        placeholder="0x..."
+                        value={newAccount.private_key}
+                        onChange={(e) => setNewAccount({ ...newAccount, private_key: e.target.value })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="funder">Funder Address</Label>
+                      <Input
+                        id="funder"
+                        placeholder="0x..."
+                        value={newAccount.funder_address}
+                        onChange={(e) => setNewAccount({ ...newAccount, funder_address: e.target.value })}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid gap-2">
+                      <Label htmlFor="api_key">API Key</Label>
+                      <Input
+                        id="api_key"
+                        type="password"
+                        placeholder="Your Kalshi API key"
+                        value={newAccount.api_key}
+                        onChange={(e) => setNewAccount({ ...newAccount, api_key: e.target.value })}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="api_secret">API Secret</Label>
+                      <Input
+                        id="api_secret"
+                        type="password"
+                        placeholder="Your Kalshi API secret"
+                        value={newAccount.api_secret}
+                        onChange={(e) => setNewAccount({ ...newAccount, api_secret: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="grid gap-2">
                   <Label htmlFor="allocation">Allocation (%)</Label>
                   <Input
@@ -387,6 +439,9 @@ export default function Accounts() {
                       <Users className="w-5 h-5" />
                       {account.account_name}
                     </CardTitle>
+                    <Badge variant={account.platform === 'kalshi' ? 'secondary' : 'default'} className="capitalize">
+                      {account.platform || 'polymarket'}
+                    </Badge>
                     {account.is_primary && (
                       <Badge variant="default">
                         <Star className="w-3 h-3 mr-1" />

@@ -37,7 +37,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         const botStatus = await apiClient.getBotStatus();
         setBotStatus(botStatus.is_running, botStatus.active_positions || 0);
       } catch (err) {
-        console.log('Failed to fetch status:', err);
+        // Silent failure - non-critical status check
       }
     };
     initStatus();

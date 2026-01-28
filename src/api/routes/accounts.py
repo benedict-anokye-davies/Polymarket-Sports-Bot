@@ -3,7 +3,7 @@ Accounts API endpoints - multi-account management.
 """
 
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,6 +24,7 @@ class AccountResponse(BaseModel):
     """Account response schema."""
     id: str
     account_name: str
+    platform: str = "polymarket"
     is_primary: bool
     is_active: bool
     allocation_pct: float
@@ -44,8 +45,9 @@ class AccountSummaryResponse(BaseModel):
 class CreateAccountRequest(BaseModel):
     """Request to create a new trading account."""
     account_name: str = Field(..., min_length=1, max_length=50)
-    private_key: str = Field(..., min_length=64)
-    funder_address: str = Field(..., min_length=42, max_length=42)
+    platform: Literal["polymarket", "kalshi"] = "polymarket"
+    private_key: Optional[str] = Field(None, min_length=64)
+    funder_address: Optional[str] = Field(None, min_length=42, max_length=42)
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
     api_passphrase: Optional[str] = None
@@ -90,6 +92,7 @@ async def get_account_summary(
             AccountResponse(
                 id=acc["id"],
                 account_name=acc["name"],
+                platform=acc.get("platform", "polymarket"),
                 is_primary=acc["is_primary"],
                 is_active=acc["is_active"],
                 allocation_pct=acc["allocation_pct"],
@@ -125,6 +128,7 @@ async def list_accounts(
         AccountResponse(
             id=str(acc.id),
             account_name=acc.account_name or "Primary",
+            platform=acc.platform or "polymarket",
             is_primary=acc.is_primary or False,
             is_active=acc.is_active if acc.is_active is not None else True,
             allocation_pct=float(acc.allocation_pct or 100),
@@ -144,8 +148,26 @@ async def create_account(
     Create a new trading account.
     
     Encrypts private key and API credentials before storage.
+    Supports both Polymarket (requires private_key/funder_address)
+    and Kalshi (requires api_key/api_secret) platforms.
     """
-    encrypted_key = encrypt_credential(request.private_key)
+    # Validate platform-specific required fields
+    if request.platform == "polymarket":
+        if not request.private_key or not request.funder_address:
+            raise HTTPException(
+                status_code=400,
+                detail="Polymarket accounts require private_key and funder_address"
+            )
+    elif request.platform == "kalshi":
+        if not request.api_key or not request.api_secret:
+            raise HTTPException(
+                status_code=400,
+                detail="Kalshi accounts require api_key and api_secret"
+            )
+    
+    encrypted_key = None
+    if request.private_key:
+        encrypted_key = encrypt_credential(request.private_key)
     
     encrypted_api_key = None
     encrypted_api_secret = None
@@ -171,11 +193,12 @@ async def create_account(
     account = PolymarketAccount(
         user_id=current_user.id,
         account_name=request.account_name,
-        encrypted_private_key=encrypted_key,
+        platform=request.platform,
+        private_key_encrypted=encrypted_key,
         funder_address=request.funder_address,
-        encrypted_api_key=encrypted_api_key,
-        encrypted_api_secret=encrypted_api_secret,
-        encrypted_api_passphrase=encrypted_api_passphrase,
+        api_key_encrypted=encrypted_api_key,
+        api_secret_encrypted=encrypted_api_secret,
+        api_passphrase_encrypted=encrypted_api_passphrase,
         allocation_pct=Decimal(str(request.allocation_pct)),
         is_primary=request.is_primary,
         is_active=True,
@@ -188,6 +211,7 @@ async def create_account(
     return AccountResponse(
         id=str(account.id),
         account_name=account.account_name,
+        platform=account.platform or "polymarket",
         is_primary=account.is_primary or False,
         is_active=account.is_active if account.is_active is not None else True,
         allocation_pct=float(account.allocation_pct or 100),
@@ -230,6 +254,7 @@ async def update_account(
     return AccountResponse(
         id=str(account.id),
         account_name=account.account_name or "Primary",
+        platform=account.platform or "polymarket",
         is_primary=account.is_primary or False,
         is_active=account.is_active if account.is_active is not None else True,
         allocation_pct=float(account.allocation_pct or 100),

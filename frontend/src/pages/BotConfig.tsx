@@ -160,7 +160,6 @@ export default function BotConfig() {
         const status = await apiClient.getOnboardingStatus();
         setWalletConnected(status.wallet_connected);
       } catch (err) {
-        console.log('Failed to check wallet status:', err);
         setWalletConnected(false);
       }
     };
@@ -188,7 +187,7 @@ export default function BotConfig() {
         // Load simulation mode from backend (defaults to true for safety)
         setSimulationMode(config.simulation_mode ?? true);
       } catch (err) {
-        console.log('No existing config found, using defaults');
+        // Using defaults when no config exists
       }
     };
     loadConfig();
