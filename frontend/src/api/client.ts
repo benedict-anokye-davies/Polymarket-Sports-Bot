@@ -42,6 +42,32 @@ class ApiClient {
   }
 
   /**
+   * Check if the backend server is reachable.
+   * Uses the /health endpoint which should be available without auth.
+   */
+  async checkHealth(): Promise<{ healthy: boolean; message: string }> {
+    try {
+      // Try the health endpoint (strip /api/v1 to get base URL)
+      const baseWithoutApi = this.baseUrl.replace('/api/v1', '');
+      const response = await fetch(`${baseWithoutApi}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (response.ok) {
+        return { healthy: true, message: 'Server is online' };
+      }
+
+      return { healthy: false, message: 'Server returned an error' };
+    } catch (err) {
+      if (!navigator.onLine) {
+        return { healthy: false, message: 'You appear to be offline' };
+      }
+      return { healthy: false, message: 'Unable to reach server' };
+    }
+  }
+
+  /**
    * Attempt to refresh the access token using the refresh token.
    * Uses a singleton pattern to prevent multiple concurrent refresh attempts.
    */
@@ -147,9 +173,22 @@ class ApiClient {
       const text = await response.text();
       return text ? JSON.parse(text) : ({} as T);
     } catch (err) {
+      // Handle timeout
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw new Error('Request timed out. Please check your connection and try again.');
       }
+
+      // Handle network errors (Failed to fetch)
+      if (err instanceof TypeError) {
+        // Check if the user is offline
+        if (!navigator.onLine) {
+          throw new Error('You appear to be offline. Please check your internet connection and try again.');
+        }
+        // Backend is likely down, unreachable, or CORS is blocking
+        throw new Error('Unable to connect to server. The server may be temporarily unavailable. Please try again in a few moments.');
+      }
+
+      // Re-throw other errors as-is
       throw err;
     } finally {
       clearTimeout(timeoutId);
@@ -185,6 +224,15 @@ class ApiClient {
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw new Error('Login request timed out. Please check your connection and try again.');
       }
+
+      // Handle network errors
+      if (err instanceof TypeError) {
+        if (!navigator.onLine) {
+          throw new Error('You appear to be offline. Please check your internet connection and try again.');
+        }
+        throw new Error('Unable to connect to server. The server may be temporarily unavailable. Please try again in a few moments.');
+      }
+
       throw err;
     } finally {
       clearTimeout(timeoutId);
