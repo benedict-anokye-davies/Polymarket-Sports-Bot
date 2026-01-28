@@ -72,21 +72,21 @@ interface GameData {
 export default function Markets() {
   // All available games from ESPN
   const [allGames, setAllGames] = useState<GameData[]>([]);
-  // Selected game IDs
-  const [selectedGameIds, setSelectedGameIds] = useState<Set<string>>(new Set());
+  // Selected game IDs - using array instead of Set for proper serialization
+  const [selectedGameIds, setSelectedGameIds] = useState<string[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+  const [togglingIds, setTogglingIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>('available');
   const [selectingAll, setSelectingAll] = useState(false);
 
-  // League selection state
+  // League selection state - using arrays instead of Sets for proper serialization
   const [categories, setCategories] = useState<SportCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedLeagues, setSelectedLeagues] = useState<Set<string>>(new Set());
+  const [selectedLeagues, setSelectedLeagues] = useState<string[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
 
   // Load categories on mount
@@ -105,9 +105,9 @@ export default function Markets() {
           // Auto-select NBA as default
           const nbaLeague = basketballCat.leagues.find(l => l.league_key === 'nba');
           if (nbaLeague) {
-            setSelectedLeagues(new Set(['nba']));
+            setSelectedLeagues(['nba']);
           } else if (basketballCat.leagues.length > 0) {
-            setSelectedLeagues(new Set([basketballCat.leagues[0].league_key]));
+            setSelectedLeagues([basketballCat.leagues[0].league_key]);
           }
         }
       } catch (err) {
@@ -129,7 +129,7 @@ export default function Markets() {
 
   // Fetch games from ESPN for selected leagues
   const fetchGames = useCallback(async () => {
-    if (selectedLeagues.size === 0) {
+    if (selectedLeagues.length === 0) {
       setAllGames([]);
       setLoading(false);
       setRefreshing(false);
@@ -142,7 +142,7 @@ export default function Markets() {
       const allFetchedGames: GameData[] = [];
 
       // Fetch games from each selected league in parallel
-      const leaguePromises = Array.from(selectedLeagues).map(async (league) => {
+      const leaguePromises = selectedLeagues.map(async (league) => {
         try {
           const games: ESPNGame[] = await apiClient.getLiveGames(league);
           // Transform ESPN games to our GameData format
@@ -191,7 +191,7 @@ export default function Markets() {
       setAllGames(allFetchedGames);
 
       if (allFetchedGames.length === 0) {
-        const leagueNames = Array.from(selectedLeagues).join(', ').toUpperCase();
+        const leagueNames = selectedLeagues.join(', ').toUpperCase();
         setError(`No games currently scheduled for ${leagueNames}. Games only appear on days they're scheduled.`);
       }
     } catch (err) {
@@ -204,7 +204,7 @@ export default function Markets() {
 
   // Fetch when leagues change
   useEffect(() => {
-    if (!loadingCategories && selectedLeagues.size > 0) {
+    if (!loadingCategories && selectedLeagues.length > 0) {
       fetchGames();
     }
   }, [selectedLeagues, loadingCategories, fetchGames]);
@@ -216,23 +216,21 @@ export default function Markets() {
 
   const toggleLeagueSelection = (leagueKey: string) => {
     setSelectedLeagues(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(leagueKey)) {
-        newSet.delete(leagueKey);
+      if (prev.includes(leagueKey)) {
+        return prev.filter(k => k !== leagueKey);
       } else {
-        newSet.add(leagueKey);
+        return [...prev, leagueKey];
       }
-      return newSet;
     });
   };
 
   const selectAllLeaguesInCategory = () => {
     const leagues = getCurrentLeagues();
-    setSelectedLeagues(new Set(leagues.map(l => l.league_key)));
+    setSelectedLeagues(leagues.map(l => l.league_key));
   };
 
   const clearLeagueSelection = () => {
-    setSelectedLeagues(new Set());
+    setSelectedLeagues([]);
   };
 
   // Filter games by search
@@ -250,51 +248,46 @@ export default function Markets() {
 
   // Split into selected and available
   const filteredGames = filterGames(allGames);
-  const selectedGames = filteredGames.filter(g => selectedGameIds.has(g.id));
-  const availableGames = filteredGames.filter(g => !selectedGameIds.has(g.id));
+  const selectedGames = filteredGames.filter(g => selectedGameIds.includes(g.id));
+  const availableGames = filteredGames.filter(g => !selectedGameIds.includes(g.id));
 
   // Toggle game selection
   const toggleGameSelection = async (game: GameData) => {
-    setTogglingIds(prev => new Set(prev).add(game.id));
+    setTogglingIds(prev => [...prev, game.id]);
 
     try {
-      const newSelectedIds = new Set(selectedGameIds);
-      if (newSelectedIds.has(game.id)) {
-        newSelectedIds.delete(game.id);
+      if (selectedGameIds.includes(game.id)) {
+        setSelectedGameIds(prev => prev.filter(id => id !== game.id));
       } else {
-        newSelectedIds.add(game.id);
+        setSelectedGameIds(prev => [...prev, game.id]);
       }
-      setSelectedGameIds(newSelectedIds);
     } finally {
-      setTogglingIds(prev => {
-        const next = new Set(prev);
-        next.delete(game.id);
-        return next;
-      });
+      setTogglingIds(prev => prev.filter(id => id !== game.id));
     }
   };
 
   // Select all visible games
   const selectAllGames = () => {
     setSelectingAll(true);
-    const newSelectedIds = new Set(selectedGameIds);
-    filteredGames.forEach(g => newSelectedIds.add(g.id));
-    setSelectedGameIds(newSelectedIds);
+    const newIds = [...selectedGameIds];
+    filteredGames.forEach(g => {
+      if (!newIds.includes(g.id)) newIds.push(g.id);
+    });
+    setSelectedGameIds(newIds);
     setSelectingAll(false);
   };
 
   // Unselect all visible games
   const unselectAllGames = () => {
     setSelectingAll(true);
-    const newSelectedIds = new Set(selectedGameIds);
-    filteredGames.forEach(g => newSelectedIds.delete(g.id));
-    setSelectedGameIds(newSelectedIds);
+    const gameIdsToRemove = filteredGames.map(g => g.id);
+    setSelectedGameIds(prev => prev.filter(id => !gameIdsToRemove.includes(id)));
     setSelectingAll(false);
   };
 
   const GameRow = ({ game }: { game: GameData }) => {
-    const isToggling = togglingIds.has(game.id);
-    const isSelected = selectedGameIds.has(game.id);
+    const isToggling = togglingIds.includes(game.id);
+    const isSelected = selectedGameIds.includes(game.id);
 
     return (
       <tr className="hover:bg-muted/20 transition-colors">
@@ -377,7 +370,7 @@ export default function Markets() {
           <p className="text-sm text-muted-foreground mt-2">
             {searchQuery
               ? 'Try a different search term'
-              : selectedLeagues.size === 0
+              : selectedLeagues.length === 0
                 ? 'Select leagues above to see games'
                 : 'Try NBA, EPL, or MLS for more frequent games'}
           </p>
@@ -448,9 +441,9 @@ export default function Markets() {
                 // Auto-select first league in new category
                 const cat = categories.find(c => c.category === value);
                 if (cat && cat.leagues.length > 0) {
-                  setSelectedLeagues(new Set([cat.leagues[0].league_key]));
+                  setSelectedLeagues([cat.leagues[0].league_key]);
                 } else {
-                  setSelectedLeagues(new Set());
+                  setSelectedLeagues([]);
                 }
               }}
             >
@@ -473,9 +466,9 @@ export default function Markets() {
                 <Button variant="outline" className="w-56 justify-between bg-muted border-border">
                   <span className="flex items-center gap-2">
                     <Filter className="w-4 h-4 text-muted-foreground" />
-                    {selectedLeagues.size === 0
+                    {selectedLeagues.length === 0
                       ? 'Select Leagues'
-                      : `${selectedLeagues.size} League${selectedLeagues.size > 1 ? 's' : ''}`}
+                      : `${selectedLeagues.length} League${selectedLeagues.length > 1 ? 's' : ''}`}
                   </span>
                   <ChevronDown className="w-4 h-4 text-muted-foreground" />
                 </Button>
@@ -515,7 +508,7 @@ export default function Markets() {
                   getCurrentLeagues().map(league => (
                     <DropdownMenuCheckboxItem
                       key={league.league_key}
-                      checked={selectedLeagues.has(league.league_key)}
+                      checked={selectedLeagues.includes(league.league_key)}
                       onCheckedChange={() => toggleLeagueSelection(league.league_key)}
                     >
                       {league.display_name}
@@ -538,7 +531,7 @@ export default function Markets() {
 
             {/* Action Buttons */}
             <div className="flex items-center gap-2 ml-auto">
-              {selectedLeagues.size > 0 && (
+              {selectedLeagues.length > 0 && (
                 <>
                   <Button
                     variant="outline"
@@ -575,9 +568,9 @@ export default function Markets() {
           </div>
 
           {/* Selected leagues chips */}
-          {selectedLeagues.size > 0 && (
+          {selectedLeagues.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border">
-              {Array.from(selectedLeagues).map(league => {
+              {selectedLeagues.map(league => {
                 const leagueInfo = getCurrentLeagues().find(l => l.league_key === league);
                 return (
                   <Badge key={league} variant="secondary" className="gap-1 pr-1">

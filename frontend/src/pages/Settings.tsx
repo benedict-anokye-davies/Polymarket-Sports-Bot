@@ -269,10 +269,13 @@ export default function Settings() {
     try {
       setTestingConnection(true);
       await apiClient.connectWallet(wallet.platform, {
-        apiKey: isKalshi ? wallet.api_key : undefined,
-        apiSecret: isKalshi ? wallet.api_secret : undefined,
-        privateKey: !isKalshi ? wallet.api_key : undefined,
+        // Kalshi uses api_key and api_secret (RSA private key)
+        apiKey: isKalshi ? wallet.api_key : wallet.api_key,
+        apiSecret: isKalshi ? wallet.api_secret : wallet.api_secret,
+        // Polymarket uses private_key, funder_address, and passphrase
+        privateKey: !isKalshi ? wallet.api_secret : undefined,
         funderAddress: !isKalshi ? wallet.funder_address : undefined,
+        passphrase: !isKalshi ? wallet.api_passphrase : undefined,
       });
       setWalletConnected(true);
 
@@ -959,16 +962,10 @@ export default function Settings() {
                   className="border-border hover:bg-muted gap-2"
                   onClick={async () => {
                     try {
-                      await fetch('/api/v1/settings/global', {
-                        method: 'PUT',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          Authorization: `Bearer ${localStorage.getItem('token')}`,
-                        },
-                        body: JSON.stringify({
-                          kill_switch_active: false,
-                          current_losing_streak: 0,
-                        }),
+                      // Use apiClient instead of raw fetch to ensure proper auth
+                      await apiClient.updateGlobalSettings({
+                        kill_switch_active: false,
+                        current_losing_streak: 0,
                       });
                       setGlobalSettings(prev => prev ? {
                         ...prev,

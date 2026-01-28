@@ -2,6 +2,7 @@
 CRUD operations for PolymarketAccount model.
 """
 
+import logging
 import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.polymarket_account import PolymarketAccount
 from src.core.encryption import encrypt_credential, decrypt_credential
 from src.core.exceptions import NotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 class PolymarketAccountCRUD:
@@ -89,17 +92,21 @@ class PolymarketAccountCRUD:
             "funder_address": account.funder_address,
             "platform": account.platform,
         }
-        
-        # Polymarket credentials
-        if account.private_key_encrypted:
-            result["private_key"] = decrypt_credential(account.private_key_encrypted)
-        if account.api_key_encrypted:
-            result["api_key"] = decrypt_credential(account.api_key_encrypted)
-        if account.api_secret_encrypted:
-            result["api_secret"] = decrypt_credential(account.api_secret_encrypted)
-        if account.api_passphrase_encrypted:
-            result["passphrase"] = decrypt_credential(account.api_passphrase_encrypted)
-        
+
+        # Polymarket credentials - with error handling for corrupted data
+        try:
+            if account.private_key_encrypted:
+                result["private_key"] = decrypt_credential(account.private_key_encrypted)
+            if account.api_key_encrypted:
+                result["api_key"] = decrypt_credential(account.api_key_encrypted)
+            if account.api_secret_encrypted:
+                result["api_secret"] = decrypt_credential(account.api_secret_encrypted)
+            if account.api_passphrase_encrypted:
+                result["passphrase"] = decrypt_credential(account.api_passphrase_encrypted)
+        except Exception as e:
+            logger.error(f"Failed to decrypt credentials for user {user_id}: {e}")
+            raise NotFoundError("Credentials corrupted or cannot be decrypted. Please reconnect your wallet.")
+
         return result
     
     @staticmethod

@@ -553,6 +553,7 @@ class ApiClient {
       apiSecret?: string;
       privateKey?: string;
       funderAddress?: string;
+      passphrase?: string;
     }
   ): Promise<{ message: string }> {
     return this.request('/onboarding/wallet/connect', {
@@ -563,6 +564,7 @@ class ApiClient {
         api_secret: credentials.apiSecret,
         private_key: credentials.privateKey,
         funder_address: credentials.funderAddress,
+        passphrase: credentials.passphrase,
       }),
     });
   }
