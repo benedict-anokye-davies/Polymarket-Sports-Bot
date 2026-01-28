@@ -4,12 +4,19 @@ Security Headers Middleware (REQ-SEC-008)
 Adds essential security headers to all HTTP responses following OWASP guidelines.
 These headers help protect against common web vulnerabilities like XSS, clickjacking,
 content sniffing, and other attacks.
+
+Also includes Origin validation for state-changing requests as CSRF protection
+for JWT-based APIs.
 """
 
+import logging
 from dataclasses import dataclass, field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
+from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -69,11 +76,18 @@ class SecurityHeadersConfig:
 
     # Paths to exclude from certain headers (e.g., static files)
     excluded_paths: list[str] = field(default_factory=lambda: ["/static", "/favicon.ico"])
+    
+    # CSRF/Origin validation settings
+    validate_origin: bool = True
+    allowed_origins: list[str] = field(default_factory=list)
+    csrf_safe_methods: list[str] = field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
+    csrf_excluded_paths: list[str] = field(default_factory=lambda: ["/health", "/api/v1/auth/"])
 
 
 def create_security_headers_config(
     debug: bool = False,
     csp_report_uri: str | None = None,
+    allowed_origins: list[str] | None = None,
 ) -> SecurityHeadersConfig:
     """
     Creates a security headers configuration appropriate for the environment.
@@ -81,14 +95,29 @@ def create_security_headers_config(
     Args:
         debug: If True, relaxes certain headers for development
         csp_report_uri: Optional URI for CSP violation reports
+        allowed_origins: List of allowed origins for CSRF validation
     """
     config = SecurityHeadersConfig()
+    
+    # Set allowed origins for CSRF validation
+    if allowed_origins:
+        config.allowed_origins = allowed_origins
+    elif debug:
+        # Allow localhost origins in development
+        config.allowed_origins = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ]
 
     if debug:
         # Relax HSTS in development
         config.hsts_enabled = False
         # More permissive CSP for development
         config.csp_directives["connect-src"] = "'self' ws: wss: http://localhost:* http://127.0.0.1:*"
+        # Disable origin validation in debug mode
+        config.validate_origin = False
 
     if csp_report_uri:
         config.csp_directives["report-uri"] = csp_report_uri
@@ -99,6 +128,9 @@ def create_security_headers_config(
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
     Middleware that adds security headers to HTTP responses.
+    
+    Also performs Origin validation for state-changing requests (POST, PUT, DELETE, PATCH)
+    as CSRF protection for JWT-based APIs.
 
     Usage:
         app.add_middleware(
@@ -111,7 +143,65 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.config = config or SecurityHeadersConfig()
 
+    def _validate_origin(self, request: Request) -> bool:
+        """
+        Validates the Origin header for state-changing requests.
+        
+        Returns True if origin is valid or validation is not required.
+        """
+        # Skip validation for safe methods
+        if request.method in self.config.csrf_safe_methods:
+            return True
+        
+        # Skip validation for excluded paths
+        path = request.url.path
+        if any(path.startswith(excluded) for excluded in self.config.csrf_excluded_paths):
+            return True
+        
+        # Get Origin header
+        origin = request.headers.get("origin")
+        
+        # If no origin header, check Referer as fallback
+        if not origin:
+            referer = request.headers.get("referer")
+            if referer:
+                parsed = urlparse(referer)
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+        
+        # If still no origin (e.g., server-to-server request), allow if authenticated
+        # JWT in Authorization header is sufficient protection
+        if not origin:
+            auth_header = request.headers.get("authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                return True
+            # No origin and no auth - could be direct API call, allow cautiously
+            return True
+        
+        # If we have allowed origins configured, validate against them
+        if self.config.allowed_origins:
+            if origin in self.config.allowed_origins:
+                return True
+            logger.warning(f"CSRF: rejected request from origin {origin}")
+            return False
+        
+        # If no allowed origins configured but validate_origin is True,
+        # only allow same-origin requests
+        host = request.headers.get("host", "")
+        request_origin = f"{request.url.scheme}://{host}"
+        if origin == request_origin:
+            return True
+        
+        logger.warning(f"CSRF: origin mismatch - request origin {origin}, host {request_origin}")
+        return False
+
     async def dispatch(self, request: Request, call_next) -> Response:
+        # Validate origin for state-changing requests
+        if self.config.validate_origin and not self._validate_origin(request):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Invalid request origin"}
+            )
+        
         response = await call_next(request)
 
         # Check if path is excluded

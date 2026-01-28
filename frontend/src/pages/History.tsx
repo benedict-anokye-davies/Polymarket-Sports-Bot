@@ -27,6 +27,10 @@ export default function History() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Filter state
+  const [dateRange, setDateRange] = useState('30d');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     fetchClosedPositions();
@@ -45,20 +49,93 @@ export default function History() {
     }
   };
 
-  const totalPnl = positions.reduce((sum, p) => sum + (p.realized_pnl_usdc ?? 0), 0);
-  const winCount = positions.filter(p => (p.realized_pnl_usdc ?? 0) > 0).length;
-  const winRate = positions.length > 0 ? (winCount / positions.length) * 100 : 0;
+  // Apply filters to positions
+  const filteredPositions = useMemo(() => {
+    let filtered = [...positions];
+    
+    // Date range filter
+    const now = new Date();
+    const dateRangeMap: Record<string, number> = {
+      '7d': 7,
+      '30d': 30,
+      '90d': 90,
+      'custom': 365, // Default to 1 year for custom (could add date picker)
+    };
+    const daysAgo = dateRangeMap[dateRange] || 30;
+    const cutoffDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+    
+    filtered = filtered.filter(p => {
+      const closedDate = p.closed_at ? new Date(p.closed_at) : new Date(p.opened_at);
+      return closedDate >= cutoffDate;
+    });
+    
+    // Status filter (profit/loss)
+    if (statusFilter === 'profit') {
+      filtered = filtered.filter(p => (p.realized_pnl_usdc ?? 0) > 0);
+    } else if (statusFilter === 'loss') {
+      filtered = filtered.filter(p => (p.realized_pnl_usdc ?? 0) < 0);
+    }
+    
+    return filtered;
+  }, [positions, dateRange, statusFilter]);
+
+  const totalPnl = filteredPositions.reduce((sum, p) => sum + (p.realized_pnl_usdc ?? 0), 0);
+  const winCount = filteredPositions.filter(p => (p.realized_pnl_usdc ?? 0) > 0).length;
+  const winRate = filteredPositions.length > 0 ? (winCount / filteredPositions.length) * 100 : 0;
+
+  // Export CSV handler
+  const handleExportCSV = () => {
+    if (filteredPositions.length === 0) return;
+    
+    const headers = [
+      'Market',
+      'Side',
+      'Entry Price',
+      'Exit Price',
+      'Size (USDC)',
+      'Realized P&L',
+      'Opened At',
+      'Closed At',
+    ];
+    
+    const rows = filteredPositions.map(p => [
+      p.team || p.token_id,
+      p.side,
+      p.entry_price.toFixed(4),
+      (p.current_price ?? p.entry_price).toFixed(4),
+      p.entry_cost_usdc.toFixed(2),
+      (p.realized_pnl_usdc ?? 0).toFixed(2),
+      new Date(p.opened_at).toISOString(),
+      p.closed_at ? new Date(p.closed_at).toISOString() : '',
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `trade-history-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const stats = [
-    { label: 'Total Trades', value: String(positions.length), icon: Target },
+    { label: 'Total Trades', value: String(filteredPositions.length), icon: Target },
     { label: 'Win Rate', value: `${winRate.toFixed(1)}%`, icon: Trophy },
     { label: 'Total P&L', value: `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`, positive: totalPnl >= 0, icon: TrendingUp },
     { label: 'Avg Duration', value: '---', icon: Clock },
   ];
 
-  // Generate P&L chart data from closed positions
+  // Generate P&L chart data from filtered positions
   const pnlData = useMemo(() => {
-    if (positions.length === 0) {
+    if (filteredPositions.length === 0) {
       // Return empty chart data
       return Array.from({ length: 7 }, (_, i) => {
         const date = new Date();
@@ -71,7 +148,7 @@ export default function History() {
     }
     
     // Group by date and calculate cumulative P&L
-    const sorted = [...positions].sort((a, b) => 
+    const sorted = [...filteredPositions].sort((a, b) => 
       new Date(a.closed_at || 0).getTime() - new Date(b.closed_at || 0).getTime()
     );
     
@@ -83,7 +160,7 @@ export default function History() {
         pnl: parseFloat(cumulative.toFixed(2)),
       };
     });
-  }, [positions]);
+  }, [filteredPositions]);
 
   return (
     <DashboardLayout>
@@ -96,7 +173,12 @@ export default function History() {
               View your trading performance and closed positions
             </p>
           </div>
-          <Button variant="outline" className="border-border hover:bg-muted gap-2">
+          <Button 
+            variant="outline" 
+            className="border-border hover:bg-muted gap-2"
+            onClick={handleExportCSV}
+            disabled={filteredPositions.length === 0}
+          >
             <Download className="w-4 h-4" />
             Export CSV
           </Button>
@@ -105,7 +187,7 @@ export default function History() {
         {/* Filters */}
         <Card className="p-4 bg-card border-border">
           <div className="flex flex-wrap items-center gap-4">
-            <Select defaultValue="30d">
+            <Select value={dateRange} onValueChange={setDateRange}>
               <SelectTrigger className="w-40 bg-muted border-border">
                 <SelectValue placeholder="Date Range" />
               </SelectTrigger>
@@ -113,11 +195,11 @@ export default function History() {
                 <SelectItem value="7d">Last 7 Days</SelectItem>
                 <SelectItem value="30d">Last 30 Days</SelectItem>
                 <SelectItem value="90d">Last 90 Days</SelectItem>
-                <SelectItem value="custom">Custom Range</SelectItem>
+                <SelectItem value="custom">All Time</SelectItem>
               </SelectContent>
             </Select>
 
-            <Select defaultValue="all">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-32 bg-muted border-border">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -234,7 +316,7 @@ export default function History() {
                       <Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto" />
                     </td>
                   </tr>
-                ) : positions.length === 0 ? (
+                ) : filteredPositions.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-16 text-center">
                       <p className="text-muted-foreground">No closed positions yet</p>
@@ -242,7 +324,7 @@ export default function History() {
                     </td>
                   </tr>
                 ) : (
-                  positions.map((position) => {
+                  filteredPositions.map((position) => {
                     const isProfitable = (position.realized_pnl_usdc ?? 0) >= 0;
                     return (
                       <tr key={position.id} className="hover:bg-muted/20 transition-colors">

@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
 import { apiClient, Market } from '@/api/client';
+import { logger } from '@/lib/logger';
 
 const sportColors: Record<string, string> = {
   nba: 'text-orange-400',
@@ -27,7 +28,7 @@ export function LiveGames() {
         const liveMarkets = data.filter(m => m.is_live);
         setMarkets(liveMarkets.slice(0, 6)); // Show top 6
       } catch (err) {
-        console.error('Failed to fetch live markets:', err);
+        logger.error('Failed to fetch live markets:', err);
       } finally {
         setLoading(false);
       }

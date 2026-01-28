@@ -2,6 +2,7 @@
 ESPN API service for fetching live game data.
 Polls scoreboard and summary endpoints for game state.
 Includes retry logic with circuit breakers for resilience.
+Implements caching to reduce API calls.
 """
 
 import logging
@@ -12,6 +13,7 @@ import httpx
 
 from src.core.exceptions import ESPNAPIError
 from src.core.retry import retry_async, espn_circuit
+from src.core.cache import espn_cache
 
 
 logger = logging.getLogger(__name__)
@@ -611,6 +613,7 @@ class ESPNService:
         """
         Fetches the current scoreboard for a sport.
         Uses retry logic with circuit breaker for resilience.
+        Results are cached for 30 seconds to reduce API calls.
         
         For college sports (ncaab, ncaaf), uses groups parameter to fetch
         ALL Division I games, not just Top 25 ranked teams.
@@ -621,6 +624,13 @@ class ESPNService:
         Returns:
             List of game data dictionaries
         """
+        # Check cache first
+        cache_key = f"scoreboard:{sport.lower()}"
+        cached = await espn_cache.get(cache_key)
+        if cached is not None:
+            logger.debug(f"Cache hit for {sport} scoreboard")
+            return cached
+        
         try:
             client = await self._get_client()
             endpoint = self._get_sport_endpoint(sport)
@@ -652,7 +662,11 @@ class ESPNService:
             data = response.json()
             events = data.get("events", [])
             
+            # Cache the result for 30 seconds
+            await espn_cache.set(cache_key, events, ttl=30)
+            
             logger.debug(f"Fetched {len(events)} {sport.upper()} events from ESPN")
+            return events
             return events
             
         except httpx.HTTPError as e:

@@ -1,6 +1,7 @@
 """
 Authentication routes for user registration and login.
 Includes refresh token support (REQ-SEC-001).
+Rate limited to prevent brute-force attacks.
 """
 
 from datetime import timedelta
@@ -13,6 +14,7 @@ from src.api.deps import DbSession, get_current_user
 from src.config import get_settings
 from src.core.security import create_access_token, create_refresh_token_jwt, verify_refresh_token
 from src.core.exceptions import AuthenticationError
+from src.core.rate_limiter import check_auth_rate_limit
 
 settings = get_settings()
 from src.db.crud.user import UserCRUD
@@ -45,7 +47,12 @@ def _get_client_info(request: Request) -> tuple[str | None, str | None]:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserCreate, db: DbSession, request: Request) -> TokenResponse:
+async def register(
+    user_data: UserCreate,
+    db: DbSession,
+    request: Request,
+    _: None = Depends(check_auth_rate_limit),
+) -> TokenResponse:
     """
     Registers a new user account.
     Creates default global settings and sport configurations.
@@ -126,7 +133,8 @@ async def register(user_data: UserCreate, db: DbSession, request: Request) -> To
 async def login(
     db: DbSession,
     request: Request,
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    _: None = Depends(check_auth_rate_limit),
 ) -> TokenResponse:
     """
     Authenticates user and returns access token and refresh token.
@@ -183,6 +191,7 @@ async def refresh_token(
     refresh_data: RefreshTokenRequest,
     db: DbSession,
     request: Request,
+    _: None = Depends(check_auth_rate_limit),
 ) -> RefreshTokenResponse:
     """
     Refresh an access token using a refresh token.

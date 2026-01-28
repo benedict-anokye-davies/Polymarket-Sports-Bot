@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient, { DashboardStats, BotStatus, Market, Position, Settings, PaginatedLogs, SportConfigResponse, SportConfigUpdate, GlobalSettingsResponse, GlobalSettingsUpdate } from '@/api/client';
+import { logger } from '@/lib/logger';
 
 // Query keys
 export const queryKeys = {
@@ -185,7 +186,7 @@ export function useConnectWallet() {
       queryClient.invalidateQueries({ queryKey: queryKeys.settings });
     },
     onError: (error: Error) => {
-      console.error('Failed to connect wallet:', error);
+      logger.error('Failed to connect wallet:', error);
     },
   });
 }

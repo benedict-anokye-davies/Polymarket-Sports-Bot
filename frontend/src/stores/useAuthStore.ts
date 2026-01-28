@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import apiClient from '@/api/client';
+import { logger } from '@/lib/logger';
+
+/**
+ * Security note: Refresh tokens are stored in sessionStorage (not localStorage)
+ * to reduce exposure. SessionStorage is cleared when the browser tab closes.
+ * 
+ * For production deployment, consider moving refresh tokens to HTTP-only
+ * secure cookies set by the backend with SameSite=Strict attribute.
+ */
 
 interface User {
   id: string;
@@ -27,6 +36,11 @@ interface AuthState {
   clearError: () => void;
 }
 
+// Helper functions for token storage
+const getRefreshToken = () => sessionStorage.getItem('refresh_token');
+const setRefreshToken = (token: string) => sessionStorage.setItem('refresh_token', token);
+const removeRefreshToken = () => sessionStorage.removeItem('refresh_token');
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
@@ -42,10 +56,10 @@ export const useAuthStore = create<AuthState>()(
           const response = await apiClient.login(email, password);
           const token = response.access_token;
 
-          // Store both access token and refresh token
+          // Store access token in localStorage, refresh token in sessionStorage
           localStorage.setItem('auth_token', token);
           if (response.refresh_token) {
-            localStorage.setItem('refresh_token', response.refresh_token);
+            setRefreshToken(response.refresh_token);
           }
 
           // Get fresh user info from server
@@ -77,10 +91,10 @@ export const useAuthStore = create<AuthState>()(
           const response = await apiClient.login(email, password);
           const token = response.access_token;
 
-          // Store both access token and refresh token
+          // Store access token in localStorage, refresh token in sessionStorage
           localStorage.setItem('auth_token', token);
           if (response.refresh_token) {
-            localStorage.setItem('refresh_token', response.refresh_token);
+            setRefreshToken(response.refresh_token);
           }
 
           const user = await apiClient.getCurrentUser();
@@ -102,7 +116,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         localStorage.removeItem('auth_token');
-        localStorage.removeItem('refresh_token');
+        removeRefreshToken();
         set({
           user: null,
           token: null,
@@ -113,7 +127,7 @@ export const useAuthStore = create<AuthState>()(
       checkAuth: async () => {
         const token = localStorage.getItem('auth_token');
         if (!token) {
-          localStorage.removeItem('refresh_token');
+          removeRefreshToken();
           set({ isAuthenticated: false, user: null, token: null });
           return;
         }
@@ -127,7 +141,7 @@ export const useAuthStore = create<AuthState>()(
           });
         } catch {
           localStorage.removeItem('auth_token');
-          localStorage.removeItem('refresh_token');
+          removeRefreshToken();
           set({
             user: null,
             token: null,
@@ -141,7 +155,7 @@ export const useAuthStore = create<AuthState>()(
           const user = await apiClient.getCurrentUser();
           set({ user });
         } catch (error) {
-          console.error('Failed to refresh user:', error);
+          logger.error('Failed to refresh user:', error);
         }
       },
 

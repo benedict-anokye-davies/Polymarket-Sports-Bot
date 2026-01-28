@@ -1,7 +1,7 @@
 """Create missing tables
 
 Revision ID: 72fb3c2f7839
-Revises: 72fb3c2f7838
+Revises: 011_performance_indexes
 Create Date: 2026-01-28 02:45:00.000000
 
 This migration creates any missing tables that weren't created in the initial migration.
@@ -16,7 +16,7 @@ from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision: str = '72fb3c2f7839'
-down_revision: Union[str, None] = '72fb3c2f7838'
+down_revision: Union[str, None] = '011_performance_indexes'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

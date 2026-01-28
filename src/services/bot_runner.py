@@ -5,6 +5,7 @@ Coordinates ESPN game state, Polymarket prices, and trade execution.
 
 import asyncio
 import logging
+import uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any, Callable
@@ -20,6 +21,8 @@ from src.services.espn_service import ESPNService
 from src.services.trading_engine import TradingEngine
 from src.services.market_discovery import market_discovery, DiscoveredMarket
 from src.services.discord_notifier import discord_notifier
+from src.services.kelly_calculator import KellyCalculator, KellyResult
+from src.services.confidence_scorer import ConfidenceScorer, ConfidenceResult
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.position import PositionCRUD
 from src.db.crud.global_settings import GlobalSettingsCRUD
@@ -97,6 +100,8 @@ class BotRunner:
     ESPN_POLL_INTERVAL = 5.0  # Seconds between ESPN polls
     DISCOVERY_INTERVAL = 300.0  # Seconds between market discovery runs
     HEALTH_CHECK_INTERVAL = 60.0  # Seconds between health checks
+    CLEANUP_INTERVAL = 120.0  # Seconds between stale game cleanup runs
+    MAX_TRACKED_GAMES = 100  # Maximum number of games to track simultaneously
     
     def __init__(
         self,
@@ -150,6 +155,16 @@ class BotRunner:
 
         # Concurrent entry locks (prevent double-entry race conditions)
         self._entry_locks: dict[str, asyncio.Lock] = {}
+
+        # Pending orders tracking: order_id -> {market, side, price, size, timestamp}
+        self.pending_orders: dict[str, dict] = {}
+
+        # Kelly position sizing and confidence scoring
+        self.kelly_calculator = KellyCalculator()
+        self.confidence_scorer = ConfidenceScorer()
+        self.use_kelly_sizing: bool = False
+        self.kelly_fraction: float = 0.25
+        self.min_confidence_score: float = 0.6
 
     def _detect_platform(self, client) -> str:
         """Detect which trading platform the client is for."""
@@ -417,6 +432,7 @@ class BotRunner:
             asyncio.create_task(self._espn_poll_loop(db), name="espn_poll"),
             asyncio.create_task(self._trading_loop(db), name="trading"),
             asyncio.create_task(self._health_check_loop(db), name="health"),
+            asyncio.create_task(self._cleanup_loop(db), name="cleanup"),
         ]
         
         if self.websocket:
@@ -752,19 +768,86 @@ class BotRunner:
             
             await asyncio.sleep(1)  # Check every second
     
+    def _build_tracked_market_from_game(self, game: TrackedGame) -> "TrackedMarket":
+        """
+        Build a TrackedMarket object from a TrackedGame for TradingEngine.
+        
+        TradingEngine expects TrackedMarket (DB model format) while bot_runner
+        uses TrackedGame (runtime dataclass). This adapts between them.
+        
+        Note: This creates a detached model object not persisted to DB.
+        """
+        from src.models import TrackedMarket
+        
+        # Handle baseline price - use market's current price if no baseline captured
+        baseline = game.baseline_price
+        if baseline is None:
+            baseline = game.market.current_price_yes if hasattr(game.market, 'current_price_yes') else 0.5
+        
+        # Get current price from tracked game or market discovery
+        current = game.current_price
+        if current is None:
+            current = game.market.current_price_yes if hasattr(game.market, 'current_price_yes') else baseline
+        
+        # Create a TrackedMarket-like object with fields TradingEngine expects
+        market = TrackedMarket(
+            id=game.position_id or uuid.uuid4(),
+            user_id=self.user_id,
+            condition_id=game.market.condition_id or game.market.ticker or "",
+            token_id_yes=game.market.token_id_yes or "",
+            token_id_no=game.market.token_id_no or "",
+            question=game.market.question or "",
+            sport=game.sport,
+            home_team=game.home_team,
+            away_team=game.away_team,
+            baseline_price_yes=Decimal(str(baseline)),
+            baseline_price_no=Decimal(str(1 - baseline)),
+            current_price_yes=Decimal(str(current)),
+            current_price_no=Decimal(str(1 - current)),
+            is_live=game.game_status == "in",
+            current_period=game.period,
+        )
+        return market
+    
+    def _build_game_state_from_game(self, game: TrackedGame) -> dict:
+        """
+        Build a game_state dictionary from TrackedGame for TradingEngine.
+        """
+        segment = self._get_game_segment(game)
+        time_remaining = self._get_time_remaining_seconds(game)
+        
+        return {
+            "is_live": game.game_status == "in",
+            "segment": segment,
+            "period": game.period,
+            "clock": game.clock,
+            "time_remaining_seconds": time_remaining or 0,
+            "home_score": game.home_score,
+            "away_score": game.away_score,
+            "home_team": game.home_team,
+            "away_team": game.away_team,
+            "selected_side": game.selected_side,
+        }
+
     async def _evaluate_entry(self, db: AsyncSession, game: TrackedGame) -> None:
         """
-        Evaluate entry conditions for a game.
-
-        Entry triggers when:
-        - Selected side matches the market (home/away/both)
-        - Game is in allowed entry segment (max_entry_segment)
-        - Price has dropped from baseline by threshold OR below absolute threshold
-        - Sufficient time remaining (min_time_remaining_seconds)
-        - Market has sufficient volume (min_volume_threshold)
-        - Per-sport risk limits not exceeded
-        - Within trading hours for sport
-        - No concurrent entry in progress (lock-protected)
+        Evaluate entry conditions for a game using TradingEngine.
+        
+        Delegates the evaluation logic to TradingEngine.evaluate_entry() which handles:
+        - Config lookups (sport, market overrides)
+        - Segment/time validation
+        - Price condition checks
+        - Confidence scoring
+        - Position sizing (Kelly or fixed)
+        - Risk limit checks
+        
+        Bot runner handles:
+        - Emergency stop check
+        - Selected side filtering
+        - Market enabled check
+        - Entry lock acquisition
+        - Order execution
+        - Position recording
         """
         # Emergency stop check
         if self.emergency_stop:
@@ -779,190 +862,222 @@ class BotRunner:
             logger.debug(f"Entry blocked: trading disabled for market {game.market.condition_id}")
             return
 
-        sport_key = game.sport.lower()
-        config = self.sport_configs.get(sport_key)
-
-        # Check if in allowed entry segment (uses market override if available)
-        if config:
-            allowed_segments = getattr(config, 'allowed_entry_segments', ['q1', 'q2', 'q3'])
-            current_segment = self._get_game_segment(game)
-            if current_segment not in allowed_segments:
-                logger.debug(f"Entry blocked: segment {current_segment} not in allowed {allowed_segments}")
-                return
-
-        # Check minimum time remaining (uses market override first)
-        min_time_remaining = self._get_effective_config(game, 'min_time_remaining_seconds', 300)
-        time_remaining = self._get_time_remaining_seconds(game)
-        if time_remaining is not None and time_remaining < min_time_remaining:
-            logger.debug(f"Entry blocked: only {time_remaining}s remaining, need {min_time_remaining}s")
+        # Build objects for TradingEngine
+        tracked_market = self._build_tracked_market_from_game(game)
+        game_state = self._build_game_state_from_game(game)
+        
+        # Update TradingEngine's db session with current loop session
+        # This is necessary because TradingEngine was initialized with a request-scoped
+        # session that may be stale by the time the trading loop runs
+        self.trading_engine.db = db
+        
+        # Delegate entry evaluation to TradingEngine
+        entry_signal = await self.trading_engine.evaluate_entry(tracked_market, game_state)
+        
+        if not entry_signal:
             return
-
-        # Check minimum volume threshold (from sport config)
-        min_volume = float(self._get_effective_config(game, 'min_volume_threshold', 0) or 0)
-        if min_volume > 0:
-            market_volume = getattr(game.market, 'volume_24h', 0) or 0
-            if market_volume < min_volume:
-                logger.debug(f"Entry blocked: market volume ${market_volume:.2f} below threshold ${min_volume:.2f}")
-                return
-
-        # Fallback period check if no sport config
-        if not config and game.period > 1:
-            return
-
-        # Check trading hours for sport
-        if not self._check_sport_trading_hours(game.sport):
-            return
-
-        # Check per-sport risk limits
-        allowed, reason = self._check_sport_risk_limits(game.sport)
-        if not allowed:
-            logger.debug(f"Entry blocked: {reason}")
-            return
-
-        # Get entry thresholds (market override > sport config > default)
-        entry_drop_threshold = float(self._get_effective_config(game, 'entry_threshold_drop', self.entry_threshold))
-        entry_absolute_price = float(self._get_effective_config(game, 'entry_threshold_absolute', 0.50))
-
-        # Check price conditions (drop from baseline OR below absolute threshold)
-        price_drop = (game.baseline_price - game.current_price) / game.baseline_price if game.baseline_price else 0
-        below_absolute = game.current_price <= entry_absolute_price
-
-        if price_drop < entry_drop_threshold and not below_absolute:
-            return  # Not enough drop and not below absolute threshold
+        
+        # Extract signal details
+        position_size = entry_signal["position_size"]
+        price = entry_signal["price"]
+        side = entry_signal["side"]
+        token_id = entry_signal["token_id"]
+        reason = entry_signal["reason"]
+        confidence_score = entry_signal.get("confidence_score", 0.6)
+        confidence_breakdown = entry_signal.get("confidence_breakdown", {})
+        
+        logger.info(
+            f"Entry signal from TradingEngine: {game.home_team} vs {game.away_team} "
+            f"side={side} price=${price:.4f} size=${position_size:.2f} "
+            f"confidence={confidence_score:.2f} reason={reason}"
+        )
 
         # Acquire lock to prevent double-entry
-        lock = self._get_entry_lock(game.market.token_id_yes)
-
+        lock = self._get_entry_lock(token_id)
         if lock.locked():
-            logger.debug(f"Entry already in progress for {game.market.token_id_yes}")
+            logger.debug(f"Entry already in progress for {token_id}")
             return
 
         async with lock:
-            # Re-check position status after acquiring lock
+            # Double-check position status after acquiring lock
             if game.has_position:
+                logger.debug(f"Position already exists after lock acquisition for {token_id}")
                 return
-
-            trigger_reason = f"Price drop of {price_drop:.1%}" if price_drop >= entry_drop_threshold else f"Below absolute threshold ${entry_absolute_price:.2f}"
-            logger.info(
-                f"Entry signal: {game.home_team} {trigger_reason} "
-                f"from ${game.baseline_price:.4f} to ${game.current_price:.4f}"
+            
+            # Check DB for existing open positions
+            existing = await PositionCRUD.get_open_for_market(
+                db, self.user_id, game.market.condition_id or game.market.ticker or ""
             )
-
-            # Get position size (market override > sport config > default)
-            balance = await self.polymarket_client.get_balance()
-            position_size = float(self._get_effective_config(game, 'position_size_usdc', 50))
-
-            # Ensure we don't exceed balance
-            position_size = min(position_size, float(balance) * 0.95)
-            
-            if position_size < 1:
-                logger.warning("Insufficient balance for trade")
+            if existing:
+                logger.debug(f"Open position found in DB for {game.market.condition_id}")
+                game.has_position = True
                 return
-            
-            # Slippage check before execution (platform-agnostic)
+
+            # Slippage check before execution
             if not self.dry_run:
-                slippage_ok = await self._check_slippage(game, game.current_price, "buy")
+                slippage_ok = await self._check_slippage(game, price, "buy")
                 if not slippage_ok:
-                    logger.warning(
-                        f"Slippage too high for {game.home_team} vs {game.away_team}"
-                    )
+                    logger.warning(f"Slippage too high for {game.home_team} vs {game.away_team}")
                     return
 
-            # Execute entry (platform-agnostic)
-            try:
-                order = await self._place_order(game, "BUY", game.current_price, int(position_size))
+            # Execute entry
+            await self._execute_entry_order(
+                db, game, token_id, side, price, position_size,
+                reason, confidence_score, confidence_breakdown
+            )
+    
+    async def _execute_entry_order(
+        self,
+        db: AsyncSession,
+        game: TrackedGame,
+        token_id: str,
+        side: str,
+        price: float,
+        position_size: float,
+        reason: str,
+        confidence_score: float,
+        confidence_breakdown: dict
+    ) -> None:
+        """
+        Execute an entry order and record the position.
+        
+        Separated from _evaluate_entry for clarity and testability.
+        """
+        sport_key = game.sport.lower()
+        
+        try:
+            order = await self._place_order(game, "BUY", price, int(position_size))
 
-                if order:
-                    order_id = self._get_order_id(order)
+            if order:
+                order_id = self._get_order_id(order)
+                
+                # Track as pending order
+                self.pending_orders[order_id] = {
+                    "market": game.market.condition_id or game.market.ticker,
+                    "side": side,
+                    "price": price,
+                    "size": position_size,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "action": "BUY"
+                }
 
-                    # Wait for fill with timeout (skip for paper trading)
-                    fill_status = "filled"
-                    if not self.dry_run:
-                        fill_status = await self.polymarket_client.wait_for_fill(
-                            order_id,
-                            timeout=self.order_fill_timeout
-                        )
+                # Wait for fill with timeout (skip for paper trading)
+                fill_status = "filled"
+                if not self.dry_run:
+                    fill_status = await self.polymarket_client.wait_for_fill(
+                        order_id,
+                        timeout=self.order_fill_timeout
+                    )
 
-                        if fill_status != "filled":
-                            logger.warning(f"Order not filled: {fill_status}")
-                            # Cancel unfilled order
-                            try:
-                                await self.polymarket_client.cancel_order(order_id)
-                            except Exception:
-                                pass
-                            return
+                    if fill_status != "filled":
+                        logger.warning(f"Order not filled: {fill_status}")
+                        # Remove from pending
+                        self.pending_orders.pop(order_id, None)
+                        try:
+                            await self.polymarket_client.cancel_order(order_id)
+                        except Exception:
+                            pass
+                        return
+                
+                # Remove from pending now that it's filled
+                self.pending_orders.pop(order_id, None)
 
-                    # Record position using CRUD interface
-                    entry_cost = position_size * game.current_price
-                    # Use ticker for Kalshi, token_id for Polymarket
-                    token_or_ticker = game.market.ticker if self.platform == "kalshi" else game.market.token_id_yes
+                # Record position
+                entry_cost = position_size * price
+                token_or_ticker = game.market.ticker if self.platform == "kalshi" else token_id
+                
+                try:
                     position = await PositionCRUD.create(
                         db,
                         user_id=self.user_id,
                         condition_id=game.market.condition_id or game.market.ticker or "",
                         token_id=token_or_ticker or "",
-                        side="YES",
-                        entry_price=Decimal(str(game.current_price)),
+                        side=side,
+                        entry_price=Decimal(str(price)),
                         entry_size=Decimal(str(position_size)),
                         entry_cost_usdc=Decimal(str(entry_cost)),
-                        entry_reason=f"Price drop from baseline",
-                        entry_order_id=order_id
+                        entry_reason=reason,
+                        entry_order_id=order_id,
+                        entry_confidence_score=int(confidence_score * 100),
+                        entry_confidence_breakdown=confidence_breakdown,
                     )
-                    
-                    game.has_position = True
-                    game.position_id = position.id
-                    self.trades_today += 1
-
-                    # Update per-sport stats
-                    sport_stats = self.sport_stats.get(sport_key)
-                    if sport_stats:
-                        sport_stats.trades_today += 1
-                        sport_stats.open_positions += 1
-                    
-                    mode_str = "[PAPER] " if self.dry_run else ""
-                    await discord_notifier.notify_trade_entry(
-                        market_name=f"{mode_str}{game.market.question[:100]}",
-                        side="YES",
-                        price=game.current_price,
-                        size=position_size,
-                        baseline_price=game.baseline_price,
-                        trigger_reason=f"Price drop of {price_drop:.1%}"
+                except Exception as position_error:
+                    logger.critical(
+                        f"ORPHANED ORDER: Order {order_id} filled but position creation failed. "
+                        f"Market: {game.market.condition_id}, Token: {token_or_ticker}, "
+                        f"Size: {position_size}, Price: {price}, Error: {position_error}"
                     )
-                    
-                    logger.info(f"Entry executed: {position_size:.2f} contracts at ${game.current_price:.4f}")
-            
-            except Exception as e:
-                logger.error(f"Failed to execute entry: {e}")
-                await discord_notifier.notify_error("Entry Failed", str(e), "entry_execution")
-                # Log to activity database
-                if self.user_id:
                     try:
-                        await ActivityLogCRUD.error(
-                            db,
-                            self.user_id,
-                            "TRADE",
-                            f"Entry order failed for {game.home_team} vs {game.away_team}",
-                            {
-                                "error": str(e)[:200],
-                                "token_id": game.market.token_id_yes[:20],
-                                "attempted_price": game.current_price,
-                                "attempted_size": position_size
-                            }
+                        await discord_notifier.send_alert(
+                            f"CRITICAL: Orphaned order {order_id} - position record failed.",
+                            level="critical"
                         )
                     except Exception:
                         pass
+                    raise
+                
+                game.has_position = True
+                game.position_id = position.id
+                self.trades_today += 1
+
+                # Update per-sport stats
+                sport_stats = self.sport_stats.get(sport_key)
+                if sport_stats:
+                    sport_stats.trades_today += 1
+                    sport_stats.open_positions += 1
+                
+                mode_str = "[PAPER] " if self.dry_run else ""
+                await discord_notifier.notify_trade_entry(
+                    market_name=f"{mode_str}{game.market.question[:100]}",
+                    side=side,
+                    price=price,
+                    size=position_size,
+                    baseline_price=game.baseline_price,
+                    trigger_reason=reason
+                )
+                
+                logger.info(f"Entry executed: {position_size:.2f} contracts at ${price:.4f}")
+        
+        except Exception as e:
+            logger.error(f"Failed to execute entry: {e}")
+            await discord_notifier.notify_error("Entry Failed", str(e), "entry_execution")
+            if self.user_id:
+                try:
+                    await ActivityLogCRUD.error(
+                        db,
+                        self.user_id,
+                        "TRADE",
+                        f"Entry order failed for {game.home_team} vs {game.away_team}",
+                        {
+                            "error": str(e)[:200],
+                            "token_id": token_id[:20] if token_id else "unknown",
+                            "attempted_price": price,
+                            "attempted_size": position_size
+                        }
+                    )
+                except Exception:
+                    pass
 
     async def _evaluate_exit(self, db: AsyncSession, game: TrackedGame) -> None:
         """
-        Evaluate exit conditions for an open position.
-
-        Exit triggers:
-        - Take profit reached (per-sport configurable)
-        - Stop loss reached (per-sport configurable)
-        - Time remaining below exit threshold (exit_time_remaining_seconds)
-        - Game segment past exit_before_segment
-        - Game finished
-        - Emergency stop activated
+        Evaluate exit conditions for an open position using TradingEngine.
+        
+        Delegates evaluation logic to TradingEngine.evaluate_exit() which handles:
+        - Take profit threshold check
+        - Stop loss threshold check
+        - Game finished check
+        - Restricted segment check
+        
+        Bot runner additionally checks:
+        - Emergency stop
+        - Time-based exit (exit_time_remaining_seconds)
+        - Segment-based exit (exit_before_segment)
+        
+        Then handles:
+        - Order execution
+        - Position closure recording
+        - Stats updates
+        - Notifications
         """
         if not game.position_id:
             return
@@ -976,58 +1091,102 @@ class BotRunner:
         entry_price = float(position.entry_price)
         current_price = game.current_price
 
-        # Calculate P&L
-        pnl_pct = (current_price - entry_price) / entry_price if entry_price else 0
-
-        # Get exit parameters (market override > sport config > default)
-        take_profit_threshold = float(self._get_effective_config(game, 'take_profit_pct', self.take_profit))
-        stop_loss_threshold = float(self._get_effective_config(game, 'stop_loss_pct', self.stop_loss))
-        exit_time_remaining = self._get_effective_config(game, 'exit_time_remaining_seconds', None)
-        exit_before_segment = self._get_effective_config(game, 'exit_before_segment', None)
+        # Build objects for TradingEngine
+        tracked_market = self._build_tracked_market_from_game(game)
+        game_state = self._build_game_state_from_game(game)
+        game_state["is_finished"] = game.game_status == "post"
+        
+        # Update TradingEngine's db session
+        self.trading_engine.db = db
 
         exit_reason = None
+        exit_message = None
 
-        # Check exit conditions in priority order
+        # Check emergency stop first (not handled by TradingEngine)
         if self.emergency_stop:
             exit_reason = "emergency_stop"
-        elif pnl_pct >= take_profit_threshold:
-            exit_reason = "take_profit"
-        elif pnl_pct <= -stop_loss_threshold:
-            exit_reason = "stop_loss"
-        elif game.game_status == "post":
-            exit_reason = "game_finished"
+            exit_message = "Emergency stop activated"
         else:
-            # Check time-based exit (must sell once X seconds remaining)
-            if exit_time_remaining is not None:
-                time_remaining = self._get_time_remaining_seconds(game)
-                if time_remaining is not None and time_remaining <= exit_time_remaining:
-                    exit_reason = f"time_exit_{time_remaining}s_remaining"
-                    logger.info(f"Time-based exit triggered: {time_remaining}s remaining, threshold {exit_time_remaining}s")
+            # Delegate to TradingEngine for standard exit conditions
+            exit_signal = await self.trading_engine.evaluate_exit(position, tracked_market, game_state)
+            
+            if exit_signal:
+                exit_reason = exit_signal["reason"]
+                exit_message = exit_signal.get("message", exit_reason)
+            else:
+                # Check additional bot_runner-specific exit conditions
+                # Time-based exit
+                exit_time_remaining = self._get_effective_config(game, 'exit_time_remaining_seconds', None)
+                if exit_time_remaining is not None:
+                    time_remaining = self._get_time_remaining_seconds(game)
+                    if time_remaining is not None and time_remaining <= exit_time_remaining:
+                        exit_reason = f"time_exit_{time_remaining}s_remaining"
+                        exit_message = f"Time-based exit: {time_remaining}s remaining, threshold {exit_time_remaining}s"
+                        logger.info(exit_message)
 
-            # Check segment-based exit
-            if not exit_reason and exit_before_segment:
-                current_segment = self._get_game_segment(game)
-                if self._is_past_segment(current_segment, exit_before_segment):
-                    exit_reason = f"segment_exit_{current_segment}"
-                    logger.info(f"Segment-based exit triggered: in {current_segment}, must exit before {exit_before_segment}")
+                # Segment-based exit (more granular than TradingEngine's segment check)
+                exit_before_segment = self._get_effective_config(game, 'exit_before_segment', None)
+                if not exit_reason and exit_before_segment:
+                    current_segment = self._get_game_segment(game)
+                    if self._is_past_segment(current_segment, exit_before_segment):
+                        exit_reason = f"segment_exit_{current_segment}"
+                        exit_message = f"Segment-based exit: in {current_segment}, must exit before {exit_before_segment}"
+                        logger.info(exit_message)
 
         if not exit_reason:
             return
+
+        # Calculate P&L for logging
+        pnl_pct = (current_price - entry_price) / entry_price if entry_price else 0
         
         logger.info(
             f"Exit signal ({exit_reason}): {game.home_team} "
-            f"P&L: {pnl_pct:.1%}"
+            f"P&L: {pnl_pct:.1%} - {exit_message}"
         )
         
-        # Execute exit (platform-agnostic)
+        # Execute exit
+        await self._execute_exit_order(db, game, position, current_price, exit_reason)
+
+    async def _execute_exit_order(
+        self,
+        db: AsyncSession,
+        game: TrackedGame,
+        position: Any,
+        current_price: float,
+        exit_reason: str
+    ) -> None:
+        """
+        Execute an exit order and record the position closure.
+        
+        Separated from _evaluate_exit for clarity and testability.
+        """
+        entry_price = float(position.entry_price)
+        pnl_pct = (current_price - entry_price) / entry_price if entry_price else 0
+        
         try:
             exit_size = float(position.entry_size)
             order = await self._place_order(game, "SELL", current_price, int(exit_size))
 
             if order:
                 order_id = self._get_order_id(order)
+                
+                # Track as pending order
+                self.pending_orders[order_id] = {
+                    "market": game.market.condition_id or game.market.ticker,
+                    "side": position.side,
+                    "price": current_price,
+                    "size": exit_size,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "action": "SELL"
+                }
+                
                 pnl = (current_price - entry_price) * exit_size
                 exit_proceeds = current_price * exit_size
+                
+                # Remove from pending (for paper trading, assume instant fill)
+                # For live trading, we'd want to wait for fill confirmation
+                if self.dry_run:
+                    self.pending_orders.pop(order_id, None)
 
                 # Update position using close_position method
                 await PositionCRUD.close_position(
@@ -1039,6 +1198,9 @@ class BotRunner:
                     exit_reason=exit_reason,
                     exit_order_id=order_id
                 )
+                
+                # Remove from pending after successful fill
+                self.pending_orders.pop(order_id, None)
                 
                 game.has_position = False
                 game.position_id = None
@@ -1067,7 +1229,6 @@ class BotRunner:
         except Exception as e:
             logger.error(f"Failed to execute exit: {e}")
             await discord_notifier.notify_error("Exit Failed", str(e), "exit_execution")
-            # Log to activity database
             if self.user_id:
                 try:
                     await ActivityLogCRUD.error(
@@ -1107,6 +1268,76 @@ class BotRunner:
                 logger.error(f"Health check error: {e}")
             
             await asyncio.sleep(self.HEALTH_CHECK_INTERVAL)
+    
+    async def _cleanup_loop(self, db: AsyncSession) -> None:
+        """
+        Periodically clean up stale or finished games from tracked_games.
+        
+        Prevents unbounded memory growth by removing games that:
+        - Have status 'post' (finished)
+        - Haven't been updated in over 6 hours
+        - Exceed the maximum tracked games limit
+        """
+        while not self._stop_event.is_set():
+            try:
+                now = datetime.now(timezone.utc)
+                stale_threshold = timedelta(hours=6)
+                games_to_remove = []
+                
+                for event_id, game in list(self.tracked_games.items()):
+                    # Remove finished games without positions
+                    if game.game_status == "post" and not game.has_position:
+                        games_to_remove.append((event_id, "finished"))
+                        continue
+                    
+                    # Remove stale games that haven't updated
+                    if game.last_update:
+                        time_since_update = now - game.last_update
+                        if time_since_update > stale_threshold and not game.has_position:
+                            games_to_remove.append((event_id, "stale"))
+                            continue
+                
+                # Clean up identified games
+                for event_id, reason in games_to_remove:
+                    game = self.tracked_games.get(event_id)
+                    if game:
+                        logger.info(
+                            f"Cleanup: removing {reason} game {game.home_team} vs "
+                            f"{game.away_team} (event_id={event_id})"
+                        )
+                        await self._handle_game_finished(db, game)
+                
+                # Enforce maximum tracked games limit if exceeded
+                if len(self.tracked_games) > self.MAX_TRACKED_GAMES:
+                    excess = len(self.tracked_games) - self.MAX_TRACKED_GAMES
+                    logger.warning(
+                        f"Tracked games ({len(self.tracked_games)}) exceeds limit "
+                        f"({self.MAX_TRACKED_GAMES}). Removing {excess} oldest games."
+                    )
+                    
+                    # Sort by last_update and remove oldest without positions
+                    sorted_games = sorted(
+                        self.tracked_games.items(),
+                        key=lambda x: x[1].last_update or datetime.min.replace(tzinfo=timezone.utc)
+                    )
+                    
+                    removed = 0
+                    for event_id, game in sorted_games:
+                        if removed >= excess:
+                            break
+                        if not game.has_position:
+                            await self._handle_game_finished(db, game)
+                            removed += 1
+                
+                if games_to_remove:
+                    logger.info(f"Cleanup complete: removed {len(games_to_remove)} games")
+                    
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Cleanup loop error: {e}")
+            
+            await asyncio.sleep(self.CLEANUP_INTERVAL)
     
     async def _recover_positions(self, db: AsyncSession) -> None:
         """
@@ -1324,6 +1555,137 @@ class BotRunner:
         if token_id not in self._entry_locks:
             self._entry_locks[token_id] = asyncio.Lock()
         return self._entry_locks[token_id]
+
+    def _calculate_entry_confidence(self, game: TrackedGame) -> ConfidenceResult:
+        """
+        Calculate multi-factor confidence score for entry signal.
+        
+        Evaluates price movement quality, market liquidity indicators,
+        and game timing factors to determine signal reliability.
+        
+        Args:
+            game: Game being evaluated for entry
+        
+        Returns:
+            ConfidenceResult with overall score and factor breakdown
+        """
+        current_price = Decimal(str(game.current_price or 0.5))
+        baseline_price = Decimal(str(game.baseline_price or 0.5))
+        
+        # Estimate time remaining based on period and sport
+        time_remaining = self._get_time_remaining_seconds(game) or 600
+        total_period_seconds = self._get_total_period_seconds(game.sport) or 720
+        
+        # Get score differential if available
+        score_diff = abs(game.home_score - game.away_score) if game.home_score and game.away_score else None
+        
+        # Determine periods based on sport
+        total_periods = self._get_total_periods(game.sport)
+        
+        return self.confidence_scorer.calculate_confidence(
+            current_price=current_price,
+            baseline_price=baseline_price,
+            time_remaining_seconds=time_remaining,
+            total_period_seconds=total_period_seconds,
+            orderbook=None,
+            recent_prices=None,
+            game_score_diff=score_diff,
+            current_period=game.period,
+            total_periods=total_periods,
+        )
+
+    async def _calculate_kelly_position_size(
+        self,
+        game: TrackedGame,
+        bankroll: Decimal,
+        confidence_score: float,
+        default_size: float,
+        db: AsyncSession
+    ) -> float:
+        """
+        Calculate optimal position size using Kelly criterion.
+        
+        Uses confidence score to estimate win probability and calculates
+        optimal sizing based on available bankroll and historical performance.
+        
+        Args:
+            game: Game being traded
+            bankroll: Available trading capital
+            confidence_score: Confidence score from entry evaluation
+            default_size: Default position size to fall back to
+            db: Database session for historical stats
+        
+        Returns:
+            Optimal position size in USDC
+        """
+        try:
+            current_price = Decimal(str(game.current_price or 0.5))
+            
+            # Convert confidence score to win probability estimate
+            # Higher confidence = higher estimated edge
+            win_prob = 0.5 + (confidence_score - 0.5) * 0.3
+            
+            # Get historical trade statistics for calibration
+            historical_win_rate = None
+            sample_size = 0
+            if self.user_id:
+                trade_stats = await PositionCRUD.get_trade_stats(db, self.user_id)
+                if trade_stats:
+                    historical_win_rate = trade_stats.get("win_rate")
+                    sample_size = trade_stats.get("total_trades", 0)
+            
+            # Get Kelly fraction from sport config
+            sport_key = game.sport.lower()
+            sport_config = self.sport_configs.get(sport_key)
+            kelly_fraction = float(getattr(sport_config, 'kelly_fraction', self.kelly_fraction)) if sport_config else self.kelly_fraction
+            
+            self.kelly_calculator.kelly_fraction = kelly_fraction
+            
+            kelly_result = self.kelly_calculator.calculate(
+                bankroll=bankroll,
+                current_price=current_price,
+                estimated_win_prob=win_prob,
+                historical_win_rate=historical_win_rate,
+                historical_sample_size=sample_size,
+                max_position_size=Decimal(str(default_size * 2)),
+                min_position_size=Decimal("1"),
+            )
+            
+            if kelly_result.recommended_contracts > 0:
+                kelly_size = kelly_result.adjusted_size
+                # Cap at 2x default size for safety
+                return min(kelly_size, default_size * 2)
+            
+            logger.debug(f"Kelly sizing returned 0 contracts: {kelly_result.sizing_reason}")
+            
+        except Exception as e:
+            logger.warning(f"Kelly calculation failed, using default size: {e}")
+        
+        return default_size
+
+    def _get_total_period_seconds(self, sport: str) -> int:
+        """Get total seconds in a period for the given sport."""
+        period_lengths = {
+            "nba": 720,    # 12 minutes
+            "nfl": 900,    # 15 minutes  
+            "nhl": 1200,   # 20 minutes
+            "mlb": 0,      # No clock
+            "ncaab": 1200, # 20 minutes
+            "ncaaf": 900,  # 15 minutes
+        }
+        return period_lengths.get(sport.lower(), 720)
+
+    def _get_total_periods(self, sport: str) -> int:
+        """Get total number of periods for the given sport."""
+        total_periods = {
+            "nba": 4,
+            "nfl": 4,
+            "nhl": 3,
+            "mlb": 9,
+            "ncaab": 2,
+            "ncaaf": 4,
+        }
+        return total_periods.get(sport.lower(), 4)
     
     def _check_sport_trading_hours(self, sport: str) -> bool:
         """
@@ -1877,6 +2239,7 @@ class BotRunner:
             "daily_pnl": self.daily_pnl,
             "max_daily_loss": self.max_daily_loss,
             "max_slippage": self.max_slippage,
+            "pending_orders": len(self.pending_orders),
             "sport_breakdown": games_by_sport,
             "sport_stats": self.get_sport_stats(),
             "games": [

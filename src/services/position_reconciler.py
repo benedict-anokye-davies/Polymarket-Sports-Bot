@@ -185,6 +185,8 @@ class PositionReconciler:
     
     async def _fetch_polymarket_positions(self) -> list[dict]:
         """Fetch current positions from Polymarket."""
+        if not self.polymarket_client:
+            return []
         try:
             positions = await self.polymarket_client.get_positions()
             return [
@@ -203,6 +205,8 @@ class PositionReconciler:
     
     async def _fetch_kalshi_positions(self) -> list[dict]:
         """Fetch current positions from Kalshi."""
+        if not self.kalshi_client:
+            return []
         try:
             positions = await self.kalshi_client.get_positions()
             return [
@@ -244,8 +248,9 @@ class PositionReconciler:
     ) -> None:
         """Update position sync status."""
         from src.models import Position
+        from typing import Any
         
-        values = {
+        values: dict[str, Any] = {
             "sync_status": sync_status,
         }
         
@@ -336,7 +341,10 @@ class PositionReconciler:
         )
         result = await self.db.execute(stmt)
         
-        status_counts = dict(result.fetchall())
+        # Convert rows to dict properly
+        status_counts: dict[str, int] = {}
+        for row in result.fetchall():
+            status_counts[row[0]] = row[1]
         
         return {
             "synced": status_counts.get("synced", 0),

@@ -41,6 +41,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { apiClient, type TradingParameters, type BotConfigResponse, type ESPNGame, type SportCategory, type LeagueInfo } from '@/api/client';
+import { logger } from '@/lib/logger';
 
 // Game type for frontend display
 interface GameData {
@@ -139,7 +140,7 @@ export default function BotConfig() {
         const data = await apiClient.getSportCategories();
         setCategories(data);
       } catch (err) {
-        console.error('Failed to load categories:', err);
+        logger.error('Failed to load categories:', err);
       } finally {
         setLoadingCategories(false);
       }
@@ -224,7 +225,7 @@ export default function BotConfig() {
       }));
       setAvailableGames(transformed);
     } catch (err) {
-      console.error('Failed to fetch games:', err);
+      logger.error('Failed to fetch games:', err);
       setAvailableGames([]);
       // Don't show error to user - just show empty list
     } finally {

@@ -183,7 +183,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       clearTimeout(heartbeatTimeoutRef.current);
     }
     heartbeatTimeoutRef.current = setTimeout(() => {
-      console.warn('[WS] Heartbeat timeout - connection stale, reconnecting');
+      logger.warn('[WS] Heartbeat timeout - connection stale, reconnecting');
       wsRef.current?.close();
     }, HEARTBEAT_TIMEOUT_MS);
   }, []);
@@ -243,28 +243,28 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           break;
 
         case WebSocketEventType.ERROR:
-          console.error('[WS] Server error:', data);
+          logger.error('[WS] Server error:', data);
           callbacksRef.current.onError?.(new Error((data as { message?: string }).message || 'Unknown error'));
           break;
 
         case WebSocketEventType.DAILY_LOSS_WARNING:
         case WebSocketEventType.KILL_SWITCH_ACTIVATED:
           // These are risk alerts - could add specific handlers
-          console.warn('[WS] Risk alert:', eventType, data);
+          logger.warn('[WS] Risk alert:', eventType, data);
           break;
 
         default:
           logger.debug('[WS] Unhandled event:', eventType, data);
       }
     } catch (err) {
-      console.error('[WS] Failed to parse message:', err);
+      logger.error('[WS] Failed to parse message:', err);
     }
   }, [resetHeartbeatTimeout]);
 
   const connect = useCallback(() => {
     const token = getToken();
     if (!token) {
-      console.warn('[WS] No auth token available, skipping connection');
+      logger.warn('[WS] No auth token available, skipping connection');
       return;
     }
 
@@ -277,25 +277,51 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     clearTimers();
 
     try {
-      const wsUrl = `${getWebSocketUrl()}?token=${encodeURIComponent(token)}`;
+      // Connect without token in URL for security (tokens in URLs can be logged)
+      const wsUrl = getWebSocketUrl();
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        logger.debug('[WS] Connected');
-        setIsConnected(true);
-        setConnectionError(null);
-        setWsConnected(true);
-        reconnectAttemptsRef.current = 0;
-        startHeartbeat();
-        resetHeartbeatTimeout();
-        callbacksRef.current.onConnected?.();
+        logger.debug('[WS] Connected, sending authentication...');
+        // Send authentication via message instead of URL parameter
+        ws.send(JSON.stringify({ action: 'authenticate', token }));
       };
 
-      ws.onmessage = handleMessage;
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          
+          // Check for auth success/failure before normal message handling
+          if (message.event === 'connection_established' && message.data?.authenticated) {
+            logger.debug('[WS] Authenticated successfully');
+            setIsConnected(true);
+            setConnectionError(null);
+            setWsConnected(true);
+            reconnectAttemptsRef.current = 0;
+            startHeartbeat();
+            resetHeartbeatTimeout();
+            callbacksRef.current.onConnected?.();
+            return;
+          }
+          
+          if (message.event === 'error' && !isConnected) {
+            // Auth error
+            logger.error('[WS] Authentication failed:', message.data?.message);
+            setConnectionError(message.data?.message || 'Authentication failed');
+            ws.close();
+            return;
+          }
+          
+          // Normal message handling
+          handleMessage(event);
+        } catch (err) {
+          logger.error('[WS] Failed to parse message:', err);
+        }
+      };
 
       ws.onerror = (error) => {
-        console.error('[WS] Error:', error);
+        logger.error('[WS] Error:', error);
         setConnectionError('WebSocket connection error');
         callbacksRef.current.onError?.(new Error('WebSocket connection error'));
       };
@@ -319,13 +345,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             reconnectAttemptsRef.current = attempts + 1;
             reconnectTimeoutRef.current = setTimeout(connect, delay);
           } else {
-            console.error('[WS] Max reconnection attempts reached');
+            logger.error('[WS] Max reconnection attempts reached');
             setConnectionError('Unable to connect to server');
           }
         }
       };
     } catch (err) {
-      console.error('[WS] Failed to create connection:', err);
+      logger.error('[WS] Failed to create connection:', err);
       setConnectionError('Failed to create WebSocket connection');
     }
   }, [getToken, enabled, clearTimers, startHeartbeat, resetHeartbeatTimeout, handleMessage, setWsConnected]);
@@ -344,7 +370,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ action, ...payload }));
     } else {
-      console.warn('[WS] Cannot send message, not connected');
+      logger.warn('[WS] Cannot send message, not connected');
     }
   }, []);
 

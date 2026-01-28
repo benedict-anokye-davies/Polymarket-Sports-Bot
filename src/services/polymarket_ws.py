@@ -33,6 +33,17 @@ class PriceUpdate:
     order_hash: str | None = None
     
     @property
+    def mid_price(self) -> float:
+        """Calculate mid price from best bid and ask."""
+        if self.best_bid == 0 and self.best_ask == 0:
+            return self.price
+        if self.best_bid == 0:
+            return self.best_ask
+        if self.best_ask == 0:
+            return self.best_bid
+        return (self.best_bid + self.best_ask) / 2
+    
+    @property
     def spread(self) -> float:
         """Calculate bid-ask spread."""
         return self.best_ask - self.best_bid
@@ -82,12 +93,14 @@ class PolymarketWebSocket:
     - Subscription management for multiple markets
     - Price update callbacks for trading engine integration
     - Connection health monitoring
+    - Bounded market state cache (max 500 markets)
     """
     
     WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/"
     PING_INTERVAL = 10  # seconds
     RECV_TIMEOUT = 60   # seconds before considering connection dead
     MAX_RECONNECT_ATTEMPTS = 10
+    MAX_MARKET_STATES = 500  # Prevent unbounded memory growth
     
     def __init__(self):
         self._websocket: websockets.WebSocketClientProtocol | None = None
@@ -132,6 +145,15 @@ class PolymarketWebSocket:
             token_id_yes: YES outcome token ID
             token_id_no: NO outcome token ID
         """
+        # Enforce max market limit to prevent memory leak
+        if len(self._market_states) >= self.MAX_MARKET_STATES:
+            # Remove oldest markets (first added)
+            oldest = list(self._market_states.keys())[:100]
+            for old_id in oldest:
+                self._subscribed_markets.discard(old_id)
+                self._market_states.pop(old_id, None)
+            logger.warning(f"Market state cache full, evicted {len(oldest)} oldest markets")
+        
         self._subscribed_markets.add(condition_id)
         self._market_states[condition_id] = MarketState(
             condition_id=condition_id,

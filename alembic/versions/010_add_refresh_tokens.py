@@ -1,7 +1,7 @@
 """Add refresh_tokens table for JWT token refresh mechanism (REQ-SEC-001)
 
 Revision ID: 010_add_refresh_tokens
-Revises: 009_audit_events
+Revises: 009b_audit_events
 Create Date: 2026-01-27 14:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '010_add_refresh_tokens'
-down_revision = '009_audit_events'
+down_revision = '009b_audit_events'
 branch_labels = None
 depends_on = None
 

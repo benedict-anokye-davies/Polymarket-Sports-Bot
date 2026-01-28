@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import String, Boolean, Integer, DateTime, Numeric, Text, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from src.db.database import Base
 
@@ -127,6 +127,14 @@ class GlobalSettings(Base):
     streak_reduction_pct_per_loss: Mapped[Decimal] = mapped_column(
         Numeric(5, 2),
         default=Decimal("10.0")
+    )
+    
+    # Persistent bot configuration (selected games, parameters)
+    # Stored as JSON to survive server restarts
+    bot_config_json: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=None
     )
     
     updated_at: Mapped[datetime] = mapped_column(

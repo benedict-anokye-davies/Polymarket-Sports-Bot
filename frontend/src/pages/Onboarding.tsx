@@ -28,6 +28,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/api/client';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { logger } from '@/lib/logger';
 import { useAppStore } from '@/stores/useAppStore';
 
 const TOTAL_STEPS = 4;
@@ -559,7 +560,7 @@ export default function Onboarding() {
         startTour();
       }, 500);
     } catch (error) {
-      console.error('Failed to save onboarding data:', error);
+      logger.error('Failed to save onboarding data:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to save settings. Please try again.',
@@ -599,7 +600,7 @@ export default function Onboarding() {
       });
       navigate('/dashboard');
     } catch (error) {
-      console.error('Failed to skip onboarding:', error);
+      logger.error('Failed to skip onboarding:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to skip onboarding.',

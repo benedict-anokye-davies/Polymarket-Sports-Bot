@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { apiClient, SportCategory, LeagueInfo, ESPNGame } from '@/api/client';
+import { logger } from '@/lib/logger';
 import { TableSkeleton } from '@/components/TableSkeleton';
 
 const statusStyles: Record<string, string> = {
@@ -111,7 +112,7 @@ export default function Markets() {
           }
         }
       } catch (err) {
-        console.error('Failed to load categories:', err);
+        logger.error('Failed to load categories:', err);
         setError('Failed to load sport categories');
       } finally {
         setLoadingCategories(false);
@@ -171,7 +172,7 @@ export default function Markets() {
             sport: league,
           }));
         } catch (err) {
-          console.error(`Failed to fetch games for ${league}:`, err);
+          logger.error(`Failed to fetch games for ${league}:`, err);
           return [];
         }
       });

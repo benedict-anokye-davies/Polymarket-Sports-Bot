@@ -62,10 +62,45 @@ class PolymarketAccountCRUD:
     @staticmethod
     async def get_by_user_id(db: AsyncSession, user_id: uuid.UUID) -> PolymarketAccount | None:
         """
-        Retrieves Polymarket account for a user.
+        Retrieves primary/first Polymarket account for a user.
+        For multi-account, use get_all_for_user instead.
         """
         result = await db.execute(
             select(PolymarketAccount).where(PolymarketAccount.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_all_for_user(db: AsyncSession, user_id: uuid.UUID) -> list[PolymarketAccount]:
+        """
+        Retrieves ALL trading accounts for a user (multi-account support).
+        
+        Args:
+            db: Database session
+            user_id: User ID
+        
+        Returns:
+            List of all PolymarketAccount instances for the user
+        """
+        result = await db.execute(
+            select(PolymarketAccount).where(PolymarketAccount.user_id == user_id)
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def get_by_id(db: AsyncSession, account_id: uuid.UUID) -> PolymarketAccount | None:
+        """
+        Retrieves a specific account by ID.
+        
+        Args:
+            db: Database session
+            account_id: Account ID
+        
+        Returns:
+            PolymarketAccount or None if not found
+        """
+        result = await db.execute(
+            select(PolymarketAccount).where(PolymarketAccount.id == account_id)
         )
         return result.scalar_one_or_none()
     

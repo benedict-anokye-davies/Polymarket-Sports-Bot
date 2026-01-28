@@ -89,6 +89,9 @@ class Backtester:
     5. Generate summary statistics
     """
     
+    # Maximum equity curve data points to prevent memory issues
+    MAX_EQUITY_CURVE_POINTS = 5000
+    
     def __init__(self, db: AsyncSession, user_id: UUID):
         self.db = db
         self.user_id = user_id
@@ -309,7 +312,12 @@ class Backtester:
         logger.debug(f"Backtest: Closed @ {price:.4f}, PnL: {pnl:.2f} ({reason})")
     
     def _update_equity(self, state: BacktestState, timestamp: datetime) -> None:
-        """Update equity curve and drawdown tracking."""
+        """
+        Update equity curve and drawdown tracking.
+        
+        Implements downsampling when equity curve exceeds MAX_EQUITY_CURVE_POINTS
+        to prevent unbounded memory growth during long backtests.
+        """
         position_value = sum(
             p.contracts * p.entry_price
             for p in state.positions.values()
@@ -320,6 +328,11 @@ class Backtester:
         state.peak_capital = max(state.peak_capital, total_equity)
         drawdown = (state.peak_capital - total_equity) / state.peak_capital if state.peak_capital > 0 else 0
         state.max_drawdown = max(state.max_drawdown, drawdown)
+        
+        # Downsample equity curve if it grows too large
+        if len(state.equity_curve) >= self.MAX_EQUITY_CURVE_POINTS:
+            # Keep every other point to halve the size
+            state.equity_curve = state.equity_curve[::2]
         
         state.equity_curve.append({
             "timestamp": timestamp.isoformat(),

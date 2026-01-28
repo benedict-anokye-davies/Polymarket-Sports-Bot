@@ -5,6 +5,7 @@ Integrates with BotRunner for actual trading operations.
 
 import logging
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import DbSession, OnboardedUser
 from src.db.crud.global_settings import GlobalSettingsCRUD
@@ -191,6 +192,10 @@ async def start_bot(
     if status_info and status_info.get("state") == BotState.RUNNING.value:
         return MessageResponse(message="Bot is already running")
     
+    polymarket_client = None
+    trading_engine = None
+    espn_service = None
+    
     try:
         # Create dependencies
         polymarket_client, trading_engine, espn_service = await _create_bot_dependencies(
@@ -225,6 +230,20 @@ async def start_bot(
         
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
+        
+        # Cleanup resources on error
+        if polymarket_client and hasattr(polymarket_client, 'close'):
+            try:
+                await polymarket_client.close()
+            except Exception as close_err:
+                logger.warning(f"Error closing polymarket client: {close_err}")
+        
+        if espn_service and hasattr(espn_service, 'close'):
+            try:
+                await espn_service.close()
+            except Exception as close_err:
+                logger.warning(f"Error closing ESPN service: {close_err}")
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start bot: {str(e)}"
@@ -486,18 +505,36 @@ from src.schemas.bot_config import (
     BotStatusResponse
 )
 
-# In-memory store for bot configurations (per user)
+# In-memory cache for bot configurations (per user) - backed by database
 _bot_configs: dict[str, dict] = {}
+
+
+async def _load_config_from_db(db: AsyncSession, user_id: str) -> dict | None:
+    """
+    Loads bot config from database into memory cache.
+    Called on first access or after server restart.
+    """
+    from uuid import UUID
+    config = await GlobalSettingsCRUD.get_bot_config(db, UUID(user_id))
+    if config:
+        _bot_configs[user_id] = config
+    return config
 
 
 @router.get("/config", response_model=BotConfigResponse)
 async def get_bot_config(db: DbSession, current_user: OnboardedUser) -> BotConfigResponse:
     """
     Get current bot configuration for the user.
+    Loads from database if not in memory cache.
     """
     from src.schemas.bot_config import GameSelection
     
     user_id = str(current_user.id)
+    
+    # Load from database if not in cache
+    if user_id not in _bot_configs:
+        await _load_config_from_db(db, user_id)
+    
     config = _bot_configs.get(user_id, {})
     
     status_info = get_bot_status(current_user.id)
@@ -566,6 +603,9 @@ async def save_bot_config(
         "last_updated": datetime.now().isoformat()
     }
     
+    # Persist to database for recovery after server restart
+    await GlobalSettingsCRUD.save_bot_config(db, current_user.id, _bot_configs[user_id])
+    
     # Persist simulation mode to database
     await GlobalSettingsCRUD.update(db, current_user.id, dry_run_mode=request.simulation_mode)
     
@@ -626,12 +666,20 @@ async def get_detailed_bot_status(
     is_running = bool(status_info and status_info.get("state") == BotState.RUNNING.value)
     
     user_id = str(current_user.id)
+    
+    # Load from database if not in cache
+    if user_id not in _bot_configs:
+        await _load_config_from_db(db, user_id)
+    
     config = _bot_configs.get(user_id, {})
     
     # Get position counts
     open_positions = await PositionCRUD.count_open_for_user(db, current_user.id)
     today_pnl = await PositionCRUD.get_daily_pnl(db, current_user.id)
     today_trades = await PositionCRUD.count_today_trades(db, current_user.id)
+    
+    # Get pending orders count from bot runner status
+    pending_orders = status_info.get("pending_orders", 0) if status_info else 0
     
     game = config.get("game", {})
     current_game = f"{game.get('away_team', '')} @ {game.get('home_team', '')}" if game else None
@@ -641,7 +689,7 @@ async def get_detailed_bot_status(
         current_game=current_game if game else None,
         current_sport=config.get("sport"),
         active_positions=open_positions,
-        pending_orders=0,  # TODO: Track pending orders
+        pending_orders=pending_orders,
         today_pnl=float(today_pnl) if today_pnl else 0.0,
         today_trades=today_trades
     )

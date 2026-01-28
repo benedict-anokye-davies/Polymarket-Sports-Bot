@@ -5,6 +5,7 @@ Loads configuration from environment variables with validation.
 
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
@@ -25,6 +26,28 @@ class Settings(BaseSettings):
     app_name: str = "polymarket-bot"
     debug: bool = False
     secret_key: str
+    
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        """
+        Validates that secret_key is cryptographically secure.
+        Requires minimum 32 characters (256 bits) for production use.
+        """
+        if len(v) < 32:
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        # Warn about common weak keys (but don't block in case of testing)
+        weak_keys = ["changeme", "secret", "password", "12345678"]
+        if any(weak in v.lower() for weak in weak_keys):
+            import logging
+            logging.getLogger(__name__).warning(
+                "SECRET_KEY appears to contain a weak pattern. "
+                "Use a cryptographically random value in production."
+            )
+        return v
     
     # Database
     database_url: str
@@ -84,6 +107,11 @@ class Settings(BaseSettings):
     
     # Redis (optional, for distributed rate limiting)
     redis_url: str | None = None
+    
+    # Rate Limiting Configuration
+    rate_limit_requests_per_minute: int = 60
+    rate_limit_requests_per_hour: int = 1000
+    rate_limit_burst: int = 20
     
     # CloudWatch (optional, for log shipping)
     cloudwatch_region: str | None = None

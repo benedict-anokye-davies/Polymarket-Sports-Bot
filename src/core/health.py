@@ -7,7 +7,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Any
+from typing import Any, Callable, Awaitable
 from enum import Enum
 
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -107,13 +107,14 @@ class DatabaseHealthMonitor:
         if pool is None:
             return None
         
+        # Access pool methods safely - not all pool types have all methods
         return PoolMetrics(
-            pool_size=pool.size(),
-            checked_in=pool.checkedin(),
-            checked_out=pool.checkedout(),
-            overflow=pool.overflow(),
-            invalid=pool.invalidatedcount(),
-            soft_invalidated=pool.invalidatedcount() if hasattr(pool, 'invalidatedcount') else 0,
+            pool_size=getattr(pool, 'size', lambda: 0)(),
+            checked_in=getattr(pool, 'checkedin', lambda: 0)(),
+            checked_out=getattr(pool, 'checkedout', lambda: 0)(),
+            overflow=getattr(pool, 'overflow', lambda: 0)(),
+            invalid=getattr(pool, 'invalidatedcount', lambda: 0)(),
+            soft_invalidated=getattr(pool, 'invalidatedcount', lambda: 0)(),
         )
     
     async def check_connectivity(self) -> tuple[bool, float]:
@@ -228,7 +229,7 @@ class ServiceHealthAggregator:
     def register_service(
         self,
         name: str,
-        health_check: callable,
+        health_check: Callable[[], Awaitable[HealthCheckResult]],
     ) -> None:
         """Register a service health check function."""
         self._services[name] = health_check

@@ -111,12 +111,7 @@ export default function Login() {
                     Remember me
                   </label>
                 </div>
-                <Link 
-                  to="/forgot-password" 
-                  className="text-sm text-primary hover:text-primary/80 transition-colors"
-                >
-                  Forgot password?
-                </Link>
+                {/* Password reset not implemented - contact admin for account issues */}
               </div>
             </CardContent>
 

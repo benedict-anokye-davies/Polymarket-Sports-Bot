@@ -301,6 +301,41 @@ class DiscordNotifier:
         
         return await self._send_webhook({"embeds": [embed]})
 
+    async def send_alert(
+        self,
+        title: str,
+        message: str,
+        level: str = "info"
+    ) -> bool:
+        """
+        Send a generic alert notification.
+        
+        Args:
+            title: Alert title
+            message: Alert message body
+            level: Alert level (info, warning, critical)
+        
+        Returns:
+            True if sent successfully
+        """
+        color_map = {
+            "info": self.COLOR_INFO,
+            "warning": self.COLOR_WARNING,
+            "critical": self.COLOR_ERROR,
+            "error": self.COLOR_ERROR,
+            "success": self.COLOR_SUCCESS,
+        }
+        
+        embed = {
+            "title": title,
+            "description": message,
+            "color": color_map.get(level.lower(), self.COLOR_INFO),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "footer": {"text": "Polymarket Sports Bot"}
+        }
+        
+        return await self._send_webhook({"embeds": [embed]})
+
 
 # Global instance
 discord_notifier = DiscordNotifier()

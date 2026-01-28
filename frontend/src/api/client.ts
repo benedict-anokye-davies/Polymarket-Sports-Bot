@@ -28,19 +28,21 @@ class ApiClient {
   }
 
   private getRefreshToken(): string | null {
-    return localStorage.getItem('refresh_token');
+    // Use sessionStorage for refresh token (more secure than localStorage)
+    return sessionStorage.getItem('refresh_token');
   }
 
   private setTokens(accessToken: string, refreshToken?: string): void {
     localStorage.setItem('auth_token', accessToken);
     if (refreshToken) {
-      localStorage.setItem('refresh_token', refreshToken);
+      // Store refresh token in sessionStorage (cleared when tab closes)
+      sessionStorage.setItem('refresh_token', refreshToken);
     }
   }
 
   private clearTokens(): void {
     localStorage.removeItem('auth_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('refresh_token');
   }
 
   /**
@@ -555,7 +557,7 @@ class ApiClient {
   }
 
   async logoutAllDevices(): Promise<{ message: string }> {
-    const refreshToken = localStorage.getItem('refresh_token');
+    const refreshToken = this.getRefreshToken();
     return this.request('/auth/logout', {
       method: 'POST',
       body: JSON.stringify({
@@ -688,6 +690,142 @@ class ApiClient {
     const token = this.getToken();
     const url = `${this.baseUrl}/dashboard/stream${token ? `?token=${token}` : ''}`;
     return new EventSource(url);
+  }
+
+  // ==========================================================================
+  // Analytics Endpoints (P1-019)
+  // ==========================================================================
+
+  /**
+   * Get performance metrics for analytics dashboard
+   */
+  async getPerformanceMetrics(): Promise<PerformanceMetrics> {
+    return this.request('/analytics/performance');
+  }
+
+  /**
+   * Get performance breakdown by sport
+   */
+  async getSportPerformance(): Promise<SportPerformance[]> {
+    return this.request('/analytics/sports');
+  }
+
+  /**
+   * Get equity curve data for charting
+   */
+  async getEquityCurve(): Promise<EquityPoint[]> {
+    return this.request('/analytics/equity-curve');
+  }
+
+  /**
+   * Get daily P&L data
+   */
+  async getDailyPnL(days: number = 30): Promise<DailyPnL[]> {
+    return this.request(`/analytics/daily-pnl?days=${days}`);
+  }
+
+  // ==========================================================================
+  // Account Management Endpoints (P1-020)
+  // ==========================================================================
+
+  /**
+   * Get summary of all accounts with balances
+   */
+  async getAccountSummary(): Promise<AccountSummary> {
+    return this.request('/accounts/summary');
+  }
+
+  /**
+   * Get list of all accounts
+   */
+  async getAccounts(): Promise<AccountInfo[]> {
+    return this.request('/accounts/');
+  }
+
+  /**
+   * Create a new trading account
+   */
+  async createAccount(account: CreateAccountRequest): Promise<AccountInfo> {
+    return this.request('/accounts/', {
+      method: 'POST',
+      body: JSON.stringify(account),
+    });
+  }
+
+  /**
+   * Update an existing account
+   */
+  async updateAccount(accountId: string, update: UpdateAccountRequest): Promise<AccountInfo> {
+    return this.request(`/accounts/${accountId}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    });
+  }
+
+  /**
+   * Delete an account
+   */
+  async deleteAccount(accountId: string): Promise<void> {
+    return this.request(`/accounts/${accountId}`, { method: 'DELETE' });
+  }
+
+  /**
+   * Set an account as primary
+   */
+  async setPrimaryAccount(accountId: string): Promise<AccountInfo> {
+    return this.request(`/accounts/${accountId}/primary`, { method: 'POST' });
+  }
+
+  /**
+   * Update allocation percentages for multiple accounts
+   */
+  async updateAllocations(allocations: AllocationUpdate[]): Promise<{ message: string }> {
+    return this.request('/accounts/allocations', {
+      method: 'PUT',
+      body: JSON.stringify({ allocations }),
+    });
+  }
+
+  // ==========================================================================
+  // Backtesting Endpoints (P1-021)
+  // ==========================================================================
+
+  /**
+   * Get all backtest results
+   */
+  async getBacktestResults(): Promise<BacktestResult[]> {
+    return this.request('/backtest/results');
+  }
+
+  /**
+   * Get a specific backtest result
+   */
+  async getBacktestResult(id: string): Promise<BacktestResult> {
+    return this.request(`/backtest/results/${id}`);
+  }
+
+  /**
+   * Start a new backtest run
+   */
+  async runBacktest(config: BacktestConfigRequest): Promise<{ id: string; message: string }> {
+    return this.request('/backtest/run', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  }
+
+  /**
+   * Get equity curve for a backtest
+   */
+  async getBacktestEquityCurve(id: string): Promise<BacktestEquityPoint[]> {
+    return this.request(`/backtest/results/${id}/equity-curve`);
+  }
+
+  /**
+   * Delete a backtest result
+   */
+  async deleteBacktestResult(id: string): Promise<void> {
+    return this.request(`/backtest/results/${id}`, { method: 'DELETE' });
   }
 }
 
@@ -854,6 +992,9 @@ export interface BotStatus {
   tracked_markets: number;
   daily_pnl: number;
   trades_today: number;
+  paper_trading?: boolean;
+  platform?: 'kalshi' | 'polymarket';
+  state?: 'stopped' | 'running' | 'paused' | 'error';
 }
 
 export interface Market {
@@ -1283,7 +1424,7 @@ export interface WebSocketClientOptions {
  *
  * Usage:
  *   const wsClient = new WebSocketClient();
- *   wsClient.on('trade_executed', (msg) => console.log('Trade:', msg.data));
+ *   wsClient.on('trade_executed', (msg) => logger.debug('Trade:', msg.data));
  *   wsClient.connect();
  */
 export class WebSocketClient {
@@ -1321,7 +1462,7 @@ export class WebSocketClient {
 
     const token = localStorage.getItem('auth_token');
     if (!token) {
-      console.warn('WebSocket: No auth token, skipping connection');
+      logger.warn('WebSocket: No auth token, skipping connection');
       return;
     }
 
@@ -1334,7 +1475,7 @@ export class WebSocketClient {
       this.ws = new WebSocket(wsUrl);
       this.setupEventListeners();
     } catch (error) {
-      console.error('WebSocket connection error:', error);
+      logger.error('WebSocket connection error:', error);
       this.isConnecting = false;
       this.scheduleReconnect();
     }
@@ -1377,7 +1518,7 @@ export class WebSocketClient {
    */
   send(action: string, data?: Record<string, unknown>): void {
     if (this.ws?.readyState !== WebSocket.OPEN) {
-      console.warn('WebSocket: Cannot send, not connected');
+      logger.warn('WebSocket: Cannot send, not connected');
       return;
     }
 
@@ -1413,12 +1554,12 @@ export class WebSocketClient {
         const message: WebSocketMessage = JSON.parse(event.data);
         this.dispatchEvent(message);
       } catch (error) {
-        console.error('WebSocket: Failed to parse message:', error);
+        logger.error('WebSocket: Failed to parse message:', error);
       }
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      logger.error('WebSocket error:', error);
     };
 
     this.ws.onclose = (event) => {
@@ -1440,7 +1581,7 @@ export class WebSocketClient {
         try {
           handler(message);
         } catch (error) {
-          console.error('WebSocket event handler error:', error);
+          logger.error('WebSocket event handler error:', error);
         }
       });
     }
@@ -1452,7 +1593,7 @@ export class WebSocketClient {
         try {
           handler(message);
         } catch (error) {
-          console.error('WebSocket wildcard handler error:', error);
+          logger.error('WebSocket wildcard handler error:', error);
         }
       });
     }
@@ -1460,7 +1601,7 @@ export class WebSocketClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
-      console.error('WebSocket: Max reconnect attempts reached');
+      logger.error('WebSocket: Max reconnect attempts reached');
       return;
     }
 
@@ -1498,6 +1639,152 @@ export class WebSocketClient {
       this.heartbeatInterval = null;
     }
   }
+}
+
+// =============================================================================
+// Analytics Types (P1-019)
+// =============================================================================
+
+export interface PerformanceMetrics {
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  total_pnl: number;
+  gross_profit: number;
+  gross_loss: number;
+  avg_win: number;
+  avg_loss: number;
+  profit_factor: number;
+  largest_win: number;
+  largest_loss: number;
+  avg_trade_duration_hours: number;
+  current_streak: number;
+  max_win_streak: number;
+  max_lose_streak: number;
+  max_drawdown: number;
+  roi_pct: number;
+  sharpe_ratio: number | null;
+  calmar_ratio: number | null;
+}
+
+export interface SportPerformance {
+  sport: string;
+  total_trades: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_return: number;
+}
+
+export interface EquityPoint {
+  timestamp: string;
+  equity: number;
+  drawdown: number;
+}
+
+export interface DailyPnL {
+  date: string;
+  pnl: number;
+}
+
+// =============================================================================
+// Account Management Types (P1-020)
+// =============================================================================
+
+export interface AccountInfo {
+  id: string;
+  account_name: string;
+  platform: 'polymarket' | 'kalshi';
+  is_primary: boolean;
+  is_active: boolean;
+  allocation_pct: number;
+  funder_address?: string;
+  balance?: number;
+  error?: string;
+}
+
+export interface AccountSummary {
+  total_balance: number;
+  total_accounts: number;
+  accounts: AccountInfo[];
+  allocation_valid: boolean;
+  total_allocation_pct: number;
+}
+
+export interface CreateAccountRequest {
+  account_name: string;
+  platform: 'polymarket' | 'kalshi';
+  private_key?: string;
+  funder_address?: string;
+  api_key?: string;
+  api_secret?: string;
+  api_passphrase?: string;
+  allocation_pct?: number;
+  is_primary?: boolean;
+}
+
+export interface UpdateAccountRequest {
+  account_name?: string;
+  allocation_pct?: number;
+  is_active?: boolean;
+}
+
+export interface AllocationUpdate {
+  account_id: string;
+  allocation_pct: number;
+}
+
+// =============================================================================
+// Backtesting Types (P1-021)
+// =============================================================================
+
+export interface BacktestConfigRequest {
+  start_date: string;
+  end_date: string;
+  initial_capital: number;
+  entry_threshold_drop_pct: number;
+  exit_take_profit_pct: number;
+  exit_stop_loss_pct: number;
+  max_position_size_pct: number;
+  max_concurrent_positions: number;
+  min_confidence_score: number;
+  use_kelly_sizing: boolean;
+  kelly_fraction: number;
+  sport_filter: string | null;
+  name: string;
+}
+
+export interface BacktestSummary {
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  total_pnl: number;
+  max_drawdown: number;
+  sharpe_ratio: number | null;
+  profit_factor: number;
+  avg_trade_pnl: number;
+  avg_win: number;
+  avg_loss: number;
+  final_capital: number;
+  roi_pct: number;
+}
+
+export interface BacktestResult {
+  id: string;
+  name: string;
+  status: string;
+  config: BacktestConfigRequest;
+  summary: BacktestSummary | null;
+  trades_count: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface BacktestEquityPoint {
+  timestamp: string;
+  equity: number;
+  drawdown_pct: number;
 }
 
 // Export singleton instances

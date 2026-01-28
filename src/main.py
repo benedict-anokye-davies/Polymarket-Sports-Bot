@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -195,13 +196,13 @@ app = FastAPI(
 )
 
 # Production middleware stack (order matters - last added = first executed)
-# 1. Rate limiting - protect against abuse
+# 1. Rate limiting - protect against abuse (uses config from environment)
 app.add_middleware(
     RateLimitMiddleware,
     config=RateLimitConfig(
-        requests_per_minute=60,
-        requests_per_hour=1000,
-        burst_limit=20,
+        requests_per_minute=app_settings.rate_limit_requests_per_minute,
+        requests_per_hour=app_settings.rate_limit_requests_per_hour,
+        burst_limit=app_settings.rate_limit_burst,
     ),
 )
 
@@ -224,10 +225,17 @@ app.add_middleware(
 )
 
 # 5. Security Headers - protect against common web vulnerabilities (REQ-SEC-008)
+# Also includes Origin validation for CSRF protection on state-changing requests
 app.add_middleware(
     SecurityHeadersMiddleware,
-    config=create_security_headers_config(debug=app_settings.debug),
+    config=create_security_headers_config(
+        debug=app_settings.debug,
+        allowed_origins=app_settings.cors_origins_list,
+    ),
 )
+
+# 6. GZip compression - reduce response sizes for better performance
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(onboarding_router, prefix="/api/v1")

@@ -15,6 +15,7 @@ import {
   LeagueInfo,
   UserLeagueStatus,
 } from '@/api/client';
+import { logger } from '@/lib/logger';
 
 /**
  * LeagueSelector Component
@@ -54,7 +55,7 @@ export function LeagueSelector() {
       });
       setSelectedLeagues(enabledLeagues);
     } catch (error) {
-      console.error('Failed to load league data:', error);
+      logger.error('Failed to load league data:', error);
       toast({
         title: 'Error',
         description: 'Failed to load league data.',
@@ -137,7 +138,7 @@ export function LeagueSelector() {
       const statusData = await apiClient.getUserLeagueStatus();
       setUserStatus(statusData);
     } catch (error) {
-      console.error('Failed to save league selection:', error);
+      logger.error('Failed to save league selection:', error);
       toast({
         title: 'Error',
         description: 'Failed to save league selection.',

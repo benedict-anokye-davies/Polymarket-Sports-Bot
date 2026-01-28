@@ -19,33 +19,49 @@ export default function Dashboard() {
   const { startTour } = useAppStore();
 
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchStats = async () => {
       try {
         setLoading(true);
         const data = await apiClient.getDashboardStats();
+        
+        // Only update state if component is still mounted
+        if (!isMounted) return;
+        
         setStats(data);
         setError(null);
         
         // Check paper trading status
         try {
           const botStatus = await apiClient.getBotStatus();
-          setIsPaperTrading(botStatus.paper_trading ?? true);
+          if (isMounted) {
+            setIsPaperTrading(botStatus.paper_trading ?? true);
+          }
         } catch (e) {
           // Default to paper trading if can't fetch
         }
       } catch (err) {
+        if (!isMounted) return;
+        
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
         // Set default values on error
         setStats(null);
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchStats();
     // Refresh every 30 seconds
     const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const formatCurrency = (value: number) => {

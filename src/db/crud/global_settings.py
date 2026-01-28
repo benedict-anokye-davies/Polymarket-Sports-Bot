@@ -104,6 +104,43 @@ class GlobalSettingsCRUD:
         """
         settings = await GlobalSettingsCRUD.get_by_user_id(db, user_id)
         return settings.bot_enabled if settings else False
+    
+    @staticmethod
+    async def save_bot_config(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        config: dict
+    ) -> GlobalSettings:
+        """
+        Persists bot configuration to database.
+        Stores the full config including selected games and parameters.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            config: Configuration dictionary to persist
+        
+        Returns:
+            Updated GlobalSettings instance
+        """
+        return await GlobalSettingsCRUD.update(db, user_id, bot_config_json=config)
+    
+    @staticmethod
+    async def get_bot_config(db: AsyncSession, user_id: uuid.UUID) -> dict | None:
+        """
+        Retrieves persisted bot configuration.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+        
+        Returns:
+            Configuration dictionary or None if not set
+        """
+        settings = await GlobalSettingsCRUD.get_by_user_id(db, user_id)
+        if settings and settings.bot_config_json:
+            return settings.bot_config_json
+        return None
 
 
 # Singleton instance for simplified imports

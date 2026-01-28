@@ -6,9 +6,13 @@ Provides authenticated WebSocket connections for pushing:
 - Position updates
 - Bot status changes
 - Risk alerts
+
+Security: Authentication is performed via message after connection,
+not via URL query parameters to avoid token leakage in logs.
 """
 
 import logging
+import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, status
 from jose import jwt, JWTError
 
@@ -24,13 +28,16 @@ settings = get_settings()
 
 router = APIRouter(tags=["WebSocket"])
 
+# Authentication timeout in seconds
+AUTH_TIMEOUT_SECONDS = 10
+
 
 async def authenticate_websocket(token: str | None) -> str | None:
     """
     Authenticate WebSocket connection using JWT token.
 
     Args:
-        token: JWT token from query parameter
+        token: JWT token from authenticate message
 
     Returns:
         User ID if authenticated, None otherwise
@@ -56,12 +63,17 @@ async def authenticate_websocket(token: str | None) -> str | None:
 @router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
-    token: str | None = Query(None, description="JWT access token"),
+    token: str | None = Query(None, description="JWT access token (deprecated, use auth message)"),
 ):
     """
     WebSocket endpoint for real-time updates.
 
-    Connect with: ws://host/ws?token=<jwt_token>
+    Connection flow:
+    1. Connect to ws://host/api/v1/ws (no token in URL)
+    2. Send auth message: {"action": "authenticate", "token": "<jwt_token>"}
+    3. Receive success: {"event": "connection_established", ...}
+    
+    Legacy: Token in URL is still supported but deprecated due to security.
 
     Events pushed to client:
     - trade_executed: When a trade is executed
@@ -75,18 +87,74 @@ async def websocket_endpoint(
     - error: Error notifications
 
     Client can send:
+    - {"action": "authenticate", "token": "..."}: Authenticate the connection
     - {"action": "ping"}: Request immediate heartbeat
     - {"action": "subscribe", "events": ["trade_executed", ...]}: Subscribe to specific events
     """
-    # Authenticate the connection
-    user_id = await authenticate_websocket(token)
-
+    await websocket.accept()
+    
+    user_id: str | None = None
+    
+    # Support legacy URL token authentication (deprecated)
+    if token:
+        user_id = await authenticate_websocket(token)
+        if user_id:
+            logger.warning(
+                f"User {user_id} authenticated via URL token (deprecated). "
+                "Use message-based authentication instead."
+            )
+    
+    # If not authenticated via URL, wait for auth message
     if not user_id:
-        await websocket.close(code=4001, reason="Authentication required")
-        return
+        try:
+            # Wait for authentication message with timeout
+            data = await asyncio.wait_for(
+                websocket.receive_json(),
+                timeout=AUTH_TIMEOUT_SECONDS
+            )
+            
+            if data.get("action") == "authenticate":
+                auth_token = data.get("token")
+                user_id = await authenticate_websocket(auth_token)
+                
+                if not user_id:
+                    await websocket.send_json({
+                        "event": "error",
+                        "data": {"message": "Authentication failed: Invalid token"}
+                    })
+                    await websocket.close(code=4001, reason="Authentication failed")
+                    return
+            else:
+                await websocket.send_json({
+                    "event": "error",
+                    "data": {"message": "First message must be authentication"}
+                })
+                await websocket.close(code=4001, reason="Authentication required")
+                return
+                
+        except asyncio.TimeoutError:
+            await websocket.send_json({
+                "event": "error",
+                "data": {"message": "Authentication timeout"}
+            })
+            await websocket.close(code=4001, reason="Authentication timeout")
+            return
+        except Exception as e:
+            logger.warning(f"WebSocket auth error: {e}")
+            await websocket.close(code=4001, reason="Authentication error")
+            return
 
     # Register the connection
     await connection_manager.connect(websocket, user_id)
+    
+    # Send connection established message
+    await connection_manager.send_to_user(
+        user_id,
+        WebSocketMessage(
+            event_type=WebSocketEventType.CONNECTION_ESTABLISHED,
+            data={"authenticated": True, "user_id": user_id},
+        ),
+    )
 
     try:
         while True:
@@ -116,6 +184,9 @@ async def websocket_endpoint(
                         data={"subscribed": events},
                     ),
                 )
+            elif action == "authenticate":
+                # Already authenticated, ignore re-auth attempts
+                pass
             else:
                 # Unknown action
                 await connection_manager.send_to_user(

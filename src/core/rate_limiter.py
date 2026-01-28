@@ -111,7 +111,7 @@ class RateLimiter:
             hour_count = len(state.hour_requests)
             burst_count = len(state.burst_requests)
             
-            limit_info = {
+            limit_info: dict[str, int | float | str] = {
                 "minute_count": minute_count,
                 "minute_limit": self.config.requests_per_minute,
                 "hour_count": hour_count,
@@ -281,6 +281,63 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 # Default rate limiter instance
 default_rate_limiter = RateLimiter()
+
+
+# Auth-specific rate limiter with stricter limits for sensitive endpoints
+_auth_rate_limiter = RateLimiter(RateLimitConfig(
+    requests_per_minute=10,
+    requests_per_hour=50,
+    burst_limit=5,
+    burst_window_seconds=1.0,
+    exempt_paths=[],
+))
+
+
+async def check_auth_rate_limit(request: Request) -> None:
+    """
+    Dependency for auth endpoints to apply stricter rate limits.
+    
+    Applies:
+    - 10 requests/minute for login/register/refresh
+    - 50 requests/hour
+    - Burst limit of 5 requests/second
+    
+    Raises HTTPException with 429 if limit exceeded.
+    """
+    # Get client IP
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        ip = forwarded.split(",")[0].strip()
+    else:
+        ip = request.client.host if request.client else "unknown"
+    
+    client_id = f"auth:{ip}"
+    
+    is_allowed, limit_info = await _auth_rate_limiter.check_rate_limit(client_id)
+    
+    if not is_allowed:
+        retry_after = int(limit_info.get("retry_after", 60))
+        exceeded = limit_info.get("exceeded", "unknown")
+        
+        logger.warning(
+            f"Auth rate limit exceeded for {client_id}: {exceeded} limit, "
+            f"retry after {retry_after}s"
+        )
+        
+        raise HTTPException(
+            status_code=HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": "auth_rate_limit_exceeded",
+                "limit_type": exceeded,
+                "retry_after": retry_after,
+                "message": f"Too many authentication attempts. Please retry after {retry_after} seconds."
+            },
+            headers={
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(limit_info.get(f"{exceeded}_limit", 0)),
+                "X-RateLimit-Remaining": "0",
+            }
+        )
 
 
 def create_rate_limit_middleware(

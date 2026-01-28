@@ -248,9 +248,9 @@ class PriceHistoryCache:
             low=min(prices),
             open=snapshots[0].price,
             close=snapshots[-1].price,
-            vwap=vwap,
+            vwap=Decimal(str(vwap)) if not isinstance(vwap, Decimal) else vwap,
             count=len(snapshots),
-            volume=total_volume,
+            volume=Decimal(str(total_volume)) if not isinstance(total_volume, Decimal) else total_volume,
             period_start=snapshots[0].timestamp,
             period_end=snapshots[-1].timestamp,
         )

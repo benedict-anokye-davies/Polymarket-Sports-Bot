@@ -3,13 +3,16 @@ Polymarket CLOB API client implementation.
 Handles L1/L2 authentication and all trading operations.
 Includes retry logic with circuit breakers for resilience.
 Supports paper trading mode for safe testing.
+Implements idempotency key generation to prevent duplicate orders.
 """
 
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+import time
 
 import httpx
 from py_clob_client.client import ClobClient
@@ -20,6 +23,35 @@ from src.core.retry import retry_async, polymarket_circuit
 
 
 logger = logging.getLogger(__name__)
+
+
+def generate_idempotency_key(
+    token_id: str,
+    side: str,
+    price: float,
+    size: float,
+    timestamp_window: int = 5
+) -> str:
+    """
+    Generates an idempotency key for order placement.
+    
+    Uses a time-windowed approach where identical orders within the
+    same time window will have the same idempotency key, preventing
+    accidental duplicate orders from retries or double-clicks.
+    
+    Args:
+        token_id: Token being traded
+        side: BUY or SELL
+        price: Order price
+        size: Order size
+        timestamp_window: Time window in seconds (default 5s)
+    
+    Returns:
+        SHA-256 hash of order parameters with timestamp window
+    """
+    timestamp_bucket = int(time.time() // timestamp_window) * timestamp_window
+    order_data = f"{token_id}:{side}:{price}:{size}:{timestamp_bucket}"
+    return hashlib.sha256(order_data.encode()).hexdigest()[:32]
 
 
 class PolymarketClient:
@@ -68,6 +100,11 @@ class PolymarketClient:
         # Track simulated orders for paper trading
         self._simulated_orders: dict[str, dict] = {}
         self._simulated_order_counter: int = 0
+        
+        # Track recently submitted idempotency keys to prevent duplicates
+        # Key: idempotency_key, Value: (timestamp, order_result)
+        self._recent_orders: dict[str, tuple[float, dict]] = {}
+        self._idempotency_ttl: int = 60  # seconds to keep idempotency keys
     
     async def _get_clob_client(self) -> ClobClient:
         """
@@ -224,6 +261,9 @@ class PolymarketClient:
         """
         Places an order on Polymarket (or simulates in dry_run mode).
         
+        Uses idempotency key generation to prevent duplicate orders from
+        retries or accidental double-submissions within a short time window.
+        
         Args:
             token_id: Token ID to trade
             side: "BUY" or "SELL"
@@ -237,6 +277,27 @@ class PolymarketClient:
         # Paper trading mode - simulate the order
         if self.dry_run:
             return await self._simulate_order(token_id, side, price, size, order_type)
+        
+        # Generate idempotency key for this order
+        idempotency_key = generate_idempotency_key(token_id, side, price, size)
+        
+        # Clean up expired idempotency keys
+        current_time = time.time()
+        expired_keys = [
+            k for k, (ts, _) in self._recent_orders.items()
+            if current_time - ts > self._idempotency_ttl
+        ]
+        for key in expired_keys:
+            del self._recent_orders[key]
+        
+        # Check if we've recently submitted this exact order
+        if idempotency_key in self._recent_orders:
+            ts, cached_result = self._recent_orders[idempotency_key]
+            logger.warning(
+                f"Duplicate order detected (idempotency_key={idempotency_key[:8]}...). "
+                f"Returning cached result from {current_time - ts:.1f}s ago."
+            )
+            return cached_result
         
         if not all([self.api_key, self.api_secret, self.passphrase]):
             creds = await self.derive_api_credentials()
@@ -267,7 +328,12 @@ class PolymarketClient:
             logger.info(
                 f"Order placed: {side} {size} @ {price} for token {token_id[:16]}..."
             )
-            return {"id": result.get("orderID"), "status": "created", "raw": result}
+            order_result = {"id": result.get("orderID"), "status": "created", "raw": result}
+            
+            # Cache the result with idempotency key
+            self._recent_orders[idempotency_key] = (time.time(), order_result)
+            
+            return order_result
             
         except Exception as e:
             error_str = str(e).lower()
@@ -351,6 +417,18 @@ class PolymarketClient:
         except Exception as e:
             logger.warning(f"Failed to get order status for {order_id}: {e}")
             return {"status": "ERROR", "error": str(e)}
+
+    async def get_order(self, order_id: str) -> dict[str, Any]:
+        """
+        Gets full order details by ID.
+        
+        Args:
+            order_id: Order ID to retrieve
+        
+        Returns:
+            Order details dictionary
+        """
+        return await self.get_order_status(order_id)
     
     async def wait_for_fill(
         self,

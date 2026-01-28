@@ -28,49 +28,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-
-interface BacktestConfig {
-  start_date: string;
-  end_date: string;
-  initial_capital: number;
-  entry_threshold_drop_pct: number;
-  exit_take_profit_pct: number;
-  exit_stop_loss_pct: number;
-  max_position_size_pct: number;
-  max_concurrent_positions: number;
-  min_confidence_score: number;
-  use_kelly_sizing: boolean;
-  kelly_fraction: number;
-  sport_filter: string | null;
-  name: string;
-}
-
-interface BacktestSummary {
-  total_trades: number;
-  winning_trades: number;
-  losing_trades: number;
-  win_rate: number;
-  total_pnl: number;
-  max_drawdown: number;
-  sharpe_ratio: number | null;
-  profit_factor: number;
-  avg_trade_pnl: number;
-  avg_win: number;
-  avg_loss: number;
-  final_capital: number;
-  roi_pct: number;
-}
-
-interface BacktestResult {
-  id: string;
-  name: string;
-  status: string;
-  config: BacktestConfig;
-  summary: BacktestSummary | null;
-  trades_count: number;
-  created_at: string;
-  completed_at: string | null;
-}
+import { apiClient, BacktestResult, BacktestEquityPoint, BacktestConfigRequest } from '@/api/client';
+import { logger } from '@/lib/logger';
 
 interface EquityPoint {
   timestamp: string;
@@ -81,13 +40,13 @@ interface EquityPoint {
 export default function Backtesting() {
   const [results, setResults] = useState<BacktestResult[]>([]);
   const [selectedResult, setSelectedResult] = useState<BacktestResult | null>(null);
-  const [equityCurve, setEquityCurve] = useState<EquityPoint[]>([]);
+  const [equityCurve, setEquityCurve] = useState<BacktestEquityPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const { toast } = useToast();
 
-  const defaultConfig: BacktestConfig = {
+  const defaultConfig: BacktestConfigRequest = {
     start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
     end_date: new Date().toISOString().slice(0, 16),
     initial_capital: 1000,
@@ -103,7 +62,7 @@ export default function Backtesting() {
     name: '',
   };
 
-  const [config, setConfig] = useState<BacktestConfig>(defaultConfig);
+  const [config, setConfig] = useState<BacktestConfigRequest>(defaultConfig);
 
   useEffect(() => {
     fetchResults();
@@ -112,12 +71,8 @@ export default function Backtesting() {
   const fetchResults = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/v1/backtest/results', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-      });
-      if (res.ok) {
-        setResults(await res.json());
-      }
+      const data = await apiClient.getBacktestResults();
+      setResults(data);
     } catch (err) {
       toast({
         title: 'Error',
@@ -132,33 +87,20 @@ export default function Backtesting() {
   const runBacktest = async () => {
     try {
       setRunning(true);
-      const res = await fetch('/api/v1/backtest/run', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-        body: JSON.stringify({
-          ...config,
-          start_date: new Date(config.start_date).toISOString(),
-          end_date: new Date(config.end_date).toISOString(),
-        }),
+      await apiClient.runBacktest({
+        ...config,
+        start_date: new Date(config.start_date).toISOString(),
+        end_date: new Date(config.end_date).toISOString(),
       });
-
-      if (res.ok) {
-        toast({
-          title: 'Backtest Started',
-          description: 'Your backtest is running in the background',
-        });
-        setDialogOpen(false);
-        // Poll for results
-        setTimeout(fetchResults, 5000);
-        setTimeout(fetchResults, 15000);
-        setTimeout(fetchResults, 30000);
-      } else {
-        const error = await res.json();
-        throw new Error(error.detail || 'Failed to start backtest');
-      }
+      toast({
+        title: 'Backtest Started',
+        description: 'Your backtest is running in the background',
+      });
+      setDialogOpen(false);
+      // Poll for results
+      setTimeout(fetchResults, 5000);
+      setTimeout(fetchResults, 15000);
+      setTimeout(fetchResults, 30000);
     } catch (err) {
       toast({
         title: 'Error',
@@ -175,29 +117,20 @@ export default function Backtesting() {
     
     if (result.status === 'completed') {
       try {
-        const res = await fetch(`/api/v1/backtest/results/${result.id}/equity-curve`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-        });
-        if (res.ok) {
-          setEquityCurve(await res.json());
-        }
+        const data = await apiClient.getBacktestEquityCurve(result.id);
+        setEquityCurve(data);
       } catch (err) {
-        console.error('Failed to load equity curve');
+        logger.error('Failed to load equity curve');
       }
     }
   };
 
   const deleteResult = async (id: string) => {
     try {
-      const res = await fetch(`/api/v1/backtest/results/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-      });
-
-      if (res.ok) {
-        toast({
-          title: 'Deleted',
-          description: 'Backtest result deleted',
+      await apiClient.deleteBacktestResult(id);
+      toast({
+        title: 'Deleted',
+        description: 'Backtest result deleted',
         });
         fetchResults();
         if (selectedResult?.id === id) {

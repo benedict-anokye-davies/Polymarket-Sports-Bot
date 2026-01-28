@@ -5,6 +5,7 @@ Implements RSA-signed authentication and order management.
 
 import base64
 import json
+import logging
 import time
 from typing import Optional, Dict, List, Any, cast
 from datetime import datetime, timezone
@@ -16,6 +17,9 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.backends import default_backend
 
 from src.core.exceptions import TradingError, RateLimitError
+
+
+logger = logging.getLogger(__name__)
 
 
 # Kalshi API Base URLs
@@ -504,6 +508,23 @@ class KalshiClient:
             ))
         
         return orders
+
+    async def get_order(self, order_id: str) -> Dict[str, Any]:
+        """
+        Get a specific order by ID.
+        
+        Args:
+            order_id: Order ID to retrieve
+        
+        Returns:
+            Order details dictionary
+        """
+        try:
+            response = await self._request("GET", f"/portfolio/orders/{order_id}")
+            return response.get("order", {})
+        except TradingError as e:
+            logger.warning(f"Failed to get order {order_id}: {e}")
+            return {"status": "ERROR", "error": str(e)}
     
     # =========================================================================
     # Portfolio & Balance

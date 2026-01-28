@@ -78,24 +78,16 @@ export default function Analytics() {
       setLoading(true);
       
       const [metricsRes, sportsRes, equityRes, dailyRes] = await Promise.all([
-        fetch('/api/v1/analytics/performance', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-        }),
-        fetch('/api/v1/analytics/sports', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-        }),
-        fetch('/api/v1/analytics/equity-curve', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-        }),
-        fetch(`/api/v1/analytics/daily-pnl?days=${timeframe}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-        }),
+        apiClient.getPerformanceMetrics(),
+        apiClient.getSportPerformance(),
+        apiClient.getEquityCurve(),
+        apiClient.getDailyPnL(parseInt(timeframe)),
       ]);
 
-      if (metricsRes.ok) setMetrics(await metricsRes.json());
-      if (sportsRes.ok) setSportBreakdown(await sportsRes.json());
-      if (equityRes.ok) setEquityCurve(await equityRes.json());
-      if (dailyRes.ok) setDailyPnL(await dailyRes.json());
+      setMetrics(metricsRes);
+      setSportBreakdown(sportsRes);
+      setEquityCurve(equityRes);
+      setDailyPnL(dailyRes);
       
       setError(null);
     } catch (err) {

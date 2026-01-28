@@ -71,7 +71,7 @@ export function useSSE(options: UseSSEOptions = {}) {
   const resetHeartbeatTimeout = useCallback((reconnectFn: () => void) => {
     clearHeartbeatTimeout();
     heartbeatTimeoutRef.current = setTimeout(() => {
-      console.warn('[SSE] Heartbeat timeout - connection may be stale');
+      logger.warn('[SSE] Heartbeat timeout - connection may be stale');
       // Close and reconnect
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
@@ -127,12 +127,12 @@ export function useSSE(options: UseSSEOptions = {}) {
               break;
 
             case 'error':
-              console.error('[SSE] Server error:', parsed.data);
+              logger.error('[SSE] Server error:', parsed.data);
               callbacksRef.current.onError?.(new Error(String(parsed.data)));
               break;
           }
         } catch (e) {
-          console.error('[SSE] Failed to parse message:', e);
+          logger.error('[SSE] Failed to parse message:', e);
         }
       };
 
@@ -157,12 +157,12 @@ export function useSSE(options: UseSSEOptions = {}) {
             connect();
           }, delay);
         } else {
-          console.error('[SSE] Max reconnection attempts reached');
+          logger.error('[SSE] Max reconnection attempts reached');
           callbacksRef.current.onError?.(new Error('Connection lost. Please refresh the page.'));
         }
       };
     } catch (error) {
-      console.error('[SSE] Failed to create connection:', error);
+      logger.error('[SSE] Failed to create connection:', error);
       callbacksRef.current.onError?.(error instanceof Error ? error : new Error('Failed to connect'));
     }
   }, [setSseConnected, setBotStatus, updateLastUpdate, clearHeartbeatTimeout, resetHeartbeatTimeout]);

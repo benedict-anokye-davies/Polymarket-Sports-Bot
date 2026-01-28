@@ -36,6 +36,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { apiClient, AccountInfo, AccountSummary } from '@/api/client';
 
 interface Account {
   id: string;
@@ -47,14 +48,6 @@ interface Account {
   funder_address?: string;
   balance?: number;
   error?: string;
-}
-
-interface AccountSummary {
-  total_balance: number;
-  total_accounts: number;
-  accounts: Account[];
-  allocation_valid: boolean;
-  total_allocation_pct: number;
 }
 
 export default function Accounts() {
@@ -83,12 +76,8 @@ export default function Accounts() {
   const fetchAccounts = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/v1/accounts/summary', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-      });
-      if (res.ok) {
-        setSummary(await res.json());
-      }
+      const data = await apiClient.getAccountSummary();
+      setSummary(data);
     } catch (err) {
       toast({
         title: 'Error',
@@ -101,39 +90,38 @@ export default function Accounts() {
   };
 
   const createAccount = async () => {
+    // Create a copy of credentials before clearing them from state
+    const accountData = { ...newAccount };
+    
+    // Clear sensitive data from state immediately to minimize exposure
+    setNewAccount((prev) => ({
+      ...prev,
+      private_key: '',
+      api_key: '',
+      api_secret: '',
+      api_passphrase: '',
+    }));
+    
     try {
       setSaving(true);
-      const res = await fetch('/api/v1/accounts/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-        body: JSON.stringify(newAccount),
+      await apiClient.createAccount(accountData);
+      toast({
+        title: 'Success',
+        description: 'Account created successfully',
       });
-
-      if (res.ok) {
-        toast({
-          title: 'Success',
-          description: 'Account created successfully',
-        });
-        setDialogOpen(false);
-        setNewAccount({
-          account_name: '',
-          platform: 'polymarket',
-          private_key: '',
-          funder_address: '',
-          api_key: '',
-          api_secret: '',
-          api_passphrase: '',
-          allocation_pct: 100,
-          is_primary: false,
-        });
-        fetchAccounts();
-      } else {
-        const error = await res.json();
-        throw new Error(error.detail || 'Failed to create account');
-      }
+      setDialogOpen(false);
+      setNewAccount({
+        account_name: '',
+        platform: 'polymarket',
+        private_key: '',
+        funder_address: '',
+        api_key: '',
+        api_secret: '',
+        api_passphrase: '',
+        allocation_pct: 100,
+        is_primary: false,
+      });
+      fetchAccounts();
     } catch (err) {
       toast({
         title: 'Error',
@@ -147,18 +135,12 @@ export default function Accounts() {
 
   const deleteAccount = async (accountId: string) => {
     try {
-      const res = await fetch(`/api/v1/accounts/${accountId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      await apiClient.deleteAccount(accountId);
+      toast({
+        title: 'Success',
+        description: 'Account deleted',
       });
-
-      if (res.ok) {
-        toast({
-          title: 'Success',
-          description: 'Account deleted',
-        });
-        fetchAccounts();
-      }
+      fetchAccounts();
     } catch (err) {
       toast({
         title: 'Error',
@@ -170,18 +152,12 @@ export default function Accounts() {
 
   const setPrimary = async (accountId: string) => {
     try {
-      const res = await fetch(`/api/v1/accounts/${accountId}/set-primary`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      await apiClient.setPrimaryAccount(accountId);
+      toast({
+        title: 'Success',
+        description: 'Primary account updated',
       });
-
-      if (res.ok) {
-        toast({
-          title: 'Success',
-          description: 'Primary account updated',
-        });
-        fetchAccounts();
-      }
+      fetchAccounts();
     } catch (err) {
       toast({
         title: 'Error',
@@ -193,18 +169,8 @@ export default function Accounts() {
 
   const toggleActive = async (accountId: string, currentState: boolean) => {
     try {
-      const res = await fetch(`/api/v1/accounts/${accountId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-        body: JSON.stringify({ is_active: !currentState }),
-      });
-
-      if (res.ok) {
-        fetchAccounts();
-      }
+      await apiClient.updateAccount(accountId, { is_active: !currentState });
+      fetchAccounts();
     } catch (err) {
       toast({
         title: 'Error',
@@ -237,17 +203,8 @@ export default function Accounts() {
     }
 
     try {
-      const res = await fetch('/api/v1/accounts/allocations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
-        },
-        body: JSON.stringify({ allocations: newAllocations }),
-      });
-
-      if (res.ok) {
-        fetchAccounts();
+      await apiClient.updateAllocations(newAllocations);
+      fetchAccounts();
       }
     } catch (err) {
       toast({

@@ -661,7 +661,7 @@ async def update_wallet_credentials(
     Updates wallet credentials for the user.
     Encrypts credentials before storing.
     """
-    from src.core.encryption import encrypt_value
+    from src.core.encryption import encrypt_credential
 
     account = await PolymarketAccountCRUD.get_by_user_id(db, current_user.id)
 
@@ -669,15 +669,15 @@ async def update_wallet_credentials(
 
     if wallet_data.platform == "kalshi":
         if wallet_data.api_key:
-            update_data["api_key_encrypted"] = encrypt_value(wallet_data.api_key)
+            update_data["api_key_encrypted"] = encrypt_credential(wallet_data.api_key)
         if wallet_data.api_secret:
-            update_data["api_secret_encrypted"] = encrypt_value(wallet_data.api_secret)
+            update_data["api_secret_encrypted"] = encrypt_credential(wallet_data.api_secret)
         # Clear polymarket fields
         update_data["private_key_encrypted"] = None
         update_data["funder_address"] = None
     else:  # polymarket
         if wallet_data.private_key:
-            update_data["private_key_encrypted"] = encrypt_value(wallet_data.private_key)
+            update_data["private_key_encrypted"] = encrypt_credential(wallet_data.private_key)
         if wallet_data.funder_address:
             update_data["funder_address"] = wallet_data.funder_address
         # Clear kalshi fields

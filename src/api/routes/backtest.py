@@ -136,7 +136,7 @@ async def run_backtest(
     await db.commit()
     await db.refresh(pending_result)
     
-    async def run_in_background(result_id: UUID, user_id: UUID, cfg: BacktestConfig, name: str):
+    async def run_in_background(result_id: UUID, user_id: UUID, cfg: BacktestConfig, name: str | None):
         from src.db.database import async_session_factory
         
         async with async_session_factory() as session:

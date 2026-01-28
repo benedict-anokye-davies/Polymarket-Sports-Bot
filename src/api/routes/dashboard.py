@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -146,19 +147,36 @@ async def stream_dashboard(request: Request, db: DbSession, current_user: SSEUse
     - positions: Open positions with unrealized P&L
     - heartbeat: Keep-alive ping
     """
+    # Import here to avoid circular imports
+    from src.db.database import async_session_factory
+    
+    # Store user_id before generator (current_user may not be available inside)
+    user_id = current_user.id
+    
+    # Maximum SSE stream duration (30 minutes) to prevent resource exhaustion
+    MAX_STREAM_DURATION = 1800  # seconds
     
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generates SSE events for dashboard updates."""
+        stream_start = datetime.now(timezone.utc)
+        
         try:
             while True:
+                # Check max duration
+                elapsed = (datetime.now(timezone.utc) - stream_start).total_seconds()
+                if elapsed > MAX_STREAM_DURATION:
+                    logger.info(f"SSE stream max duration reached for user {user_id}")
+                    yield f"event: close\ndata: {{\"reason\": \"max_duration\"}}\n\n"
+                    break
+                
                 # Check if client disconnected
                 if await request.is_disconnected():
-                    logger.debug(f"SSE client disconnected: user {current_user.id}")
+                    logger.debug(f"SSE client disconnected: user {user_id}")
                     break
                 
                 try:
-                    # Get bot status
-                    bot_status = get_bot_status(current_user.id)
+                    # Get bot status (no DB needed)
+                    bot_status = get_bot_status(user_id)
                     
                     if bot_status:
                         # Send status event
@@ -187,24 +205,25 @@ async def stream_dashboard(request: Request, db: DbSession, current_user: SSEUse
                         # Bot not running - send stopped status
                         yield f"event: status\ndata: {json.dumps({'type': 'status', 'data': {'state': 'stopped'}})}\n\n"
                     
-                    # Get open positions
-                    positions = await PositionCRUD.get_open_for_user(db, current_user.id)
-                    if positions:
-                        positions_data = {
-                            "type": "positions",
-                            "data": [
-                                {
-                                    "id": str(p.id),
-                                    "condition_id": p.condition_id,
-                                    "side": p.side,
-                                    "entry_price": float(p.entry_price),
-                                    "entry_size": float(p.entry_size),
-                                    "team": p.team,
-                                }
-                                for p in positions
-                            ]
-                        }
-                        yield f"event: positions\ndata: {json.dumps(positions_data)}\n\n"
+                    # Get open positions with fresh DB session to avoid closed session
+                    async with async_session_factory() as session:
+                        positions = await PositionCRUD.get_open_for_user(session, user_id)
+                        if positions:
+                            positions_data = {
+                                "type": "positions",
+                                "data": [
+                                    {
+                                        "id": str(p.id),
+                                        "condition_id": p.condition_id,
+                                        "side": p.side,
+                                        "entry_price": float(p.entry_price),
+                                        "entry_size": float(p.entry_size),
+                                        "team": p.team,
+                                    }
+                                    for p in positions
+                                ]
+                            }
+                            yield f"event: positions\ndata: {json.dumps(positions_data)}\n\n"
                     
                     # Heartbeat
                     yield f"event: heartbeat\ndata: {json.dumps({'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
@@ -217,7 +236,7 @@ async def stream_dashboard(request: Request, db: DbSession, current_user: SSEUse
                 await asyncio.sleep(2)
                 
         except asyncio.CancelledError:
-            logger.debug(f"SSE stream cancelled: user {current_user.id}")
+            logger.debug(f"SSE stream cancelled: user {user_id}")
         except Exception as e:
             logger.error(f"SSE stream error: {e}")
     

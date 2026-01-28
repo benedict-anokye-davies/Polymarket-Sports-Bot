@@ -18,6 +18,7 @@ import {
 import { apiClient, SportConfigResponse, WalletStatusResponse, SessionInfo } from '@/api/client';
 import { useSportConfigs, useGlobalSettings, useUpdateSportConfig, useUpdateGlobalSettings } from '@/hooks/useApi';
 import { LeagueSelector } from '@/components/LeagueSelector';
+import { logger } from '@/lib/logger';
 
 // Wallet credentials interface
 interface WalletCredentials {
@@ -81,7 +82,7 @@ export default function Settings() {
           setWallet(prev => ({ ...prev, platform: status.platform! }));
         }
       } catch (error) {
-        console.error('Failed to fetch wallet status:', error);
+        logger.error('Failed to fetch wallet status:', error);
       } finally {
         setLoadingWalletStatus(false);
       }
@@ -97,7 +98,7 @@ export default function Settings() {
         const activeSessions = await apiClient.getActiveSessions();
         setSessions(activeSessions);
       } catch (error) {
-        console.error('Failed to fetch sessions:', error);
+        logger.error('Failed to fetch sessions:', error);
       } finally {
         setLoadingSessions(false);
       }

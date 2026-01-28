@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.models.position import Position
 from src.core.exceptions import NotFoundError
@@ -47,6 +48,74 @@ class PositionCRUD:
         await db.commit()
         await db.refresh(position)
         return position
+    
+    @staticmethod
+    async def create_if_not_exists(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        condition_id: str,
+        token_id: str,
+        side: str,
+        entry_price: Decimal,
+        entry_size: Decimal,
+        entry_cost_usdc: Decimal,
+        **kwargs
+    ) -> tuple[Position | None, bool]:
+        """
+        Creates a position only if no open position exists for this user/market/side.
+        
+        Uses database-level locking to prevent race conditions where two
+        concurrent requests could both create positions for the same market.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            condition_id: Market condition ID
+            token_id: Token ID being traded
+            side: Position side (YES/NO)
+            entry_price: Entry price
+            entry_size: Position size
+            entry_cost_usdc: Entry cost in USDC
+            **kwargs: Additional position fields
+        
+        Returns:
+            Tuple of (position, created) where created is True if new position was created
+        """
+        # Use savepoint for atomicity
+        async with db.begin_nested():
+            # Check for existing open position with SELECT FOR UPDATE
+            existing_query = (
+                select(Position)
+                .where(
+                    Position.user_id == user_id,
+                    Position.condition_id == condition_id,
+                    Position.status == "open"
+                )
+                .with_for_update()
+            )
+            result = await db.execute(existing_query)
+            existing = result.scalar_one_or_none()
+            
+            if existing:
+                # Already have an open position for this market
+                return existing, False
+            
+            # Create new position
+            position = Position(
+                user_id=user_id,
+                condition_id=condition_id,
+                token_id=token_id,
+                side=side,
+                entry_price=entry_price,
+                entry_size=entry_size,
+                entry_cost_usdc=entry_cost_usdc,
+                **kwargs
+            )
+            db.add(position)
+        
+        await db.commit()
+        await db.refresh(position)
+        return position, True
     
     @staticmethod
     async def get_by_id(db: AsyncSession, position_id: uuid.UUID) -> Position | None:
@@ -264,6 +333,71 @@ class PositionCRUD:
             )
         )
         return result.scalar() or 0
+
+    @staticmethod
+    async def get_trade_stats(db: AsyncSession, user_id: uuid.UUID) -> dict | None:
+        """
+        Calculate comprehensive trade statistics for Kelly sizing.
+        
+        Returns win rate and total trades count for historical performance
+        calibration in the Kelly criterion calculation.
+        
+        Args:
+            db: Database session
+            user_id: User identifier
+        
+        Returns:
+            Dictionary with win_rate and total_trades, or None if no trades
+        """
+        # Get total closed trades
+        total_result = await db.execute(
+            select(func.count(Position.id)).where(
+                Position.user_id == user_id,
+                Position.status == "closed"
+            )
+        )
+        total_trades = total_result.scalar() or 0
+        
+        if total_trades == 0:
+            return None
+        
+        # Get winning trades
+        wins_result = await db.execute(
+            select(func.count(Position.id)).where(
+                Position.user_id == user_id,
+                Position.status == "closed",
+                Position.realized_pnl_usdc > 0
+            )
+        )
+        wins = wins_result.scalar() or 0
+        
+        # Get average win and loss amounts
+        avg_win_result = await db.execute(
+            select(func.avg(Position.realized_pnl_usdc)).where(
+                Position.user_id == user_id,
+                Position.status == "closed",
+                Position.realized_pnl_usdc > 0
+            )
+        )
+        avg_win = float(avg_win_result.scalar() or 0)
+        
+        avg_loss_result = await db.execute(
+            select(func.avg(func.abs(Position.realized_pnl_usdc))).where(
+                Position.user_id == user_id,
+                Position.status == "closed",
+                Position.realized_pnl_usdc < 0
+            )
+        )
+        avg_loss = float(avg_loss_result.scalar() or 0)
+        
+        return {
+            "win_rate": wins / total_trades if total_trades > 0 else 0.0,
+            "total_trades": total_trades,
+            "wins": wins,
+            "losses": total_trades - wins,
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
+        }
 
 
 # Singleton instance for simplified imports

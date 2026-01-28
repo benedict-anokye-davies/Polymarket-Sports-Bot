@@ -3,6 +3,7 @@ Balance Guardian service - monitors account balance and triggers kill switch.
 Implements automatic trading halt when balance drops below configured threshold.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -17,6 +18,10 @@ if TYPE_CHECKING:
     from src.services.kalshi_client import KalshiClient
 
 logger = logging.getLogger(__name__)
+
+# Max retries for balance fetch operations
+MAX_BALANCE_FETCH_RETRIES = 3
+BALANCE_FETCH_RETRY_DELAY = 2.0
 
 
 class BalanceGuardian:
@@ -101,32 +106,72 @@ class BalanceGuardian:
         return result
     
     async def _get_polymarket_balance(self) -> Decimal:
-        """Fetch current Polymarket USDC balance."""
+        """
+        Fetch current Polymarket USDC balance with retry logic.
+        
+        Uses exponential backoff on failures to handle transient network issues
+        without triggering kill switch unnecessarily.
+        """
         if not self.polymarket_client:
             return Decimal("0")
         
-        try:
-            balance_data = await self.polymarket_client.get_balance()
-            if isinstance(balance_data, dict):
-                return Decimal(str(balance_data.get("balance", 0)))
-            return Decimal(str(balance_data or 0))
-        except Exception as e:
-            logger.error(f"Polymarket balance fetch failed: {e}")
-            raise
+        last_error: Exception | None = None
+        for attempt in range(MAX_BALANCE_FETCH_RETRIES):
+            try:
+                balance_data = await self.polymarket_client.get_balance()
+                if isinstance(balance_data, dict):
+                    return Decimal(str(balance_data.get("balance", 0)))
+                return Decimal(str(balance_data or 0))
+            except Exception as e:
+                last_error = e
+                if attempt < MAX_BALANCE_FETCH_RETRIES - 1:
+                    delay = BALANCE_FETCH_RETRY_DELAY * (2 ** attempt)
+                    logger.warning(
+                        f"Polymarket balance fetch attempt {attempt + 1} failed: {e}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+        
+        logger.error(
+            f"Polymarket balance fetch failed after {MAX_BALANCE_FETCH_RETRIES} attempts: {last_error}"
+        )
+        if last_error:
+            raise last_error
+        raise RuntimeError("Balance fetch failed with no recorded error")
     
     async def _get_kalshi_balance(self) -> Decimal:
-        """Fetch current Kalshi USD balance."""
+        """
+        Fetch current Kalshi USD balance with retry logic.
+        
+        Uses exponential backoff on failures to handle transient network issues.
+        Note: Kalshi returns balance in cents, divided by 100 for dollars.
+        """
         if not self.kalshi_client:
             return Decimal("0")
         
-        try:
-            balance_data = await self.kalshi_client.get_balance()
-            if isinstance(balance_data, dict):
-                return Decimal(str(balance_data.get("balance", 0))) / Decimal("100")
-            return Decimal(str(balance_data or 0))
-        except Exception as e:
-            logger.error(f"Kalshi balance fetch failed: {e}")
-            raise
+        last_error: Exception | None = None
+        for attempt in range(MAX_BALANCE_FETCH_RETRIES):
+            try:
+                balance_data = await self.kalshi_client.get_balance()
+                if isinstance(balance_data, dict):
+                    return Decimal(str(balance_data.get("balance", 0))) / Decimal("100")
+                return Decimal(str(balance_data or 0))
+            except Exception as e:
+                last_error = e
+                if attempt < MAX_BALANCE_FETCH_RETRIES - 1:
+                    delay = BALANCE_FETCH_RETRY_DELAY * (2 ** attempt)
+                    logger.warning(
+                        f"Kalshi balance fetch attempt {attempt + 1} failed: {e}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+        
+        logger.error(
+            f"Kalshi balance fetch failed after {MAX_BALANCE_FETCH_RETRIES} attempts: {last_error}"
+        )
+        if last_error:
+            raise last_error
+        raise RuntimeError("Balance fetch failed with no recorded error")
     
     async def _trigger_kill_switch(self, reason: str) -> None:
         """
@@ -143,7 +188,7 @@ class BalanceGuardian:
             update(GlobalSettings)
             .where(GlobalSettings.user_id == self.user_id)
             .values(
-                bot_active=False,
+                bot_enabled=False,
                 kill_switch_triggered_at=datetime.now(timezone.utc),
                 kill_switch_reason=reason,
             )

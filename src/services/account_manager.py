@@ -300,6 +300,9 @@ class AccountManager:
         """
         Set an account as the primary account.
         
+        Uses a savepoint to ensure atomicity - both the clearing of
+        existing primary flags and setting the new primary happen together.
+        
         Args:
             account_id: Account to make primary
         
@@ -308,19 +311,25 @@ class AccountManager:
         """
         from src.models import PolymarketAccount
         
-        clear_stmt = (
-            update(PolymarketAccount)
-            .where(PolymarketAccount.user_id == self.user_id)
-            .values(is_primary=False)
-        )
-        await self.db.execute(clear_stmt)
+        # Use savepoint for atomic primary account switch
+        async with self.db.begin_nested():
+            # Clear all primary flags
+            clear_stmt = (
+                update(PolymarketAccount)
+                .where(PolymarketAccount.user_id == self.user_id)
+                .values(is_primary=False)
+            )
+            await self.db.execute(clear_stmt)
+            
+            # Set new primary
+            set_stmt = (
+                update(PolymarketAccount)
+                .where(PolymarketAccount.id == account_id)
+                .where(PolymarketAccount.user_id == self.user_id)
+                .values(is_primary=True)
+            )
+            await self.db.execute(set_stmt)
         
-        set_stmt = (
-            update(PolymarketAccount)
-            .where(PolymarketAccount.id == account_id)
-            .values(is_primary=True)
-        )
-        await self.db.execute(set_stmt)
         await self.db.commit()
         
         self._accounts_cache = []

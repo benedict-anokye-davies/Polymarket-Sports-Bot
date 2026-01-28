@@ -180,31 +180,34 @@ async def create_account(
     if request.api_passphrase:
         encrypted_api_passphrase = encrypt_credential(request.api_passphrase)
     
-    if request.is_primary:
-        clear_stmt = (
-            select(PolymarketAccount)
-            .where(PolymarketAccount.user_id == current_user.id)
+    # Use savepoint to ensure atomic primary flag update + account creation
+    async with db.begin_nested():
+        if request.is_primary:
+            # Clear primary flag on existing accounts
+            from sqlalchemy import update
+            clear_stmt = (
+                update(PolymarketAccount)
+                .where(PolymarketAccount.user_id == current_user.id)
+                .values(is_primary=False)
+            )
+            await db.execute(clear_stmt)
+        
+        account = PolymarketAccount(
+            user_id=current_user.id,
+            account_name=request.account_name,
+            platform=request.platform,
+            private_key_encrypted=encrypted_key,
+            funder_address=request.funder_address,
+            api_key_encrypted=encrypted_api_key,
+            api_secret_encrypted=encrypted_api_secret,
+            api_passphrase_encrypted=encrypted_api_passphrase,
+            allocation_pct=Decimal(str(request.allocation_pct)),
+            is_primary=request.is_primary,
+            is_active=True,
         )
-        result = await db.execute(clear_stmt)
-        existing = result.scalars().all()
-        for acc in existing:
-            acc.is_primary = False
+        
+        db.add(account)
     
-    account = PolymarketAccount(
-        user_id=current_user.id,
-        account_name=request.account_name,
-        platform=request.platform,
-        private_key_encrypted=encrypted_key,
-        funder_address=request.funder_address,
-        api_key_encrypted=encrypted_api_key,
-        api_secret_encrypted=encrypted_api_secret,
-        api_passphrase_encrypted=encrypted_api_passphrase,
-        allocation_pct=Decimal(str(request.allocation_pct)),
-        is_primary=request.is_primary,
-        is_active=True,
-    )
-    
-    db.add(account)
     await db.commit()
     await db.refresh(account)
     
@@ -287,7 +290,10 @@ async def update_allocations(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Update allocation percentages for multiple accounts.
+    Update allocation percentages for multiple accounts atomically.
+    
+    All allocations are updated in a single transaction to prevent
+    partial updates if any allocation fails.
     
     Expects list of {account_id, allocation_pct} objects.
     """
@@ -298,12 +304,29 @@ async def update_allocations(
             detail=f"Allocations must sum to 100% (got {total_pct}%)"
         )
     
-    manager = AccountManager(db, current_user.id)
+    from sqlalchemy import update
     
-    for allocation in request.allocations:
-        account_id = UUID(allocation["account_id"])
-        pct = allocation["allocation_pct"]
-        await manager.set_account_allocation(account_id, pct)
+    # Update all allocations atomically within a savepoint
+    async with db.begin_nested():
+        for allocation in request.allocations:
+            account_id = UUID(allocation["account_id"])
+            pct = allocation["allocation_pct"]
+            
+            if pct < 0 or pct > 100:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Allocation must be between 0 and 100 (got {pct})"
+                )
+            
+            stmt = (
+                update(PolymarketAccount)
+                .where(PolymarketAccount.id == account_id)
+                .where(PolymarketAccount.user_id == current_user.id)
+                .values(allocation_pct=Decimal(str(pct)))
+            )
+            await db.execute(stmt)
+    
+    await db.commit()
     
     return {"message": "Allocations updated successfully"}
 
