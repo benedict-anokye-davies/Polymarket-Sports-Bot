@@ -38,6 +38,22 @@ async def debug_tables(db: DbSession) -> dict:
     return {"tables": tables, "count": len(tables)}
 
 
+@router.post("/debug/fix-schema", response_model=dict)
+async def fix_schema(db: DbSession) -> dict:
+    """
+    DEBUG ENDPOINT: Drops and recreates tables with correct schema.
+    WARNING: This will delete all data!
+    """
+    from src.db.database import Base, engine
+    
+    # Drop and recreate all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    
+    return {"status": "Schema recreated successfully"}
+
+
 async def _create_bot_dependencies(db, user_id, credentials: dict):
     """
     Creates and configures bot dependencies.
