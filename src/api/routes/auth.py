@@ -89,13 +89,18 @@ async def register(
         )
 
     try:
+        logger.info(f"Creating global settings for user {user.id}")
         await GlobalSettingsCRUD.create(db, user.id)
+        logger.info(f"Creating sport configs for user {user.id}")
         await SportConfigCRUD.create_defaults_for_user(db, user.id)
+        logger.info(f"Settings creation complete for user {user.id}")
     except Exception as e:
-        logger.error(f"Registration failed during settings creation: {type(e).__name__}: {e}")
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Registration failed during settings creation: {type(e).__name__}: {e}\n{tb}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Account created but settings failed: {type(e).__name__}"
+            detail=f"Account created but settings failed: {type(e).__name__}: {str(e)[:200]}"
         )
 
     # Create access token
