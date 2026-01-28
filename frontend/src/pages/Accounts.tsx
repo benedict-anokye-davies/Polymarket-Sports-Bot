@@ -205,7 +205,6 @@ export default function Accounts() {
     try {
       await apiClient.updateAllocations(newAllocations);
       fetchAccounts();
-      }
     } catch (err) {
       toast({
         title: 'Error',

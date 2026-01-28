@@ -131,11 +131,10 @@ export default function Backtesting() {
       toast({
         title: 'Deleted',
         description: 'Backtest result deleted',
-        });
-        fetchResults();
-        if (selectedResult?.id === id) {
-          setSelectedResult(null);
-        }
+      });
+      fetchResults();
+      if (selectedResult?.id === id) {
+        setSelectedResult(null);
       }
     } catch (err) {
       toast({
