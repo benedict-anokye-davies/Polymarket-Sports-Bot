@@ -88,15 +88,38 @@ async def init_db() -> None:
     """
     Initializes the database by creating all tables.
     Called during application startup.
+    Uses checkfirst=True to only create tables that don't exist.
     """
     # Log which tables are registered before creating
     tables = list(Base.metadata.tables.keys())
-    logger.info(f"Creating database tables: {tables}")
+    logger.info(f"Registered models for tables: {tables}")
     
     if not tables:
         logger.error("No tables registered with Base.metadata! Models not imported.")
         return
-        
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info(f"Database initialized successfully. Tables: {tables}")
+    
+    try:
+        async with engine.begin() as conn:
+            # Check existing tables
+            from sqlalchemy import inspect
+            def get_existing_tables(connection):
+                inspector = inspect(connection)
+                return inspector.get_table_names()
+            
+            existing = await conn.run_sync(get_existing_tables)
+            logger.info(f"Existing tables in database: {existing}")
+            
+            missing = [t for t in tables if t not in existing]
+            logger.info(f"Missing tables to create: {missing}")
+            
+            # Create all missing tables
+            await conn.run_sync(Base.metadata.create_all)
+            
+            # Verify tables were created
+            existing_after = await conn.run_sync(get_existing_tables)
+            logger.info(f"Tables after create_all: {existing_after}")
+            
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {type(e).__name__}: {e}")
+        raise
