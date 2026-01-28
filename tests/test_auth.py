@@ -380,12 +380,12 @@ class TestAuthSchemas:
         user_data = UserCreate(
             username="testuser",
             email="test@example.com",
-            password="securepassword123"
+            password="SecurePassword123!"
         )
         
         assert user_data.username == "testuser"
         assert user_data.email == "test@example.com"
-        assert user_data.password == "securepassword123"
+        assert user_data.password == "SecurePassword123!"
     
     def test_user_create_invalid_email(self):
         """Invalid email should fail validation."""
