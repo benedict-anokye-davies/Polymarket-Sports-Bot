@@ -111,7 +111,8 @@ export default function BotConfig() {
   const [botEnabled, setBotEnabled] = useState(false);
   const [selectedSport, setSelectedSport] = useState<string>('nba');
   // Changed: Now tracks game ID -> SelectedGame with side preference
-  const [selectedGames, setSelectedGames] = useState<Map<string, SelectedGame>>(new Map());
+  // Using Record instead of Map to avoid React serialization issues
+  const [selectedGames, setSelectedGames] = useState<Record<string, SelectedGame>>({});
   const [tradingParams, setTradingParams] = useState<TradingParams>(DEFAULT_PARAMS);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -249,50 +250,50 @@ export default function BotConfig() {
   };
 
   // Get selected games data (from current sport only for display)
-  const selectedGamesData = Array.from(selectedGames.values());
+  const selectedGamesData = Object.values(selectedGames);
+  const selectedGamesCount = Object.keys(selectedGames).length;
 
   // Toggle game selection with default side = home
   const toggleGameSelection = (gameId: string, game: GameData) => {
     setSelectedGames(prev => {
-      const newMap = new Map(prev);
-      if (newMap.has(gameId)) {
-        newMap.delete(gameId);
+      const newObj = { ...prev };
+      if (gameId in newObj) {
+        delete newObj[gameId];
       } else {
         // Default to home team when first selecting
-        newMap.set(gameId, {
+        newObj[gameId] = {
           game,
           sport: selectedLeague,
           side: 'home'
-        });
+        };
       }
-      return newMap;
+      return newObj;
     });
   };
 
   // Change which team is selected for a game
   const changeSideSelection = (gameId: string, side: 'home' | 'away') => {
     setSelectedGames(prev => {
-      const newMap = new Map(prev);
-      const existing = newMap.get(gameId);
+      const existing = prev[gameId];
       if (existing) {
-        newMap.set(gameId, { ...existing, side });
+        return { ...prev, [gameId]: { ...existing, side } };
       }
-      return newMap;
+      return prev;
     });
   };
 
   // Select all games (default to home team)
   const selectAllGames = () => {
-    const newMap = new Map<string, SelectedGame>();
+    const newObj: Record<string, SelectedGame> = {};
     availableGames.forEach(g => {
-      newMap.set(g.id, { game: g, sport: selectedLeague, side: 'home' });
+      newObj[g.id] = { game: g, sport: selectedLeague, side: 'home' };
     });
-    setSelectedGames(newMap);
+    setSelectedGames(newObj);
   };
 
   // Clear all selections
   const clearAllGames = () => {
-    setSelectedGames(new Map());
+    setSelectedGames({});
   };
 
   // Handle category change
@@ -322,7 +323,7 @@ export default function BotConfig() {
 
   // Save configuration to API
   const handleSave = useCallback(async () => {
-    if (selectedGames.size === 0) {
+    if (selectedGamesCount === 0) {
       setError('Please select at least one game');
       return;
     }
@@ -333,7 +334,7 @@ export default function BotConfig() {
 
     try {
       // Get all selected games with their side preferences
-      const allSelectedGames = Array.from(selectedGames.values());
+      const allSelectedGames = Object.values(selectedGames);
       const firstSelection = allSelectedGames[0];
 
       if (firstSelection) {
@@ -377,7 +378,7 @@ export default function BotConfig() {
 
   // Toggle bot on/off
   const handleToggleBot = useCallback(async () => {
-    if (selectedGames.size === 0) {
+    if (selectedGamesCount === 0) {
       setError('Please select at least one game');
       return;
     }
@@ -387,7 +388,7 @@ export default function BotConfig() {
 
     try {
       // First save the config with simulation mode and selected sides
-      const allSelectedGames = Array.from(selectedGames.values());
+      const allSelectedGames = Object.values(selectedGames);
       const firstSelection = allSelectedGames[0];
 
       if (firstSelection) {
@@ -482,12 +483,12 @@ export default function BotConfig() {
                 botEnabled && 'bg-green-500/20 text-green-400 border border-green-500/30'
               )}
             >
-              {botEnabled ? `Bot Running (${selectedGames.size} game${selectedGames.size !== 1 ? 's' : ''})` : 'Bot Stopped'}
+              {botEnabled ? `Bot Running (${selectedGamesCount} game${selectedGamesCount !== 1 ? 's' : ''})` : 'Bot Stopped'}
             </Badge>
             <Button
               onClick={handleToggleBot}
               variant={botEnabled ? 'destructive' : 'default'}
-              disabled={isLoading || selectedGames.size === 0 || walletConnected === false}
+              disabled={isLoading || selectedGamesCount === 0 || walletConnected === false}
               className="gap-2"
               data-tour="start-bot"
             >
@@ -640,7 +641,7 @@ export default function BotConfig() {
                       variant="ghost" 
                       size="sm" 
                       onClick={clearAllGames}
-                      disabled={selectedGames.size === 0}
+                      disabled={selectedGamesCount === 0}
                       className="text-xs h-7"
                     >
                       Clear
@@ -663,7 +664,7 @@ export default function BotConfig() {
                     </div>
                   ) : (
                     availableGames.map(game => {
-                      const selection = selectedGames.get(game.id);
+                      const selection = selectedGames[game.id];
                       const isSelected = !!selection;
 
                       return (
@@ -768,16 +769,16 @@ export default function BotConfig() {
                 </div>
 
                 {/* Selection Summary */}
-                {selectedGames.size > 0 && (
+                {selectedGamesCount > 0 && (
                   <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-primary" />
                       <span className="text-sm font-medium">
-                        {selectedGames.size} game{selectedGames.size > 1 ? 's' : ''} selected
+                        {selectedGamesCount} game{selectedGamesCount > 1 ? 's' : ''} selected
                       </span>
                     </div>
                     <div className="mt-2 space-y-1">
-                      {Array.from(selectedGames.values()).map(sel => (
+                      {Object.values(selectedGames).map(sel => (
                         <div key={sel.game.id} className="text-xs flex items-center gap-1">
                           <span className="text-muted-foreground">{sel.sport.toUpperCase()}:</span>
                           <span className={cn(
@@ -1094,15 +1095,15 @@ export default function BotConfig() {
           <Card className="p-4">
             <div className="text-sm text-muted-foreground">Selected Games</div>
             <div className="text-lg font-semibold">
-              {selectedGames.size > 0 
-                ? `${selectedGames.size} game${selectedGames.size !== 1 ? 's' : ''}`
+              {selectedGamesCount > 0 
+                ? `${selectedGamesCount} game${selectedGamesCount !== 1 ? 's' : ''}`
                 : 'None'
               }
             </div>
           </Card>
           <Card className="p-4">
             <div className="text-sm text-muted-foreground">Max Exposure</div>
-            <div className="text-lg font-semibold">${tradingParams.positionSize * Math.max(1, selectedGames.size)}</div>
+            <div className="text-lg font-semibold">${tradingParams.positionSize * Math.max(1, selectedGamesCount)}</div>
           </Card>
           <Card className="p-4">
             <div className="text-sm text-muted-foreground">Risk/Reward</div>
@@ -1124,14 +1125,14 @@ export default function BotConfig() {
         </div>
 
         {/* Selected Games Summary - shown below stats when games are selected */}
-        {selectedGames.size > 0 && (
+        {selectedGamesCount > 0 && (
           <Card className="p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-primary" />
                 <span className="font-medium">Active Betting Selection</span>
               </div>
-              <Badge variant="outline">{selectedGames.size} team{selectedGames.size !== 1 ? 's' : ''}</Badge>
+              <Badge variant="outline">{selectedGamesCount} team{selectedGamesCount !== 1 ? 's' : ''}</Badge>
             </div>
             <div className="flex flex-wrap gap-2">
               {selectedGamesData.map(sel => (
