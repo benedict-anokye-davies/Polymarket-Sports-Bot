@@ -78,12 +78,22 @@ async def run_async_migrations() -> None:
     Run migrations in 'online' mode with async engine.
     """
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = get_url()
+    db_url = get_url()
+    configuration["sqlalchemy.url"] = db_url
+    
+    # Supabase pooler requires special connect_args to disable prepared statements
+    connect_args = {}
+    if "supabase" in db_url:
+        connect_args = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        }
     
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
