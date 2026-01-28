@@ -59,6 +59,9 @@ async def register(user_data: UserCreate, db: DbSession, request: Request) -> To
     Returns:
         JWT access token, refresh token, and user data
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         user = await UserCRUD.create(
             db,
@@ -71,9 +74,22 @@ async def register(user_data: UserCreate, db: DbSession, request: Request) -> To
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+    except Exception as e:
+        logger.error(f"Registration failed during user creation: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {type(e).__name__}"
+        )
 
-    await GlobalSettingsCRUD.create(db, user.id)
-    await SportConfigCRUD.create_defaults_for_user(db, user.id)
+    try:
+        await GlobalSettingsCRUD.create(db, user.id)
+        await SportConfigCRUD.create_defaults_for_user(db, user.id)
+    except Exception as e:
+        logger.error(f"Registration failed during settings creation: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Account created but settings failed: {type(e).__name__}"
+        )
 
     # Create access token
     access_token = create_access_token(
@@ -82,13 +98,20 @@ async def register(user_data: UserCreate, db: DbSession, request: Request) -> To
     )
 
     # Create refresh token and store in database
-    device_info, ip_address = _get_client_info(request)
-    _, refresh_token = await RefreshTokenCRUD.create(
-        db,
-        user_id=user.id,
-        device_info=device_info,
-        ip_address=ip_address,
-    )
+    try:
+        device_info, ip_address = _get_client_info(request)
+        _, refresh_token = await RefreshTokenCRUD.create(
+            db,
+            user_id=user.id,
+            device_info=device_info,
+            ip_address=ip_address,
+        )
+    except Exception as e:
+        logger.error(f"Registration failed during token creation: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Account created but token failed: {type(e).__name__}"
+        )
 
     return TokenResponse(
         access_token=access_token,
