@@ -89,6 +89,14 @@ async def init_db() -> None:
     Initializes the database by creating all tables.
     Called during application startup.
     """
+    # Log which tables are registered before creating
+    tables = list(Base.metadata.tables.keys())
+    logger.info(f"Creating database tables: {tables}")
+    
+    if not tables:
+        logger.error("No tables registered with Base.metadata! Models not imported.")
+        return
+        
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database initialized successfully")
+    logger.info(f"Database initialized successfully. Tables: {tables}")
