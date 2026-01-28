@@ -17,6 +17,7 @@ settings = get_settings()
 
 # Determine if we're using SQLite (for local dev) or PostgreSQL (production)
 is_sqlite = settings.async_database_url.startswith("sqlite")
+is_supabase = "supabase" in settings.async_database_url
 
 # SQLite doesn't support pool_size/max_overflow, so configure engine accordingly
 if is_sqlite:
@@ -24,6 +25,19 @@ if is_sqlite:
         settings.async_database_url,
         echo=settings.debug,
         connect_args={"check_same_thread": False},
+    )
+elif is_supabase:
+    # Supabase pooler requires special settings
+    engine = create_async_engine(
+        settings.async_database_url,
+        echo=settings.debug,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10,
+        connect_args={
+            "statement_cache_size": 0,  # Required for Supabase pooler
+            "prepared_statement_cache_size": 0,
+        },
     )
 else:
     engine = create_async_engine(

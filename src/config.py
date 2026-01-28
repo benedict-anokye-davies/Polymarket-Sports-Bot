@@ -103,10 +103,19 @@ class Settings(BaseSettings):
         """
         Ensures the database URL uses the async driver.
         Converts postgresql:// to postgresql+asyncpg:// if needed.
+        For Supabase pooler connections, disables prepared statements.
         """
         url = self.database_url
         if url.startswith("postgresql://"):
-            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+        # Supabase pooler requires prepared_statement_cache_size=0
+        if "pooler.supabase.com" in url or "supabase.co" in url:
+            if "?" in url:
+                url += "&prepared_statement_cache_size=0"
+            else:
+                url += "?prepared_statement_cache_size=0"
+        
         return url
     
     @property
