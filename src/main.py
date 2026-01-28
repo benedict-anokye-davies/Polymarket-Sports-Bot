@@ -19,6 +19,19 @@ import asyncio
 
 from src.config import get_settings
 from src.db.database import init_db, engine
+# Import all models so they register with Base.metadata before init_db() creates tables
+from src.models import (
+    User,
+    PolymarketAccount,
+    SportConfig,
+    TrackedMarket,
+    Position,
+    Trade,
+    GlobalSettings,
+    ActivityLog,
+    MarketConfig,
+    RefreshToken,
+)
 from src.api.routes.auth import router as auth_router
 from src.api.routes.onboarding import router as onboarding_router
 from src.api.routes.dashboard import router as dashboard_router
