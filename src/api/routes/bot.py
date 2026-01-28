@@ -5,6 +5,7 @@ Integrates with BotRunner for actual trading operations.
 
 import logging
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from sqlalchemy import text
 
 from src.api.deps import DbSession, OnboardedUser
 from src.db.crud.global_settings import GlobalSettingsCRUD
@@ -22,6 +23,19 @@ from src.config import settings as app_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bot", tags=["Bot Control"])
+
+
+@router.get("/debug/tables", response_model=dict)
+async def debug_tables(db: DbSession) -> dict:
+    """
+    DEBUG ENDPOINT: Returns list of tables in the database.
+    Remove in production.
+    """
+    result = await db.execute(text(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+    ))
+    tables = [row[0] for row in result.fetchall()]
+    return {"tables": tables, "count": len(tables)}
 
 
 async def _create_bot_dependencies(db, user_id, credentials: dict):
