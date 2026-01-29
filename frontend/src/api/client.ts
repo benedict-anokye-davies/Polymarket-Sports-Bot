@@ -165,12 +165,22 @@ class ApiClient {
           throw new Error('Unauthorized');
         }
 
-        const error: ApiError = await response.json().catch(() => ({
+        const errorData = await response.json().catch(() => ({
           detail: 'An unexpected error occurred',
-          status: response.status,
         }));
 
-        throw new Error(error.detail || `HTTP Error: ${response.status}`);
+        // Handle Pydantic validation errors (detail is an array)
+        let errorMessage: string;
+        if (Array.isArray(errorData.detail)) {
+          // Extract the first validation error message
+          errorMessage = errorData.detail[0]?.msg || 'Validation error';
+        } else if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else {
+          errorMessage = `HTTP Error: ${response.status}`;
+        }
+
+        throw new Error(errorMessage);
       }
 
       // Handle empty responses
