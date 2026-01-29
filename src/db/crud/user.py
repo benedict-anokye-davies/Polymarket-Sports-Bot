@@ -80,19 +80,22 @@ class UserCRUD:
         return result.scalar_one_or_none()
     
     @staticmethod
-    async def authenticate(db: AsyncSession, email: str, password: str) -> User | None:
+    async def authenticate(db: AsyncSession, identifier: str, password: str) -> User | None:
         """
-        Authenticates a user by email and password.
+        Authenticates a user by email or username and password.
         
         Args:
             db: Database session
-            email: User email
+            identifier: User email or username
             password: Plain text password
         
         Returns:
             User instance if credentials valid, None otherwise
         """
-        user = await UserCRUD.get_by_email(db, email)
+        # Try email first, then username
+        user = await UserCRUD.get_by_email(db, identifier)
+        if not user:
+            user = await UserCRUD.get_by_username(db, identifier)
         if not user:
             return None
         if not verify_password(password, user.password_hash):

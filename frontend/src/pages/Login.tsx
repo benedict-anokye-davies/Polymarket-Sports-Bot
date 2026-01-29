@@ -61,11 +61,11 @@ export default function Login() {
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-muted-foreground">Email</Label>
+                <Label htmlFor="email" className="text-muted-foreground">Email or Username</Label>
                 <Input
                   id="email"
-                  type="email"
-                  placeholder="trader@example.com"
+                  type="text"
+                  placeholder="trader@example.com or username"
                   className="bg-muted border-border"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

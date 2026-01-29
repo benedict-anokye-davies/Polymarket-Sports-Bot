@@ -143,12 +143,12 @@ async def login(
 ) -> TokenResponse:
     """
     Authenticates user and returns access token and refresh token.
-    Accepts OAuth2 form data (username field contains email).
+    Accepts OAuth2 form data (username field contains email or username).
 
     Args:
         db: Database session
         request: HTTP request for client info
-        form_data: OAuth2 form with username (email) and password
+        form_data: OAuth2 form with username (email or username) and password
 
     Returns:
         JWT access token, refresh token, and user data
@@ -158,7 +158,7 @@ async def login(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid email/username or password"
         )
 
     if not user.is_active:

@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { 
   LayoutGrid, 
   Layers, 
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/useAppStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { Button } from '@/components/ui/button';
 
 const navItems = [
@@ -34,7 +35,24 @@ const navItems = [
 
 export function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
+  const { user, logout } = useAuthStore();
+
+  // Get initials from username
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <aside
@@ -113,16 +131,21 @@ export function Sidebar() {
       )}>
         <div className={cn('flex items-center gap-3', sidebarCollapsed && 'flex-col')}>
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-sm font-medium text-primary">
-            JD
+            {user?.username ? getInitials(user.username) : 'U'}
           </div>
           {!sidebarCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">User</p>
-              <p className="text-xs text-primary">Pro Plan</p>
+              <p className="text-sm font-medium text-foreground truncate">{user?.username || 'User'}</p>
+              <p className="text-xs text-muted-foreground truncate">{user?.email || ''}</p>
             </div>
           )}
           {!sidebarCollapsed && (
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="text-muted-foreground hover:text-foreground"
+              onClick={handleLogout}
+            >
               <LogOut className="w-4 h-4" />
             </Button>
           )}
