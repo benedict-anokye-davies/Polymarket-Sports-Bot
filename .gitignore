@@ -48,6 +48,11 @@ Thumbs.db
 *.pem
 *.key
 private_key*
-.vercel
+
+# Build caches
+.vercel/
+.wrangler/
+node_modules/
+dist/
 .env*.local
 nul
