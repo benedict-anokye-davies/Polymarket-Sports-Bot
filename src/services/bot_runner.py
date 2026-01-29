@@ -347,40 +347,74 @@ class BotRunner:
     
     async def _load_user_selected_games(self, user_id: UUID) -> None:
         """
-        Load user-selected games from the bot config store.
+        Load user-selected games from BOTH sources:
+        1. TrackedMarket table (games selected in Markets page)
+        2. Bot config store (games configured in Bot Config page)
         
-        This determines which specific games the bot will track and trade.
-        Games not in this list will be ignored during discovery.
+        This ensures games selected in either location are tracked.
         Also updates enabled_sports to include all sports from selected games.
         
         Args:
             user_id: User ID to load config for
         """
         from src.api.routes.bot import _bot_configs
+        from src.db.crud.tracked_market import TrackedMarketCRUD
         
         user_id_str = str(user_id)
-        config = _bot_configs.get(user_id_str, {})
+        self.user_selected_games.clear()
+        selected_sports: set[str] = set()
         
-        # Get all games (primary + additional)
+        # SOURCE 1: Load from TrackedMarket database (Markets page selections)
+        try:
+            # Need a fresh db session for this query
+            from src.db.database import async_session_maker
+            async with async_session_maker() as db:
+                db_selected = await TrackedMarketCRUD.get_selected_for_user(db, user_id)
+                
+                for market in db_selected:
+                    # Use condition_id as game_id for consistency
+                    game_id = market.espn_event_id or market.condition_id
+                    if game_id and game_id not in self.user_selected_games:
+                        # Build game dict from TrackedMarket
+                        self.user_selected_games[game_id] = {
+                            "game_id": game_id,
+                            "condition_id": market.condition_id,
+                            "token_id": market.token_id,
+                            "sport": market.sport or "unknown",
+                            "home_team": market.home_team,
+                            "away_team": market.away_team,
+                            "question": market.question,
+                            "selected_side": "home",  # Default
+                            "source": "markets_page"
+                        }
+                        sport = (market.sport or "").lower()
+                        if sport:
+                            selected_sports.add(sport)
+                        logger.info(
+                            f"Loaded market-selected game: {market.away_team or '?'} @ "
+                            f"{market.home_team or '?'} ({sport.upper()})"
+                        )
+        except Exception as e:
+            logger.warning(f"Could not load TrackedMarket selections: {e}")
+        
+        # SOURCE 2: Load from bot config store (Bot Config page)
+        config = _bot_configs.get(user_id_str, {})
         games = config.get("games", [])
         
         # Fallback to single game if "games" array not present
         if not games and config.get("game"):
             games = [config["game"]]
         
-        # Build lookup by game_id and collect sports
-        self.user_selected_games.clear()
-        selected_sports: set[str] = set()
-        
         for game in games:
             game_id = game.get("game_id")
-            if game_id:
+            if game_id and game_id not in self.user_selected_games:
                 self.user_selected_games[game_id] = game
+                self.user_selected_games[game_id]["source"] = "bot_config"
                 sport = game.get("sport", "").lower()
                 if sport:
                     selected_sports.add(sport)
                 logger.info(
-                    f"Loaded user-selected game: {game.get('away_team', '?')} @ "
+                    f"Loaded config-selected game: {game.get('away_team', '?')} @ "
                     f"{game.get('home_team', '?')} ({sport.upper()}), "
                     f"side: {game.get('selected_side', 'home')}"
                 )
