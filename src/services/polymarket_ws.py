@@ -405,6 +405,15 @@ class PolymarketWebSocket:
         """Handle last trade price event."""
         # Log for debugging, don't update state
         logger.debug(f"Last trade: {data.get('asset_id')} @ {data.get('price')}")
+    
+    # Aliases for BotRunner compatibility
+    async def connect(self) -> None:
+        """Alias for start() - connects to WebSocket."""
+        await self.start()
+    
+    async def disconnect(self) -> None:
+        """Alias for stop() - disconnects from WebSocket."""
+        await self.stop()
 
 
 # Global singleton instance

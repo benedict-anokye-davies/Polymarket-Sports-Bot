@@ -244,10 +244,16 @@ class MarketMatcher:
             if token_outcome == outcome.lower():
                 return token.get("token_id", "")
         
+        # Fallback to direct fields or clobTokenIds with bounds checking
+        clob_ids = market.get("clobTokenIds", [])
         if outcome.lower() == "yes":
-            return market.get("token_id_yes", market.get("clobTokenIds", ["", ""])[0])
+            if market.get("token_id_yes"):
+                return market.get("token_id_yes", "")
+            return clob_ids[0] if len(clob_ids) > 0 else ""
         else:
-            return market.get("token_id_no", market.get("clobTokenIds", ["", ""])[-1])
+            if market.get("token_id_no"):
+                return market.get("token_id_no", "")
+            return clob_ids[-1] if len(clob_ids) > 1 else (clob_ids[0] if clob_ids else "")
     
     def match_multiple_games(
         self,

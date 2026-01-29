@@ -667,7 +667,6 @@ class ESPNService:
             
             logger.debug(f"Fetched {len(events)} {sport.upper()} events from ESPN")
             return events
-            return events
             
         except httpx.HTTPError as e:
             logger.warning(f"Failed to fetch {sport} scoreboard: {e}")
