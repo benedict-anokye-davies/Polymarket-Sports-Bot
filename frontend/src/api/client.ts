@@ -1705,6 +1705,7 @@ export interface AccountInfo {
   id: string;
   account_name: string;
   platform: 'polymarket' | 'kalshi';
+  environment: 'production' | 'demo';
   is_primary: boolean;
   is_active: boolean;
   allocation_pct: number;
@@ -1724,6 +1725,7 @@ export interface AccountSummary {
 export interface CreateAccountRequest {
   account_name: string;
   platform: 'polymarket' | 'kalshi';
+  environment?: 'production' | 'demo';
   private_key?: string;
   funder_address?: string;
   api_key?: string;

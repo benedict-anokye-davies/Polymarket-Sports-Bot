@@ -448,6 +448,7 @@ class AccountManager:
                 "id": str(acc.id),
                 "name": acc.account_name or "Primary",
                 "platform": acc.platform or "polymarket",
+                "environment": getattr(acc, 'environment', 'production'),  # Kalshi demo/production
                 "is_primary": acc.is_primary,
                 "is_active": acc.is_active,
                 "allocation_pct": float(acc.allocation_pct or 0),

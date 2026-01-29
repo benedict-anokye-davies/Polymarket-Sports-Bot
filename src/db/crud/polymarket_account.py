@@ -126,6 +126,7 @@ class PolymarketAccountCRUD:
         result = {
             "funder_address": account.funder_address,
             "platform": account.platform,
+            "environment": getattr(account, 'environment', 'production'),  # Kalshi demo/production
         }
 
         # Polymarket credentials - with error handling for corrupted data

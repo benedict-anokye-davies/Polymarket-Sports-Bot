@@ -59,6 +59,13 @@ class PolymarketAccount(Base):
         default="polymarket",
         nullable=False
     )
+    
+    # Environment: 'production' or 'demo' (for Kalshi)
+    environment: Mapped[str] = mapped_column(
+        String(20),
+        default="production",
+        nullable=False
+    )
 
     private_key_encrypted: Mapped[str | None] = mapped_column(
         Text,

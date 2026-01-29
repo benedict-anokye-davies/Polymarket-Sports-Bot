@@ -39,15 +39,17 @@ async def _create_bot_dependencies(db, user_id, credentials: dict):
         Tuple of (trading_client, trading_engine, espn_service)
     """
     platform = credentials.get("platform", "polymarket")
+    environment = credentials.get("environment", "production")
 
     # Create the correct client based on platform
     if platform == "kalshi":
         from src.services.kalshi_client import KalshiClient
         trading_client = KalshiClient(
             api_key_id=credentials["api_key"],
-            private_key_pem=credentials["api_secret"]  # Kalshi uses api_secret as private key for signing
+            private_key_pem=credentials["api_secret"],  # Kalshi uses api_secret as private key for signing
+            environment=environment  # 'production' or 'demo'
         )
-        logger.info(f"Created KalshiClient for user {user_id}")
+        logger.info(f"Created KalshiClient for user {user_id} in {environment.upper()} mode")
     else:
         trading_client = PolymarketClient(
             private_key=credentials["private_key"],

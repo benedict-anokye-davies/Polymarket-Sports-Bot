@@ -23,8 +23,14 @@ logger = logging.getLogger(__name__)
 
 
 # Kalshi API Base URLs
-KALSHI_API_BASE = "https://api.elections.kalshi.com/trade-api/v2"
-KALSHI_WS_URL = "wss://api.elections.kalshi.com/trade-api/v2/ws"
+KALSHI_API_BASE_PRODUCTION = "https://api.elections.kalshi.com/trade-api/v2"
+KALSHI_API_BASE_DEMO = "https://demo-api.kalshi.co/trade-api/v2"
+KALSHI_WS_URL_PRODUCTION = "wss://api.elections.kalshi.com/trade-api/v2/ws"
+KALSHI_WS_URL_DEMO = "wss://demo-api.kalshi.co/trade-api/v2/ws"
+
+# Legacy alias for backwards compatibility
+KALSHI_API_BASE = KALSHI_API_BASE_PRODUCTION
+KALSHI_WS_URL = KALSHI_WS_URL_PRODUCTION
 
 
 @dataclass
@@ -183,7 +189,7 @@ class KalshiClient:
         except Exception as e:
             return False, f"Failed to load RSA private key: {str(e)}"
     
-    def __init__(self, api_key_id: str, private_key_pem: str, dry_run: bool = True):
+    def __init__(self, api_key_id: str, private_key_pem: str, dry_run: bool = True, environment: str = "production"):
         """
         Initialize Kalshi client with API credentials.
 
@@ -191,9 +197,21 @@ class KalshiClient:
             api_key_id: Kalshi API key ID
             private_key_pem: RSA private key in PEM format
             dry_run: If True, simulate orders without placing real trades
+            environment: 'production' or 'demo' - determines which Kalshi API to use
         """
         self.auth = KalshiAuthenticator(api_key_id, private_key_pem)
-        self.base_url = KALSHI_API_BASE
+        self.environment = environment.lower()
+        
+        # Select API URLs based on environment
+        if self.environment == "demo":
+            self.base_url = KALSHI_API_BASE_DEMO
+            self.ws_url = KALSHI_WS_URL_DEMO
+            logger.info("Kalshi client initialized in DEMO mode")
+        else:
+            self.base_url = KALSHI_API_BASE_PRODUCTION
+            self.ws_url = KALSHI_WS_URL_PRODUCTION
+            logger.info("Kalshi client initialized in PRODUCTION mode")
+        
         self._client = httpx.AsyncClient(timeout=30.0)
         self.dry_run = dry_run
     

@@ -25,6 +25,7 @@ class AccountResponse(BaseModel):
     id: str
     account_name: str
     platform: str = "polymarket"
+    environment: str = "production"  # 'production' or 'demo' for Kalshi
     is_primary: bool
     is_active: bool
     allocation_pct: float
@@ -46,6 +47,7 @@ class CreateAccountRequest(BaseModel):
     """Request to create a new trading account."""
     account_name: str = Field(..., min_length=1, max_length=50)
     platform: Literal["polymarket", "kalshi"] = "polymarket"
+    environment: Literal["production", "demo"] = "production"  # For Kalshi demo/production
     private_key: Optional[str] = Field(None, min_length=64)
     funder_address: Optional[str] = Field(None, min_length=42, max_length=42)
     api_key: Optional[str] = None
@@ -93,6 +95,7 @@ async def get_account_summary(
                 id=acc["id"],
                 account_name=acc["name"],
                 platform=acc.get("platform", "polymarket"),
+                environment=acc.get("environment", "production"),
                 is_primary=acc["is_primary"],
                 is_active=acc["is_active"],
                 allocation_pct=acc["allocation_pct"],
@@ -129,6 +132,7 @@ async def list_accounts(
             id=str(acc.id),
             account_name=acc.account_name or "Primary",
             platform=acc.platform or "polymarket",
+            environment=getattr(acc, 'environment', 'production'),
             is_primary=acc.is_primary or False,
             is_active=acc.is_active if acc.is_active is not None else True,
             allocation_pct=float(acc.allocation_pct or 100),
@@ -196,6 +200,7 @@ async def create_account(
             user_id=current_user.id,
             account_name=request.account_name,
             platform=request.platform,
+            environment=request.environment,  # 'production' or 'demo' for Kalshi
             private_key_encrypted=encrypted_key,
             funder_address=request.funder_address,
             api_key_encrypted=encrypted_api_key,
@@ -215,6 +220,7 @@ async def create_account(
         id=str(account.id),
         account_name=account.account_name,
         platform=account.platform or "polymarket",
+        environment=getattr(account, 'environment', 'production'),
         is_primary=account.is_primary or False,
         is_active=account.is_active if account.is_active is not None else True,
         allocation_pct=float(account.allocation_pct or 100),
@@ -258,6 +264,7 @@ async def update_account(
         id=str(account.id),
         account_name=account.account_name or "Primary",
         platform=account.platform or "polymarket",
+        environment=getattr(account, 'environment', 'production'),
         is_primary=account.is_primary or False,
         is_active=account.is_active if account.is_active is not None else True,
         allocation_pct=float(account.allocation_pct or 100),

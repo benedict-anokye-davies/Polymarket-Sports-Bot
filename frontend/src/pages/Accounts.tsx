@@ -42,6 +42,7 @@ interface Account {
   id: string;
   account_name: string;
   platform: 'polymarket' | 'kalshi';
+  environment: 'production' | 'demo';
   is_primary: boolean;
   is_active: boolean;
   allocation_pct: number;
@@ -60,6 +61,7 @@ export default function Accounts() {
   const [newAccount, setNewAccount] = useState({
     account_name: '',
     platform: 'polymarket' as 'polymarket' | 'kalshi',
+    environment: 'demo' as 'production' | 'demo',  // Default to demo for safety
     private_key: '',
     funder_address: '',
     api_key: '',
@@ -113,6 +115,7 @@ export default function Accounts() {
       setNewAccount({
         account_name: '',
         platform: 'polymarket',
+        environment: 'demo',
         private_key: '',
         funder_address: '',
         api_key: '',
@@ -307,6 +310,26 @@ export default function Accounts() {
                 ) : (
                   <>
                     <div className="grid gap-2">
+                      <Label htmlFor="environment">Environment</Label>
+                      <Select
+                        value={newAccount.environment}
+                        onValueChange={(value: 'production' | 'demo') => setNewAccount({ ...newAccount, environment: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select environment" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="demo">Demo (Paper Trading)</SelectItem>
+                          <SelectItem value="production">Production (Real Money)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {newAccount.environment === 'demo' 
+                          ? 'Uses demo.kalshi.com API - no real money involved'
+                          : 'Uses production Kalshi API - real money trades'}
+                      </p>
+                    </div>
+                    <div className="grid gap-2">
                       <Label htmlFor="api_key">API Key</Label>
                       <Input
                         id="api_key"
@@ -317,14 +340,17 @@ export default function Accounts() {
                       />
                     </div>
                     <div className="grid gap-2">
-                      <Label htmlFor="api_secret">API Secret</Label>
+                      <Label htmlFor="api_secret">Private Key (RSA PEM)</Label>
                       <Input
                         id="api_secret"
                         type="password"
-                        placeholder="Your Kalshi API secret"
+                        placeholder="Your Kalshi RSA private key"
                         value={newAccount.api_secret}
                         onChange={(e) => setNewAccount({ ...newAccount, api_secret: e.target.value })}
                       />
+                      <p className="text-xs text-muted-foreground">
+                        The RSA private key from your Kalshi API settings
+                      </p>
                     </div>
                   </>
                 )}
@@ -398,6 +424,11 @@ export default function Accounts() {
                     <Badge variant={account.platform === 'kalshi' ? 'secondary' : 'default'} className="capitalize">
                       {account.platform || 'polymarket'}
                     </Badge>
+                    {account.platform === 'kalshi' && (
+                      <Badge variant={account.environment === 'demo' ? 'outline' : 'destructive'} className="capitalize">
+                        {account.environment === 'demo' ? 'Demo' : 'Live'}
+                      </Badge>
+                    )}
                     {account.is_primary && (
                       <Badge variant="default">
                         <Star className="w-3 h-3 mr-1" />
