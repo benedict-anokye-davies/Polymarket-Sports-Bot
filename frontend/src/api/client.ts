@@ -7,6 +7,9 @@ import { logger } from '@/lib/logger';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sports-bot-production.up.railway.app/api/v1';
 
+// Debug log the API URL on startup
+console.log('[API Client] Base URL:', API_BASE_URL);
+
 const DEFAULT_TIMEOUT_MS = 30000;
 
 interface ApiError {
@@ -194,6 +197,7 @@ class ApiClient {
 
       // Handle network errors (Failed to fetch)
       if (err instanceof TypeError) {
+        console.error('[API Client] Network error:', err.message, err);
         // Check if the user is offline
         if (!navigator.onLine) {
           throw new Error('You appear to be offline. Please check your internet connection and try again.');
