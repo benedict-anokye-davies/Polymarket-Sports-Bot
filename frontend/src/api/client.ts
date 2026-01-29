@@ -5,7 +5,7 @@
 
 import { logger } from '@/lib/logger';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sports-bot-production.up.railway.app/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://combinations-speed-generations-symbols.trycloudflare.com/api/v1';
 
 // Debug log the API URL on startup
 console.log('[API Client] Base URL:', API_BASE_URL);
