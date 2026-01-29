@@ -42,7 +42,6 @@ from src.api.routes.trading import router as trading_router
 from src.api.routes.logs import router as logs_router
 from src.api.routes.market_config import router as market_config_router
 from src.api.routes.analytics import router as analytics_router
-from src.api.routes.backtest import router as backtest_router
 from src.api.routes.accounts import router as accounts_router
 from src.api.routes.websocket import router as websocket_router
 from src.api.routes.advanced import router as advanced_router
@@ -197,17 +196,35 @@ app = FastAPI(
 )
 
 # Production middleware stack (order matters - last added = first executed)
-# ALL MIDDLEWARE TEMPORARILY DISABLED FOR DEBUGGING
-# The body parsing issue persists - stripping to minimal config
+# All middlewares use pure ASGI implementation to avoid body consumption issues
 
-# CORS only - this is essential and known to work
+# 1. CORS (must be outermost for preflight requests)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins temporarily for debugging
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=app_settings.cors_origins_list,
+    allow_credentials=app_settings.cors_allow_credentials,
+    allow_methods=app_settings.cors_allow_methods.split(","),
+    allow_headers=app_settings.cors_allow_headers.split(","),
 )
+
+# 2. Security headers (OWASP recommended headers)
+security_config = create_security_headers_config(
+    debug=app_settings.debug,
+    allowed_origins=app_settings.cors_origins_list,
+)
+app.add_middleware(SecurityHeadersMiddleware, config=security_config)
+
+# 3. Rate limiting (protect against abuse)
+rate_limit_config = RateLimitConfig(
+    requests_per_minute=120,  # 2 requests/second average
+    requests_per_hour=3000,
+    burst_limit=30,
+    exempt_paths=["/health", "/health/detailed", "/health/db", "/docs", "/openapi.json", "/redoc"],
+)
+app.add_middleware(RateLimitMiddleware, config=rate_limit_config)
+
+# 4. Request logging (innermost - logs after processing)
+app.add_middleware(RequestLoggingMiddleware)
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(onboarding_router, prefix="/api/v1")
@@ -218,7 +235,6 @@ app.include_router(trading_router, prefix="/api/v1")
 app.include_router(logs_router, prefix="/api/v1")
 app.include_router(market_config_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
-app.include_router(backtest_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
 app.include_router(websocket_router, prefix="/api/v1")
 app.include_router(advanced_router)

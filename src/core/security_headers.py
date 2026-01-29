@@ -5,15 +5,13 @@ Adds essential security headers to all HTTP responses following OWASP guidelines
 These headers help protect against common web vulnerabilities like XSS, clickjacking,
 content sniffing, and other attacks.
 
-Also includes Origin validation for state-changing requests as CSRF protection
-for JWT-based APIs.
+Uses pure ASGI implementation to avoid request body consumption issues
+that occur with Starlette's BaseHTTPMiddleware.
 """
 
 import logging
 from dataclasses import dataclass, field
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response, JSONResponse
+from starlette.types import ASGIApp, Receive, Send, Scope, Message
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -125,102 +123,40 @@ def create_security_headers_config(
     return config
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+class SecurityHeadersMiddleware:
     """
-    Middleware that adds security headers to HTTP responses.
+    Pure ASGI middleware that adds security headers to HTTP responses.
     
-    Also performs Origin validation for state-changing requests (POST, PUT, DELETE, PATCH)
-    as CSRF protection for JWT-based APIs.
+    Does NOT inherit from BaseHTTPMiddleware to avoid request body
+    consumption issues that break FastAPI's Pydantic parsing.
 
     Usage:
-        app.add_middleware(
-            SecurityHeadersMiddleware,
-            config=SecurityHeadersConfig(),
-        )
+        app.add_middleware(SecurityHeadersMiddleware, config=SecurityHeadersConfig())
     """
 
-    def __init__(self, app, config: SecurityHeadersConfig | None = None):
-        super().__init__(app)
+    def __init__(self, app: ASGIApp, config: SecurityHeadersConfig | None = None):
+        self.app = app
         self.config = config or SecurityHeadersConfig()
-
-    def _validate_origin(self, request: Request) -> bool:
-        """
-        Validates the Origin header for state-changing requests.
         
-        Returns True if origin is valid or validation is not required.
-        """
-        # Skip validation for safe methods
-        if request.method in self.config.csrf_safe_methods:
-            return True
+        # Pre-build security headers for efficiency
+        self._security_headers = self._build_security_headers()
+    
+    def _build_security_headers(self) -> list[tuple[bytes, bytes]]:
+        """Pre-build security headers that don't change per request."""
+        headers = []
         
-        # Skip validation for excluded paths
-        path = request.url.path
-        if any(path.startswith(excluded) for excluded in self.config.csrf_excluded_paths):
-            return True
-        
-        # Get Origin header
-        origin = request.headers.get("origin")
-        
-        # If no origin header, check Referer as fallback
-        if not origin:
-            referer = request.headers.get("referer")
-            if referer:
-                parsed = urlparse(referer)
-                origin = f"{parsed.scheme}://{parsed.netloc}"
-        
-        # If still no origin (e.g., server-to-server request), allow if authenticated
-        # JWT in Authorization header is sufficient protection
-        if not origin:
-            auth_header = request.headers.get("authorization")
-            if auth_header and auth_header.startswith("Bearer "):
-                return True
-            # No origin and no auth - could be direct API call, allow cautiously
-            return True
-        
-        # If we have allowed origins configured, validate against them
-        if self.config.allowed_origins:
-            if origin in self.config.allowed_origins:
-                return True
-            logger.warning(f"CSRF: rejected request from origin {origin}")
-            return False
-        
-        # If no allowed origins configured but validate_origin is True,
-        # only allow same-origin requests
-        host = request.headers.get("host", "")
-        request_origin = f"{request.url.scheme}://{host}"
-        if origin == request_origin:
-            return True
-        
-        logger.warning(f"CSRF: origin mismatch - request origin {origin}, host {request_origin}")
-        return False
-
-    async def dispatch(self, request: Request, call_next) -> Response:
-        # Validate origin for state-changing requests
-        if self.config.validate_origin and not self._validate_origin(request):
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Invalid request origin"}
-            )
-        
-        response = await call_next(request)
-
-        # Check if path is excluded
-        path = request.url.path
-        if any(path.startswith(excluded) for excluded in self.config.excluded_paths):
-            return response
-
         # X-Content-Type-Options
         if self.config.x_content_type_options:
-            response.headers["X-Content-Type-Options"] = self.config.x_content_type_options
-
+            headers.append((b"x-content-type-options", self.config.x_content_type_options.encode()))
+        
         # X-Frame-Options
         if self.config.x_frame_options:
-            response.headers["X-Frame-Options"] = self.config.x_frame_options
-
+            headers.append((b"x-frame-options", self.config.x_frame_options.encode()))
+        
         # X-XSS-Protection
         if self.config.x_xss_protection:
-            response.headers["X-XSS-Protection"] = self.config.x_xss_protection
-
+            headers.append((b"x-xss-protection", self.config.x_xss_protection.encode()))
+        
         # Strict-Transport-Security (HSTS)
         if self.config.hsts_enabled:
             hsts_value = f"max-age={self.config.hsts_max_age}"
@@ -228,30 +164,54 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 hsts_value += "; includeSubDomains"
             if self.config.hsts_preload:
                 hsts_value += "; preload"
-            response.headers["Strict-Transport-Security"] = hsts_value
-
+            headers.append((b"strict-transport-security", hsts_value.encode()))
+        
         # Referrer-Policy
         if self.config.referrer_policy:
-            response.headers["Referrer-Policy"] = self.config.referrer_policy
-
+            headers.append((b"referrer-policy", self.config.referrer_policy.encode()))
+        
         # Content-Security-Policy
         if self.config.csp_enabled and self.config.csp_directives:
-            csp_parts = []
-            for directive, value in self.config.csp_directives.items():
-                csp_parts.append(f"{directive} {value}")
-            response.headers["Content-Security-Policy"] = "; ".join(csp_parts)
-
+            csp_parts = [f"{directive} {value}" for directive, value in self.config.csp_directives.items()]
+            headers.append((b"content-security-policy", "; ".join(csp_parts).encode()))
+        
         # Permissions-Policy
         if self.config.permissions_policy_enabled and self.config.permissions_policy:
-            policy_parts = []
-            for feature, value in self.config.permissions_policy.items():
-                policy_parts.append(f"{feature}={value}")
-            response.headers["Permissions-Policy"] = ", ".join(policy_parts)
-
-        # Cache-Control for API responses
-        if self.config.cache_control_private and path.startswith("/api"):
-            # Don't cache API responses by default
-            if "Cache-Control" not in response.headers:
-                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
-
-        return response
+            policy_parts = [f"{feature}={value}" for feature, value in self.config.permissions_policy.items()]
+            headers.append((b"permissions-policy", ", ".join(policy_parts).encode()))
+        
+        return headers
+    
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """ASGI interface - add security headers to responses."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        
+        path = scope.get("path", "")
+        
+        # Check if path is excluded
+        if any(path.startswith(excluded) for excluded in self.config.excluded_paths):
+            await self.app(scope, receive, send)
+            return
+        
+        # Wrap send to add security headers
+        async def send_with_security_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                
+                # Add all security headers
+                headers.extend(self._security_headers)
+                
+                # Add Cache-Control for API responses
+                if self.config.cache_control_private and path.startswith("/api"):
+                    # Check if Cache-Control already set
+                    has_cache_control = any(h[0].lower() == b"cache-control" for h in headers)
+                    if not has_cache_control:
+                        headers.append((b"cache-control", b"no-store, no-cache, must-revalidate, private"))
+                
+                message = {**message, "headers": headers}
+            
+            await send(message)
+        
+        await self.app(scope, receive, send_with_security_headers)

@@ -1,17 +1,21 @@
 """
 Rate limiting middleware for API protection.
 Implements sliding window rate limiting with per-IP and per-user limits.
+
+Uses pure ASGI implementation to avoid request body consumption issues
+that occur with Starlette's BaseHTTPMiddleware.
 """
 
 import asyncio
 import time
+import json
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Awaitable
 import logging
 
-from fastapi import Request, Response, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import Request, HTTPException
+from starlette.types import ASGIApp, Receive, Send, Scope, Message
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 
 
@@ -179,36 +183,42 @@ class RateLimiter:
         }
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
+class RateLimitMiddleware:
     """
-    FastAPI middleware that enforces rate limits on incoming requests.
+    Pure ASGI middleware that enforces rate limits on incoming requests.
+    
+    Does NOT inherit from BaseHTTPMiddleware to avoid request body
+    consumption issues that break FastAPI's Pydantic parsing.
     
     Features:
     - Per-IP rate limiting for unauthenticated requests
-    - Per-user rate limiting for authenticated requests
     - Configurable exempt paths
     - Rate limit headers in responses
     """
     
     def __init__(
         self,
-        app,
+        app: ASGIApp,
         config: RateLimitConfig | None = None,
-        get_user_id: Callable[[Request], str | None] | None = None
     ):
-        super().__init__(app)
+        self.app = app
         self.config = config or RateLimitConfig()
         self.limiter = RateLimiter(self.config)
-        self._get_user_id = get_user_id
     
-    async def dispatch(self, request: Request, call_next) -> Response:
-        """Process request through rate limiter."""
-        # Skip exempt paths
-        if request.url.path in self.config.exempt_paths:
-            return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """ASGI interface - process request through rate limiter."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
         
-        # Determine client identifier
-        client_id = self._get_client_id(request)
+        # Skip exempt paths
+        path = scope.get("path", "")
+        if path in self.config.exempt_paths:
+            await self.app(scope, receive, send)
+            return
+        
+        # Get client identifier from scope
+        client_id = self._get_client_id(scope)
         
         # Check rate limit
         is_allowed, limit_info = await self.limiter.check_rate_limit(client_id)
@@ -222,61 +232,79 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 f"retry after {retry_after}s"
             )
             
-            raise HTTPException(
-                status_code=HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "error": "rate_limit_exceeded",
-                    "limit_type": exceeded,
-                    "retry_after": retry_after,
-                    "message": f"Too many requests. Please retry after {retry_after} seconds."
-                },
-                headers={
-                    "Retry-After": str(retry_after),
-                    "X-RateLimit-Limit": str(limit_info.get(f"{exceeded}_limit", 0)),
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(int(time.time() + retry_after)),
-                }
-            )
+            # Send 429 response directly
+            await self._send_rate_limit_response(send, retry_after, exceeded, limit_info)
+            return
         
-        # Process request
-        response = await call_next(request)
+        # Wrap send to add rate limit headers
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend([
+                    (b"x-ratelimit-limit-minute", str(self.config.requests_per_minute).encode()),
+                    (b"x-ratelimit-remaining-minute", str(limit_info.get("remaining_minute", 0)).encode()),
+                    (b"x-ratelimit-limit-hour", str(self.config.requests_per_hour).encode()),
+                    (b"x-ratelimit-remaining-hour", str(limit_info.get("remaining_hour", 0)).encode()),
+                ])
+                message = {**message, "headers": headers}
+            await send(message)
         
-        # Add rate limit headers to successful responses
-        response.headers["X-RateLimit-Limit-Minute"] = str(self.config.requests_per_minute)
-        response.headers["X-RateLimit-Remaining-Minute"] = str(
-            limit_info.get("remaining_minute", 0)
-        )
-        response.headers["X-RateLimit-Limit-Hour"] = str(self.config.requests_per_hour)
-        response.headers["X-RateLimit-Remaining-Hour"] = str(
-            limit_info.get("remaining_hour", 0)
-        )
-        
-        return response
+        await self.app(scope, receive, send_with_headers)
     
-    def _get_client_id(self, request: Request) -> str:
-        """
-        Extract client identifier from request.
-        Uses user ID if authenticated, otherwise IP address.
-        """
-        # Try to get user ID from custom function
-        if self._get_user_id:
-            user_id = self._get_user_id(request)
-            if user_id:
-                return f"user:{user_id}"
+    async def _send_rate_limit_response(
+        self,
+        send: Send,
+        retry_after: int,
+        exceeded: str,
+        limit_info: dict
+    ) -> None:
+        """Send a 429 Too Many Requests response."""
+        body = json.dumps({
+            "detail": {
+                "error": "rate_limit_exceeded",
+                "limit_type": exceeded,
+                "retry_after": retry_after,
+                "message": f"Too many requests. Please retry after {retry_after} seconds."
+            }
+        }).encode()
         
-        # Try to get user ID from request state (set by auth middleware)
-        if hasattr(request.state, "user_id"):
-            return f"user:{request.state.user_id}"
+        headers = [
+            (b"content-type", b"application/json"),
+            (b"retry-after", str(retry_after).encode()),
+            (b"x-ratelimit-limit", str(limit_info.get(f"{exceeded}_limit", 0)).encode()),
+            (b"x-ratelimit-remaining", b"0"),
+            (b"x-ratelimit-reset", str(int(time.time() + retry_after)).encode()),
+        ]
         
-        # Fall back to IP address
-        forwarded = request.headers.get("X-Forwarded-For")
+        await send({
+            "type": "http.response.start",
+            "status": HTTP_429_TOO_MANY_REQUESTS,
+            "headers": headers,
+        })
+        await send({
+            "type": "http.response.body",
+            "body": body,
+        })
+    
+    def _get_client_id(self, scope: Scope) -> str:
+        """
+        Extract client identifier from ASGI scope.
+        Uses IP address from headers or connection info.
+        """
+        headers = dict(scope.get("headers", []))
+        
+        # Check X-Forwarded-For header (for proxied requests)
+        forwarded = headers.get(b"x-forwarded-for", b"").decode()
         if forwarded:
-            # Take the first IP in the chain (original client)
             ip = forwarded.split(",")[0].strip()
-        else:
-            ip = request.client.host if request.client else "unknown"
+            return f"ip:{ip}"
         
-        return f"ip:{ip}"
+        # Fall back to direct client IP
+        client = scope.get("client")
+        if client:
+            return f"ip:{client[0]}"
+        
+        return "ip:unknown"
 
 
 # Default rate limiter instance
@@ -345,7 +373,7 @@ def create_rate_limit_middleware(
     requests_per_hour: int = 1000,
     burst_limit: int = 20,
     exempt_paths: list[str] | None = None,
-) -> RateLimitMiddleware:
+) -> Callable[[ASGIApp], RateLimitMiddleware]:
     """
     Factory function to create rate limit middleware with custom config.
     
@@ -356,7 +384,7 @@ def create_rate_limit_middleware(
         exempt_paths: URL paths to exempt from limiting
     
     Returns:
-        Configured RateLimitMiddleware instance
+        Callable that creates a configured RateLimitMiddleware instance
     """
     config = RateLimitConfig(
         requests_per_minute=requests_per_minute,

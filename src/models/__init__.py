@@ -8,7 +8,6 @@ from src.models.trade import Trade
 from src.models.global_settings import GlobalSettings
 from src.models.activity_log import ActivityLog
 from src.models.market_config import MarketConfig
-from src.models.backtest import PriceSnapshot, BacktestResult
 from src.models.refresh_token import RefreshToken
 
 __all__ = [
@@ -21,7 +20,5 @@ __all__ = [
     "GlobalSettings",
     "ActivityLog",
     "MarketConfig",
-    "PriceSnapshot",
-    "BacktestResult",
     "RefreshToken",
 ]

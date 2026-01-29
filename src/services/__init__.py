@@ -31,7 +31,6 @@ __all__ = [
     "KellyCalculator",
     "AnalyticsService",
     "AccountManager",
-    "Backtester",
 ]
 
 
@@ -88,8 +87,5 @@ def __getattr__(name: str):
     elif name == "AccountManager":
         from src.services.account_manager import AccountManager
         return AccountManager
-    elif name == "Backtester":
-        from src.services.backtester import Backtester
-        return Backtester
     
     raise AttributeError(f"module 'src.services' has no attribute '{name}'")
