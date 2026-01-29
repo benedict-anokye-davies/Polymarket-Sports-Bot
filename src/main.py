@@ -197,48 +197,17 @@ app = FastAPI(
 )
 
 # Production middleware stack (order matters - last added = first executed)
-# TEMPORARILY DISABLED due to BaseHTTPMiddleware body consumption bug
-# TODO: Convert all middlewares to pure ASGI to fix body parsing issues
+# ALL MIDDLEWARE TEMPORARILY DISABLED FOR DEBUGGING
+# The body parsing issue persists - stripping to minimal config
 
-# 1. Rate limiting - DISABLED
-# app.add_middleware(
-#     RateLimitMiddleware,
-#     config=RateLimitConfig(
-#         requests_per_minute=app_settings.rate_limit_requests_per_minute,
-#         requests_per_hour=app_settings.rate_limit_requests_per_hour,
-#         burst_limit=app_settings.rate_limit_burst,
-#     ),
-# )
-
-# 2. Request validation - DISABLED
-# app.add_middleware(
-#     RequestValidationMiddleware,
-#     config=create_validation_config(max_body_mb=10, strict_mode=False),
-# )
-
-# 3. Request logging - observability (pure ASGI, safe)
-app.add_middleware(RequestLoggingMiddleware)
-
-# 4. CORS - handle cross-origin requests (Starlette built-in, safe)
+# CORS only - this is essential and known to work
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=app_settings.cors_origins_list,
-    allow_credentials=app_settings.cors_allow_credentials,
-    allow_methods=app_settings.cors_methods_list,
-    allow_headers=app_settings.cors_headers_list,
+    allow_origins=["*"],  # Allow all origins temporarily for debugging
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-# 5. Security Headers - DISABLED due to BaseHTTPMiddleware issues
-# app.add_middleware(
-#     SecurityHeadersMiddleware,
-#     config=create_security_headers_config(
-#         debug=app_settings.debug,
-#         allowed_origins=app_settings.cors_origins_list,
-#     ),
-# )
-
-# 6. GZip compression - reduce response sizes for better performance
-app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(onboarding_router, prefix="/api/v1")
