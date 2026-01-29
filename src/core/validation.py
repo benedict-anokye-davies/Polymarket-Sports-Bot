@@ -183,6 +183,8 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
     - Content type
     - JSON depth
     - Common attack patterns
+    
+    Note: Uses body caching to prevent body consumption issues with BaseHTTPMiddleware.
     """
     
     def __init__(self, app, config: ValidationConfig | None = None):
@@ -197,7 +199,13 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         """Process and validate the request."""
         try:
-            await self._validate_request(request)
+            # Cache the body so it can be read multiple times
+            body = await request.body()
+            
+            # Store body in request state for potential re-reading
+            request.state._body = body
+            
+            await self._validate_request(request, body)
             return await call_next(request)
         except RequestValidationError as e:
             logger.warning(f"Request validation failed: {e.message}")
@@ -212,7 +220,7 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
             logger.error(f"Validation middleware error: {e}")
             return await call_next(request)
     
-    async def _validate_request(self, request: Request) -> None:
+    async def _validate_request(self, request: Request, body: bytes | None = None) -> None:
         """Run all validation checks."""
         # URL length check
         url_length = len(str(request.url))
@@ -278,12 +286,14 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
         if request.method in ("POST", "PUT", "PATCH"):
             content_type = request.headers.get("content-type", "")
             if "application/json" in content_type:
-                await self._validate_json_body(request)
+                await self._validate_json_body(request, body)
     
-    async def _validate_json_body(self, request: Request) -> None:
+    async def _validate_json_body(self, request: Request, body: bytes | None = None) -> None:
         """Validate JSON request body."""
         try:
-            body = await request.body()
+            # Use passed body or read from request
+            if body is None:
+                body = await request.body()
             
             if len(body) > self._config.max_body_size_bytes:
                 raise RequestValidationError(
