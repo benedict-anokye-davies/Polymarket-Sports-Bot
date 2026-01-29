@@ -1,12 +1,22 @@
 """
 Account Manager service - handles multi-account allocation and routing.
 Manages multiple Polymarket/Kalshi accounts with configurable allocation.
+
+Features:
+- Multiple trading accounts per user
+- Configurable allocation percentages
+- Parallel order execution across accounts
+- Account health monitoring with automatic failover
+- Balance aggregation across accounts
 """
 
+import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+from enum import Enum
+from typing import TYPE_CHECKING, Optional, Any
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -17,6 +27,15 @@ if TYPE_CHECKING:
     from src.services.kalshi_client import KalshiClient
 
 logger = logging.getLogger(__name__)
+
+
+class AllocationStrategy(str, Enum):
+    """Strategies for distributing trades across accounts."""
+    PERCENTAGE = "percentage"  # Based on allocation_pct
+    EQUAL = "equal"  # Split equally across active accounts
+    BALANCE_WEIGHTED = "balance_weighted"  # Proportional to account balance
+    SINGLE = "single"  # Use single account (primary or specified)
+    ROUND_ROBIN = "round_robin"  # Rotate through accounts
 
 
 @dataclass
@@ -38,6 +57,35 @@ class AllocationResult:
     primary_account_id: Optional[UUID]
 
 
+@dataclass
+class AccountHealth:
+    """Health status for a trading account."""
+    account_id: str
+    is_healthy: bool
+    consecutive_errors: int = 0
+    last_error: str | None = None
+    last_success_at: datetime | None = None
+    last_error_at: datetime | None = None
+
+
+@dataclass
+class ParallelOrderResult:
+    """Result of executing orders across multiple accounts."""
+    order_id: str = field(default_factory=lambda: str(UUID(int=0)))
+    total_size: float = 0
+    filled_size: float = 0
+    account_results: dict[str, dict] = field(default_factory=dict)
+    status: str = "pending"  # pending, partial, filled, failed
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    
+    @property
+    def fill_rate(self) -> float:
+        """Percentage of order filled."""
+        if self.total_size == 0:
+            return 0
+        return self.filled_size / self.total_size
+
+
 class AccountManager:
     """
     Manages multiple trading accounts with allocation strategies.
@@ -47,13 +95,19 @@ class AccountManager:
     - Allocate trades across accounts by percentage
     - Route orders to correct account
     - Track per-account balances and positions
+    - Execute orders in parallel across multiple accounts
+    - Monitor account health and handle failover
     """
+    
+    MAX_CONSECUTIVE_ERRORS = 3  # Disable account after this many errors
     
     def __init__(self, db: AsyncSession, user_id: UUID):
         self.db = db
         self.user_id = user_id
         self._accounts_cache: list = []
         self._clients_cache: dict = {}
+        self._health_status: dict[str, AccountHealth] = {}
+        self._round_robin_index: int = 0
     
     async def get_active_accounts(self) -> list:
         """
@@ -408,3 +462,282 @@ class AccountManager:
             "allocation_valid": abs(total_allocation - 100) < 0.01,
             "total_allocation_pct": round(total_allocation, 2),
         }
+    
+    # -------------------------------------------------------------------------
+    # Parallel Order Execution
+    # -------------------------------------------------------------------------
+    
+    async def execute_parallel_order(
+        self,
+        token_id: str,
+        side: str,
+        total_size: float,
+        price: float,
+        strategy: AllocationStrategy = AllocationStrategy.PERCENTAGE,
+        account_ids: list[UUID] | None = None
+    ) -> ParallelOrderResult:
+        """
+        Execute an order across multiple accounts in parallel.
+        
+        Args:
+            token_id: Token to trade
+            side: "BUY" or "SELL"
+            total_size: Total size to trade
+            price: Limit price
+            strategy: Allocation strategy
+            account_ids: Specific accounts to use (None = all active)
+        
+        Returns:
+            ParallelOrderResult with execution details
+        """
+        import uuid as uuid_module
+        
+        accounts = await self.get_active_accounts()
+        
+        # Filter by specified account_ids if provided
+        if account_ids:
+            accounts = [a for a in accounts if a.id in account_ids]
+        
+        # Filter out unhealthy accounts
+        healthy_accounts = []
+        for acc in accounts:
+            health = self._health_status.get(str(acc.id))
+            if health and health.consecutive_errors >= self.MAX_CONSECUTIVE_ERRORS:
+                logger.warning(f"Skipping unhealthy account {acc.id}")
+                continue
+            healthy_accounts.append(acc)
+        
+        if not healthy_accounts:
+            logger.error("No healthy accounts available for order")
+            return ParallelOrderResult(
+                order_id=str(uuid_module.uuid4()),
+                total_size=total_size,
+                status="failed"
+            )
+        
+        # Calculate allocations based on strategy
+        allocations = self._calculate_allocations(
+            healthy_accounts, total_size, strategy
+        )
+        
+        result = ParallelOrderResult(
+            order_id=str(uuid_module.uuid4()),
+            total_size=total_size,
+            status="pending"
+        )
+        
+        # Execute orders in parallel
+        tasks = []
+        for account, size in allocations:
+            if size <= 0:
+                continue
+            result.account_results[str(account.id)] = {
+                "account_name": account.account_name or "Primary",
+                "size": size,
+                "status": "pending"
+            }
+            tasks.append(
+                self._execute_single_order(account, token_id, side, size, price, result)
+            )
+        
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Calculate totals and status
+        filled = sum(
+            r.get("filled_size", 0) 
+            for r in result.account_results.values()
+        )
+        result.filled_size = filled
+        
+        success_count = sum(
+            1 for r in result.account_results.values() 
+            if r.get("status") == "filled"
+        )
+        
+        if success_count == len(result.account_results):
+            result.status = "filled"
+        elif success_count > 0:
+            result.status = "partial"
+        else:
+            result.status = "failed"
+        
+        logger.info(
+            f"Parallel order {result.order_id[:8]}...: "
+            f"{success_count}/{len(result.account_results)} accounts filled, "
+            f"total {result.filled_size}/{result.total_size}"
+        )
+        
+        return result
+    
+    def _calculate_allocations(
+        self,
+        accounts: list,
+        total_size: float,
+        strategy: AllocationStrategy
+    ) -> list[tuple[Any, float]]:
+        """Calculate size allocation for each account based on strategy."""
+        if not accounts:
+            return []
+        
+        allocations = []
+        
+        if strategy == AllocationStrategy.PERCENTAGE:
+            total_pct = sum(float(a.allocation_pct or 100) for a in accounts)
+            for acc in accounts:
+                pct = float(acc.allocation_pct or 100) / total_pct if total_pct > 0 else 1/len(accounts)
+                allocations.append((acc, total_size * pct))
+        
+        elif strategy == AllocationStrategy.EQUAL:
+            per_account = total_size / len(accounts)
+            for acc in accounts:
+                allocations.append((acc, per_account))
+        
+        elif strategy == AllocationStrategy.BALANCE_WEIGHTED:
+            # Get cached balances
+            total_balance = sum(
+                float(a.last_balance_usdc or 0) for a in accounts
+            )
+            for acc in accounts:
+                if total_balance > 0:
+                    weight = float(acc.last_balance_usdc or 0) / total_balance
+                else:
+                    weight = 1 / len(accounts)
+                allocations.append((acc, total_size * weight))
+        
+        elif strategy == AllocationStrategy.SINGLE:
+            # Use primary account
+            primary = next((a for a in accounts if a.is_primary), accounts[0])
+            allocations.append((primary, total_size))
+        
+        elif strategy == AllocationStrategy.ROUND_ROBIN:
+            idx = self._round_robin_index % len(accounts)
+            allocations.append((accounts[idx], total_size))
+            self._round_robin_index += 1
+        
+        return allocations
+    
+    async def _execute_single_order(
+        self,
+        account,
+        token_id: str,
+        side: str,
+        size: float,
+        price: float,
+        result: ParallelOrderResult
+    ) -> None:
+        """Execute order on a single account and update result."""
+        account_id = str(account.id)
+        
+        try:
+            client = await self.get_client_for_account(account.id)
+            if not client:
+                result.account_results[account_id].update({
+                    "status": "failed",
+                    "error": "Failed to get client"
+                })
+                self._record_error(account_id, "Failed to get client")
+                return
+            
+            order_result = await client.place_order(
+                token_id=token_id,
+                side=side,
+                price=price,
+                size=size
+            )
+            
+            order_id = order_result.get("id") or order_result.get("orderID")
+            
+            result.account_results[account_id].update({
+                "status": "filled",
+                "order_id": order_id,
+                "filled_size": size,
+                "filled_price": price
+            })
+            
+            self._record_success(account_id)
+            
+            logger.info(
+                f"Account {account_id[:8]}... order filled: "
+                f"{side} {size} @ {price}"
+            )
+            
+        except Exception as e:
+            error_msg = str(e)
+            result.account_results[account_id].update({
+                "status": "failed",
+                "error": error_msg
+            })
+            self._record_error(account_id, error_msg)
+            logger.error(f"Account {account_id[:8]}... order failed: {e}")
+    
+    def _record_success(self, account_id: str) -> None:
+        """Record successful operation for an account."""
+        if account_id not in self._health_status:
+            self._health_status[account_id] = AccountHealth(
+                account_id=account_id,
+                is_healthy=True
+            )
+        
+        health = self._health_status[account_id]
+        health.consecutive_errors = 0
+        health.is_healthy = True
+        health.last_success_at = datetime.now(timezone.utc)
+    
+    def _record_error(self, account_id: str, error: str) -> None:
+        """Record error for an account."""
+        if account_id not in self._health_status:
+            self._health_status[account_id] = AccountHealth(
+                account_id=account_id,
+                is_healthy=True
+            )
+        
+        health = self._health_status[account_id]
+        health.consecutive_errors += 1
+        health.last_error = error
+        health.last_error_at = datetime.now(timezone.utc)
+        
+        if health.consecutive_errors >= self.MAX_CONSECUTIVE_ERRORS:
+            health.is_healthy = False
+            logger.warning(
+                f"Account {account_id[:8]}... marked unhealthy after "
+                f"{health.consecutive_errors} consecutive errors"
+            )
+    
+    def get_account_health(self, account_id: str | None = None) -> dict:
+        """
+        Get health status for one or all accounts.
+        
+        Args:
+            account_id: Specific account (None = all accounts)
+        
+        Returns:
+            Dict with health information
+        """
+        if account_id:
+            health = self._health_status.get(account_id)
+            if health:
+                return {
+                    "account_id": health.account_id,
+                    "is_healthy": health.is_healthy,
+                    "consecutive_errors": health.consecutive_errors,
+                    "last_error": health.last_error,
+                    "last_success_at": health.last_success_at.isoformat() if health.last_success_at else None,
+                    "last_error_at": health.last_error_at.isoformat() if health.last_error_at else None
+                }
+            return {"account_id": account_id, "is_healthy": True, "consecutive_errors": 0}
+        
+        return {
+            account_id: self.get_account_health(account_id)
+            for account_id in self._health_status.keys()
+        }
+    
+    def reset_account_health(self, account_id: str) -> None:
+        """Reset health status for an account (manual recovery)."""
+        if account_id in self._health_status:
+            health = self._health_status[account_id]
+            health.consecutive_errors = 0
+            health.is_healthy = True
+            health.last_error = None
+            logger.info(f"Account {account_id[:8]}... health reset")
+
