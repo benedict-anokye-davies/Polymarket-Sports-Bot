@@ -257,15 +257,32 @@ class LeagueEnableResponse(BaseModel):
     message: str
 
 
-class UserLeagueStatus(BaseModel):
-    """Shows all leagues and their configuration status for a user."""
-    league_id: str
+class UserLeagueConfig(BaseModel):
+    """Configuration for a single league the user has set up."""
+    league_key: str
+    enabled: bool
+    entry_threshold_drop: Decimal | None = None
+    entry_threshold_absolute: Decimal | None = None
+    take_profit_pct: Decimal | None = None
+    stop_loss_pct: Decimal | None = None
+    position_size_usdc: Decimal | None = None
+    min_time_remaining_seconds: int | None = None
+    max_positions: int | None = None
+
+
+class LeagueInfo(BaseModel):
+    """Basic information about a league."""
+    league_key: str
     display_name: str
     sport_type: str
-    is_configured: bool
-    is_enabled: bool
-    position_size_usdc: Decimal | None = None
-    entry_threshold_drop: Decimal | None = None
+
+
+class UserLeagueStatus(BaseModel):
+    """Shows all leagues and their configuration status for a user."""
+    configured_leagues: list[UserLeagueConfig]
+    available_leagues: list[LeagueInfo]
+    enabled_count: int
+    total_available: int
 
 
 class GlobalSettingsUpdate(BaseModel):

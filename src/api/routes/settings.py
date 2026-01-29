@@ -442,17 +442,19 @@ async def bulk_enable_leagues(
     )
 
 
-@router.get("/leagues/status", response_model=list[UserLeagueStatus])
+@router.get("/leagues/status", response_model=UserLeagueStatus)
 async def get_user_league_status(
     db: DbSession,
     current_user: CurrentUser
-) -> list[UserLeagueStatus]:
+) -> UserLeagueStatus:
     """
     Returns all available leagues with their configuration status for the user.
     
     Shows which leagues the user has configured, which are enabled,
     and basic config info for each.
     """
+    from src.schemas.settings import UserLeagueConfig, LeagueInfo
+    
     # Get all user's sport configs
     user_configs = await SportConfigCRUD.get_all_for_user(db, current_user.id)
     config_map = {c.sport: c for c in user_configs}
@@ -460,24 +462,48 @@ async def get_user_league_status(
     # Get league display names from ESPN service
     league_names = ESPNService.LEAGUE_DISPLAY_NAMES
     
-    result = []
+    configured_leagues = []
+    available_leagues = []
+    enabled_count = 0
+    
     for league_id, sport_type in LEAGUE_SPORT_TYPE_MAP.items():
         config = config_map.get(league_id)
+        display_name = league_names.get(league_id, league_id.upper())
         
-        result.append(UserLeagueStatus(
-            league_id=league_id,
-            display_name=league_names.get(league_id, league_id.upper()),
-            sport_type=sport_type,
-            is_configured=config is not None,
-            is_enabled=config.enabled if config else False,
-            position_size_usdc=config.position_size_usdc if config else None,
-            entry_threshold_drop=config.entry_threshold_drop if config else None,
-        ))
+        if config:
+            # User has configured this league
+            configured_leagues.append(UserLeagueConfig(
+                league_key=league_id,
+                enabled=config.enabled,
+                entry_threshold_drop=config.entry_threshold_drop,
+                entry_threshold_absolute=config.entry_threshold_absolute,
+                take_profit_pct=config.take_profit_pct,
+                stop_loss_pct=config.stop_loss_pct,
+                position_size_usdc=config.position_size_usdc,
+                min_time_remaining_seconds=int(config.min_time_remaining_seconds) if config.min_time_remaining_seconds else None,
+                max_positions=int(config.max_concurrent_positions) if config.max_concurrent_positions else None,
+            ))
+            if config.enabled:
+                enabled_count += 1
+        else:
+            # League is available but not configured
+            available_leagues.append(LeagueInfo(
+                league_key=league_id,
+                display_name=display_name,
+                sport_type=sport_type,
+            ))
     
-    # Sort: enabled first, then configured, then alphabetical
-    result.sort(key=lambda x: (not x.is_enabled, not x.is_configured, x.display_name))
+    # Sort configured leagues: enabled first, then alphabetically
+    configured_leagues.sort(key=lambda x: (not x.enabled, x.league_key))
+    # Sort available leagues alphabetically
+    available_leagues.sort(key=lambda x: x.display_name)
     
-    return result
+    return UserLeagueStatus(
+        configured_leagues=configured_leagues,
+        available_leagues=available_leagues,
+        enabled_count=enabled_count,
+        total_available=len(LEAGUE_SPORT_TYPE_MAP)
+    )
 
 
 @router.delete("/leagues/{league}")
