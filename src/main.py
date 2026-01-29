@@ -197,27 +197,29 @@ app = FastAPI(
 )
 
 # Production middleware stack (order matters - last added = first executed)
-# 1. Rate limiting - protect against abuse (uses config from environment)
-app.add_middleware(
-    RateLimitMiddleware,
-    config=RateLimitConfig(
-        requests_per_minute=app_settings.rate_limit_requests_per_minute,
-        requests_per_hour=app_settings.rate_limit_requests_per_hour,
-        burst_limit=app_settings.rate_limit_burst,
-    ),
-)
+# TEMPORARILY DISABLED due to BaseHTTPMiddleware body consumption bug
+# TODO: Convert all middlewares to pure ASGI to fix body parsing issues
 
-# 2. Request validation - DISABLED due to body consumption issue with BaseHTTPMiddleware
-# TODO: Re-implement using pure ASGI middleware to avoid body stream issues
+# 1. Rate limiting - DISABLED
+# app.add_middleware(
+#     RateLimitMiddleware,
+#     config=RateLimitConfig(
+#         requests_per_minute=app_settings.rate_limit_requests_per_minute,
+#         requests_per_hour=app_settings.rate_limit_requests_per_hour,
+#         burst_limit=app_settings.rate_limit_burst,
+#     ),
+# )
+
+# 2. Request validation - DISABLED
 # app.add_middleware(
 #     RequestValidationMiddleware,
 #     config=create_validation_config(max_body_mb=10, strict_mode=False),
 # )
 
-# 3. Request logging - observability
+# 3. Request logging - observability (pure ASGI, safe)
 app.add_middleware(RequestLoggingMiddleware)
 
-# 4. CORS - handle cross-origin requests (REQ-SEC-004: Configurable CORS)
+# 4. CORS - handle cross-origin requests (Starlette built-in, safe)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=app_settings.cors_origins_list,
@@ -226,15 +228,14 @@ app.add_middleware(
     allow_headers=app_settings.cors_headers_list,
 )
 
-# 5. Security Headers - protect against common web vulnerabilities (REQ-SEC-008)
-# Also includes Origin validation for CSRF protection on state-changing requests
-app.add_middleware(
-    SecurityHeadersMiddleware,
-    config=create_security_headers_config(
-        debug=app_settings.debug,
-        allowed_origins=app_settings.cors_origins_list,
-    ),
-)
+# 5. Security Headers - DISABLED due to BaseHTTPMiddleware issues
+# app.add_middleware(
+#     SecurityHeadersMiddleware,
+#     config=create_security_headers_config(
+#         debug=app_settings.debug,
+#         allowed_origins=app_settings.cors_origins_list,
+#     ),
+# )
 
 # 6. GZip compression - reduce response sizes for better performance
 app.add_middleware(GZipMiddleware, minimum_size=1000)
