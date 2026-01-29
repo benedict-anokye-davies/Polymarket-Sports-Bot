@@ -207,11 +207,12 @@ app.add_middleware(
     ),
 )
 
-# 2. Request validation - sanitize inputs
-app.add_middleware(
-    RequestValidationMiddleware,
-    config=create_validation_config(max_body_mb=10, strict_mode=False),
-)
+# 2. Request validation - DISABLED due to body consumption issue with BaseHTTPMiddleware
+# TODO: Re-implement using pure ASGI middleware to avoid body stream issues
+# app.add_middleware(
+#     RequestValidationMiddleware,
+#     config=create_validation_config(max_body_mb=10, strict_mode=False),
+# )
 
 # 3. Request logging - observability
 app.add_middleware(RequestLoggingMiddleware)
