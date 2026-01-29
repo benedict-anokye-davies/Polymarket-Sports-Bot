@@ -12,8 +12,7 @@ import {
   ChevronRight,
   Bot,
   BarChart3,
-  Users,
-  FlaskConical
+  Users
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/useAppStore';
@@ -27,7 +26,6 @@ const navItems = [
   { path: '/positions', label: 'Positions', icon: Briefcase },
   { path: '/history', label: 'History', icon: Clock },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { path: '/backtesting', label: 'Backtesting', icon: FlaskConical },
   { path: '/accounts', label: 'Accounts', icon: Users },
   { path: '/settings', label: 'Settings', icon: Settings },
   { path: '/logs', label: 'Activity Logs', icon: Terminal },
