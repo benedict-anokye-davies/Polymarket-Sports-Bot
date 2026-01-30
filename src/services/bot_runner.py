@@ -8,7 +8,7 @@ import logging
 import uuid
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import Any, Callable
+from typing import Any, Callable, Union
 from dataclasses import dataclass, field
 from enum import Enum
 from uuid import UUID
@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services.polymarket_ws import PolymarketWebSocket, PriceUpdate
 from src.services.polymarket_client import PolymarketClient
+from src.services.kalshi_client import KalshiClient
 from src.services.espn_service import ESPNService
 from src.services.trading_engine import TradingEngine
 from src.services.market_discovery import market_discovery, DiscoveredMarket
@@ -105,16 +106,16 @@ class BotRunner:
     
     def __init__(
         self,
-        polymarket_client: PolymarketClient,
+        trading_client: Union[PolymarketClient, KalshiClient],
         trading_engine: TradingEngine,
         espn_service: ESPNService
     ):
-        self.polymarket_client = polymarket_client
+        self.trading_client = trading_client
         self.trading_engine = trading_engine
         self.espn_service = espn_service
 
         # Detect platform from client type
-        self.platform = self._detect_platform(polymarket_client)
+        self.platform = self._detect_platform(trading_client)
 
         self.state = BotState.STOPPED
         self.websocket: PolymarketWebSocket | None = None
@@ -173,7 +174,7 @@ class BotRunner:
             return "kalshi"
         return "polymarket"
 
-    async def _place_order(self, game: TrackedGame, side: str, price: float, size: int) -> dict | None:
+    async def _place_order(self, game: TrackedGame, side: str, price: float, size: int) -> Any | None:
         """
         Platform-agnostic order placement.
         Handles differences between Polymarket and Kalshi order formats.
@@ -185,7 +186,8 @@ class BotRunner:
                 logger.error(f"No ticker available for Kalshi market: {game.market.question}")
                 return None
 
-            return await self.polymarket_client.place_order(
+            # type: ignore
+            return await self.trading_client.place_order(
                 ticker=ticker,
                 side=side.lower(),
                 yes_no="yes",
@@ -195,7 +197,8 @@ class BotRunner:
             )
         else:
             # Polymarket order format
-            return await self.polymarket_client.place_order(
+            # type: ignore
+            return await self.trading_client.place_order(
                 token_id=game.market.token_id_yes,
                 side=side.upper(),
                 price=price,
@@ -218,11 +221,11 @@ class BotRunner:
             ticker = game.market.ticker
             if not ticker:
                 return True  # Allow trade if no ticker
-            slippage_ok, _ = await self.polymarket_client.check_slippage(ticker, price, side)
+            slippage_ok, _ = await self.trading_client.check_slippage(ticker, price, side)
             return slippage_ok
         else:
             # Polymarket check_slippage may return tuple or bool depending on version
-            result = await self.polymarket_client.check_slippage(
+            result = await self.trading_client.check_slippage(
                 game.market.token_id_yes,
                 price,
                 side
@@ -266,9 +269,13 @@ class BotRunner:
             self.max_slippage = float(getattr(settings, 'max_slippage_pct', 0.02))
             self.order_fill_timeout = int(getattr(settings, 'order_fill_timeout_seconds', 60))
             
-            # Apply to polymarket client
-            self.polymarket_client.dry_run = self.dry_run
-            self.polymarket_client.max_slippage = self.max_slippage
+            # Apply to trading client (only set attributes that exist)
+            if hasattr(self.trading_client, 'dry_run'):
+                # type: ignore
+                self.trading_client.dry_run = self.dry_run
+            if hasattr(self.trading_client, 'max_slippage'):
+                # type: ignore
+                self.trading_client.max_slippage = self.max_slippage
             
             # Set up Discord notifications if webhook URL is configured
             if settings.discord_webhook_url and settings.discord_alerts_enabled:
@@ -998,7 +1005,7 @@ class BotRunner:
                 # Wait for fill with timeout (skip for paper trading)
                 fill_status = "filled"
                 if not self.dry_run:
-                    fill_status = await self.polymarket_client.wait_for_fill(
+                    fill_status = await self.trading_client.wait_for_fill(
                         order_id,
                         timeout=self.order_fill_timeout
                     )
@@ -1008,7 +1015,7 @@ class BotRunner:
                         # Remove from pending
                         self.pending_orders.pop(order_id, None)
                         try:
-                            await self.polymarket_client.cancel_order(order_id)
+                            await self.trading_client.cancel_order(order_id)
                         except Exception as cancel_err:
                             logger.debug(f"Order cancel failed: {cancel_err}")
                         return
