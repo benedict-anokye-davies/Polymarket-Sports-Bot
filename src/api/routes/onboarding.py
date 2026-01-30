@@ -134,6 +134,9 @@ async def connect_wallet(
     Stores encrypted trading platform credentials.
     Supports both Kalshi and Polymarket platforms.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     existing = await PolymarketAccountCRUD.get_by_user_id(db, current_user.id)
 
     if existing:
@@ -142,12 +145,25 @@ async def connect_wallet(
     platform = wallet_data.platform.lower() if wallet_data.platform else "kalshi"
 
     if platform == "kalshi":
-        # Kalshi only needs API key and secret
+        # Kalshi needs API key and RSA private key (api_secret is the PEM key)
         if not wallet_data.api_key or not wallet_data.api_secret:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Kalshi requires API Key and API Secret"
+                detail="Kalshi requires API Key and RSA Private Key"
             )
+        
+        # Validate RSA key format before saving
+        from src.services.kalshi_client import KalshiClient
+        is_valid, error_msg = KalshiClient.validate_rsa_key(wallet_data.api_secret)
+        if not is_valid:
+            logger.error(f"Invalid RSA key format for user {current_user.id}: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid RSA private key: {error_msg}"
+            )
+        
+        logger.info(f"Saving Kalshi credentials for user {current_user.id} (key_id: {wallet_data.api_key[:8]}...)")
+        
         await PolymarketAccountCRUD.create(
             db,
             user_id=current_user.id,

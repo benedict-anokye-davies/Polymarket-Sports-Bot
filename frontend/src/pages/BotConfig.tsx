@@ -290,6 +290,67 @@ export default function BotConfig() {
     return !noClockSports.some(s => sportType.includes(s));
   };
 
+  // Get sport-specific time configuration for sliders
+  const getSportTimeConfig = (): {
+    entryLabel: string;
+    exitLabel: string;
+    entryMax: number;
+    exitMax: number;
+    entryHelper: string;
+    exitHelper: string;
+  } => {
+    const sport = selectedLeague.toLowerCase();
+
+    if (sport.includes('nfl') || sport.includes('football')) {
+      return {
+        entryLabel: 'Min Time Remaining (Quarter)',
+        exitLabel: 'Exit Before (Game End)',
+        entryMax: 45, // Up to 45 min remaining in game (3 quarters)
+        exitMax: 15,
+        entryHelper: 'Minimum minutes left in quarter to enter trade',
+        exitHelper: 'Must close positions with this much time left in game',
+      };
+    } else if (sport.includes('nba') || sport.includes('basketball')) {
+      return {
+        entryLabel: 'Min Time Remaining (Quarter)',
+        exitLabel: 'Exit Before (Game End)',
+        entryMax: 36, // Up to 36 min remaining (3 quarters)
+        exitMax: 12,
+        entryHelper: 'Minimum minutes left in quarter to enter trade',
+        exitHelper: 'Must close positions with this much time left in game',
+      };
+    } else if (sport.includes('nhl') || sport.includes('hockey')) {
+      return {
+        entryLabel: 'Min Time Remaining (Period)',
+        exitLabel: 'Exit Before (Game End)',
+        entryMax: 40, // Up to 40 min remaining (2 periods)
+        exitMax: 10,
+        entryHelper: 'Minimum minutes left in period to enter trade',
+        exitHelper: 'Must close positions with this much time left in game',
+      };
+    } else if (sport.includes('soccer') || sport.includes('mls') || sport.includes('epl') || sport.includes('laliga')) {
+      return {
+        entryLabel: 'Max Elapsed Minutes',
+        exitLabel: 'Exit Before (90th Min)',
+        entryMax: 75, // Can enter up to 75th minute
+        exitMax: 20,
+        entryHelper: 'Latest game minute to enter trade (max 75)',
+        exitHelper: 'Minutes before 90th minute to close positions',
+      };
+    } else {
+      return {
+        entryLabel: 'Latest Entry Time',
+        exitLabel: 'Latest Exit Time',
+        entryMax: 30,
+        exitMax: 15,
+        entryHelper: 'No new positions after this much time remaining',
+        exitHelper: 'Must close all positions by this time remaining',
+      };
+    }
+  };
+
+  const sportTimeConfig = getSportTimeConfig();
+
   // Get selected games data (from current sport only for display)
   const selectedGamesData = Object.values(selectedGames);
   const selectedGamesCount = Object.keys(selectedGames).length;
@@ -1050,26 +1111,26 @@ export default function BotConfig() {
                       <div className="flex items-center justify-between">
                         <Label className="flex items-center gap-2">
                           <Clock className="w-4 h-4 text-orange-400" />
-                          Latest Entry Time
+                          {sportTimeConfig.entryLabel}
                         </Label>
                         <span className="font-mono text-sm text-primary">
                           {tradingParams.latestEntryTime} min
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        No new positions after this much time remaining
+                        {sportTimeConfig.entryHelper}
                       </p>
                       <Slider
                         value={[tradingParams.latestEntryTime]}
                         onValueChange={([v]) => updateParam('latestEntryTime', v)}
                         min={1}
-                        max={30}
+                        max={sportTimeConfig.entryMax}
                         step={1}
                         disabled={!hasGameClock()}
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>1 min</span>
-                        <span>30 min</span>
+                        <span>{sportTimeConfig.entryMax} min</span>
                       </div>
                     </div>
 
@@ -1078,26 +1139,26 @@ export default function BotConfig() {
                       <div className="flex items-center justify-between">
                         <Label className="flex items-center gap-2">
                           <Clock className="w-4 h-4 text-purple-400" />
-                          Latest Exit Time
+                          {sportTimeConfig.exitLabel}
                         </Label>
                         <span className="font-mono text-sm text-primary">
                           {tradingParams.latestExitTime} min
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Must close all positions by this time remaining
+                        {sportTimeConfig.exitHelper}
                       </p>
                       <Slider
                         value={[tradingParams.latestExitTime]}
                         onValueChange={([v]) => updateParam('latestExitTime', v)}
                         min={0}
-                        max={15}
+                        max={sportTimeConfig.exitMax}
                         step={1}
                         disabled={!hasGameClock()}
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
                         <span>0 min</span>
-                        <span>15 min</span>
+                        <span>{sportTimeConfig.exitMax} min</span>
                       </div>
                     </div>
                   </div>
