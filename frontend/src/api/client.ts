@@ -649,7 +649,7 @@ class ApiClient {
     if (level && level !== 'all') params.append('level', level);
     params.append('page', page.toString());
     params.append('limit', limit.toString());
-    return this.request(`/logs?${params.toString()}`);
+    return this.request(`/logs/?${params.toString()}`);
   }
 
   // Market Configuration endpoints (per-market overrides)
