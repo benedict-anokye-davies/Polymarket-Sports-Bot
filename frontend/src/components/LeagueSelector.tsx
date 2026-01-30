@@ -39,28 +39,40 @@ export function LeagueSelector() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [categoriesData, statusData] = await Promise.all([
-        apiClient.getSportCategories(),
-        apiClient.getUserLeagueStatus(),
-      ]);
-      setCategories(categoriesData);
-      setUserStatus(statusData);
-      
-      // Initialize selected leagues from user status
-      const enabledLeagues = new Set<string>();
-      statusData.configured_leagues.forEach(league => {
-        if (league.enabled) {
-          enabledLeagues.add(league.league_key);
-        }
-      });
-      setSelectedLeagues(enabledLeagues);
-    } catch (error) {
-      logger.error('Failed to load league data:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load league data.',
-        variant: 'destructive',
-      });
+
+      // Fetch categories first (doesn't require auth)
+      let categoriesData: SportCategory[] = [];
+      try {
+        categoriesData = await apiClient.getSportCategories();
+        setCategories(categoriesData);
+      } catch (error) {
+        logger.error('Failed to load categories:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load sport categories.',
+          variant: 'destructive',
+        });
+        return; // Categories are required, can't continue without them
+      }
+
+      // Fetch user status (requires auth, may fail)
+      try {
+        const statusData = await apiClient.getUserLeagueStatus();
+        setUserStatus(statusData);
+
+        // Initialize selected leagues from user status
+        const enabledLeagues = new Set<string>();
+        statusData.configured_leagues.forEach(league => {
+          if (league.enabled) {
+            enabledLeagues.add(league.league_key);
+          }
+        });
+        setSelectedLeagues(enabledLeagues);
+      } catch (error) {
+        // User status failed (likely auth issue) - show categories anyway
+        logger.warn('Failed to load user league status, using defaults:', error);
+        // Leave selectedLeagues empty - user can still see and select leagues
+      }
     } finally {
       setLoading(false);
     }
@@ -81,7 +93,7 @@ export function LeagueSelector() {
   const toggleCategory = (categoryLeagues: LeagueInfo[]) => {
     const leagueKeys = categoryLeagues.map(l => l.league_key);
     const allSelected = leagueKeys.every(key => selectedLeagues.has(key));
-    
+
     setSelectedLeagues(prev => {
       const newSet = new Set(prev);
       if (allSelected) {
@@ -96,7 +108,7 @@ export function LeagueSelector() {
   };
 
   const selectAll = () => {
-    const allLeagueKeys = categories.flatMap(cat => 
+    const allLeagueKeys = categories.flatMap(cat =>
       cat.leagues.map(l => l.league_key)
     );
     setSelectedLeagues(new Set(allLeagueKeys));
@@ -109,31 +121,31 @@ export function LeagueSelector() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      
+
       // Get all league keys
-      const allLeagueKeys = categories.flatMap(cat => 
+      const allLeagueKeys = categories.flatMap(cat =>
         cat.leagues.map(l => l.league_key)
       );
-      
+
       // Split into enabled and disabled
       const enabledKeys = Array.from(selectedLeagues);
       const disabledKeys = allLeagueKeys.filter(key => !selectedLeagues.has(key));
-      
+
       // Enable selected leagues
       if (enabledKeys.length > 0) {
         await apiClient.bulkEnableLeagues(enabledKeys, true);
       }
-      
+
       // Disable unselected leagues
       if (disabledKeys.length > 0) {
         await apiClient.bulkEnableLeagues(disabledKeys, false);
       }
-      
+
       toast({
         title: 'Success',
         description: `${enabledKeys.length} leagues enabled, ${disabledKeys.length} leagues disabled.`,
       });
-      
+
       // Reload status
       const statusData = await apiClient.getUserLeagueStatus();
       setUserStatus(statusData);
@@ -218,13 +230,13 @@ export function LeagueSelector() {
       {/* Categories grid */}
       <div className="grid gap-3">
         {categories.map(category => {
-          const categorySelected = category.leagues.filter(l => 
+          const categorySelected = category.leagues.filter(l =>
             selectedLeagues.has(l.league_key)
           ).length;
           const isOpen = openCategories.has(category.category);
-          
+
           return (
-            <Collapsible 
+            <Collapsible
               key={category.category}
               open={isOpen}
               onOpenChange={() => toggleCategoryOpen(category.category)}
@@ -232,10 +244,9 @@ export function LeagueSelector() {
               <div className="border border-border rounded-lg overflow-hidden">
                 <CollapsibleTrigger className="flex items-center justify-between w-full p-3 bg-muted/30 hover:bg-muted/50 transition-colors">
                   <div className="flex items-center gap-3">
-                    <ChevronDown 
-                      className={`w-4 h-4 text-muted-foreground transition-transform ${
-                        isOpen ? 'transform rotate-180' : ''
-                      }`} 
+                    <ChevronDown
+                      className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'transform rotate-180' : ''
+                        }`}
                     />
                     <span className="font-medium">{category.display_name}</span>
                     <span className="text-xs text-muted-foreground">
@@ -259,11 +270,10 @@ export function LeagueSelector() {
                     {category.leagues.map(league => (
                       <div
                         key={league.league_key}
-                        className={`flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors ${
-                          selectedLeagues.has(league.league_key)
+                        className={`flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors ${selectedLeagues.has(league.league_key)
                             ? 'bg-primary/10 border border-primary/30'
                             : 'bg-muted/20 border border-transparent hover:border-border'
-                        }`}
+                          }`}
                         onClick={() => toggleLeague(league.league_key)}
                       >
                         <Checkbox
@@ -289,7 +299,7 @@ export function LeagueSelector() {
 
       {/* Help text */}
       <p className="text-xs text-muted-foreground">
-        Select the leagues you want to monitor for trading opportunities. 
+        Select the leagues you want to monitor for trading opportunities.
         The bot will track live games from enabled leagues and apply your trading parameters.
       </p>
     </div>

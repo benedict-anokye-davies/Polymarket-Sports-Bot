@@ -497,7 +497,7 @@ class ApiClient {
   /**
    * Get user's league configuration status
    */
-  async getUserLeagueStatus(): Promise<UserLeagueStatus[]> {
+  async getUserLeagueStatus(): Promise<UserLeagueStatus> {
     return this.request('/settings/leagues/status');
   }
 
