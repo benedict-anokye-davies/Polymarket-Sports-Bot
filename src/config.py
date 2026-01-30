@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     # CORS Configuration
     # Comma-separated list of allowed origins, or "*" for all (not recommended for production)
     # Includes localhost for development and common deployment platforms
-    cors_allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173,https://polymarket-sports-bot.netlify.app,https://polymarket-sports-bot.vercel.app,https://polymarket-sports-bot.pages.dev"
+    cors_allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173,https://polymarket-sports-bot.netlify.app,https://polymarket-sports-bot.vercel.app,https://polymarket-sports-bot-9ndj.vercel.app,https://polymarket-sports-bot.pages.dev"
     cors_allow_credentials: bool = True
     cors_allow_methods: str = "GET,POST,PUT,DELETE,PATCH,OPTIONS"
     cors_allow_headers: str = "Authorization,Content-Type,X-Request-ID"
