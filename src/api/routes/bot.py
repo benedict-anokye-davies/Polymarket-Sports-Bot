@@ -70,7 +70,7 @@ async def _create_bot_dependencies(db, user_id, credentials: dict):
     sport_configs = {config.sport: config for config in sport_configs_list}
 
     # Load market-specific configs into a dictionary keyed by condition_id
-    market_configs_list = await MarketConfigCRUD.get_all_for_user(db, user_id, enabled_only=True)
+    market_configs_list = await MarketConfigCRUD.get_enabled_for_user(db, user_id)
     market_configs = {config.condition_id: config for config in market_configs_list}
 
     # Create trading engine with all configs
