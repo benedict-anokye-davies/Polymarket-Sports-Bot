@@ -8,6 +8,7 @@ import { useAppStore } from '@/stores/useAppStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { apiClient } from '@/api/client';
 import { AppTour } from '@/components/AppTour';
+import { useSSE } from '@/hooks/useSSE';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -17,6 +18,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const navigate = useNavigate();
   const { sidebarCollapsed, setWalletConnected, setBotStatus, tour, stopTour } = useAppStore();
   const { refreshUser } = useAuthStore();
+
+  // Connect to SSE for real-time status updates (shows "Online" in StatusBar)
+  useSSE({ enabled: true });
 
   // Initialize wallet and bot status on mount
   useEffect(() => {
@@ -33,9 +37,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           return;
         }
 
-        // Check bot status
+        // Check bot status - use correct property names from BotStatus interface
         const botStatus = await apiClient.getBotStatus();
-        setBotStatus(botStatus.is_running, botStatus.active_positions || 0);
+        setBotStatus(botStatus.bot_enabled, botStatus.tracked_markets || 0);
       } catch (err) {
         // Silent failure - non-critical status check
       }
@@ -48,12 +52,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Mobile Navigation */}
       <MobileHeader />
       <MobileBottomNav />
-      
+
       {/* Desktop Sidebar - hidden on mobile */}
       <div className="hidden md:block">
         <Sidebar />
       </div>
-      
+
       <div
         className={cn(
           'transition-all duration-300',
@@ -72,10 +76,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           {children}
         </main>
       </div>
-      
+
       {/* App Tour */}
-      <AppTour 
-        run={tour.isRunning} 
+      <AppTour
+        run={tour.isRunning}
         onComplete={stopTour}
         startStep={tour.stepIndex}
       />
