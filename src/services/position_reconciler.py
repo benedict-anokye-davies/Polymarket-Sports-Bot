@@ -353,3 +353,166 @@ class PositionReconciler:
             "drift_detected": status_counts.get("drift", 0),
             "last_reconcile": datetime.now(timezone.utc).isoformat(),
         }
+
+
+class OrphanedOrderDetector:
+    """
+    Specialized detector for orphaned orders (executed but untracked).
+    
+    This is critical for live trading safety - ensures we never miss
+    tracking an executed order.
+    """
+    
+    def __init__(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        client: "KalshiClient",
+    ):
+        self.db = db
+        self.user_id = user_id
+        self.client = client
+    
+    async def detect_orphaned_orders(self) -> List[Dict[str, Any]]:
+        """
+        Detect orders that exist on exchange but not in our database.
+        
+        Returns:
+            List of orphaned order details
+        """
+        orphaned = []
+        
+        try:
+            # Get exchange positions
+            exchange_positions = await self.client.get_positions()
+            
+            # Get database positions
+            from src.models import Position
+            stmt = (
+                select(Position)
+                .where(Position.user_id == self.user_id)
+                .where(Position.status == "open")
+            )
+            result = await self.db.execute(stmt)
+            db_positions = result.scalars().all()
+            
+            # Build lookup set
+            db_tickers = {p.token_id for p in db_positions}
+            
+            # Check each exchange position
+            for ex_pos in exchange_positions:
+                ticker = ex_pos.get("market_ticker") or ex_pos.get("ticker")
+                
+                if ticker and ticker not in db_tickers:
+                    # Orphaned order detected
+                    orphaned.append({
+                        "ticker": ticker,
+                        "side": "YES" if ex_pos.get("position", 0) > 0 else "NO",
+                        "size": abs(ex_pos.get("position", 0)),
+                        "avg_price": float(ex_pos.get("cost_basis", 0)) / 100,
+                        "detected_at": datetime.now(timezone.utc).isoformat(),
+                        "severity": "critical"
+                    })
+            
+            if orphaned:
+                logger.critical(
+                    f"🚨 DETECTED {len(orphaned)} ORPHANED ORDERS! "
+                    f"Manual intervention required."
+                )
+                
+                # Send alerts
+                for orphan in orphaned:
+                    await discord_notifier.send_alert(
+                        title="🚨 ORPHANED ORDER DETECTED",
+                        message=f"Ticker: {orphan['ticker']}\n"
+                               f"Side: {orphan['side']}\n"
+                               f"Size: {orphan['size']}\n"
+                               f"Avg Price: ${orphan['avg_price']:.2f}",
+                        level="critical"
+                    )
+                    
+                    # Log to database
+                    from src.db.crud.activity_log import ActivityLogCRUD
+                    await ActivityLogCRUD.error(
+                        self.db,
+                        self.user_id,
+                        "ORPHANED_ORDER",
+                        f"Orphaned order: {orphan['ticker']} {orphan['side']} x{orphan['size']}",
+                        details=orphan
+                    )
+        
+        except Exception as e:
+            logger.error(f"Failed to detect orphaned orders: {e}")
+        
+        return orphaned
+
+
+class ReconciliationScheduler:
+    """
+    Schedules periodic reconciliation runs.
+    """
+    
+    def __init__(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        client: "KalshiClient",
+        interval_seconds: int = 300  # 5 minutes
+    ):
+        self.db = db
+        self.user_id = user_id
+        self.client = client
+        self.interval_seconds = interval_seconds
+        self._stop_event = asyncio.Event()
+        self._task = None
+    
+    async def start(self) -> None:
+        """Start periodic reconciliation."""
+        self._stop_event.clear()
+        self._task = asyncio.create_task(self._run_loop())
+        logger.info(f"Reconciliation scheduler started ({self.interval_seconds}s interval)")
+    
+    async def stop(self) -> None:
+        """Stop periodic reconciliation."""
+        self._stop_event.set()
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Reconciliation scheduler stopped")
+    
+    async def _run_loop(self) -> None:
+        """Main reconciliation loop."""
+        import asyncio
+        
+        while not self._stop_event.is_set():
+            try:
+                reconciler = PositionReconciler(
+                    self.db, self.user_id, 
+                    kalshi_client=self.client
+                )
+                result = await reconciler.reconcile()
+                
+                # Check for orphaned orders
+                detector = OrphanedOrderDetector(self.db, self.user_id, self.client)
+                orphaned = await detector.detect_orphaned_orders()
+                
+                if orphaned:
+                    logger.warning(f"Found {len(orphaned)} orphaned orders")
+                
+                if result.get("errors"):
+                    logger.error(f"Reconciliation errors: {result['errors']}")
+                
+            except Exception as e:
+                logger.error(f"Scheduled reconciliation failed: {e}")
+            
+            # Wait for next interval
+            try:
+                await asyncio.wait_for(
+                    self._stop_event.wait(),
+                    timeout=self.interval_seconds
+                )
+            except asyncio.TimeoutError:
+                pass

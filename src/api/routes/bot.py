@@ -4,6 +4,7 @@ Integrates with BotRunner for actual trading operations.
 """
 
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1024,4 +1025,154 @@ async def get_available_markets(
     except Exception as e:
         logger.error(f"Failed to fetch markets: {e}")
         return []
+
+
+@router.post("/reconcile", response_model=dict)
+async def manual_reconciliation(
+    db: DbSession,
+    current_user: OnboardedUser
+) -> dict:
+    """
+    Manually trigger position reconciliation.
+    
+    Checks for:
+    - Orphaned orders (on exchange but not in database)
+    - Ghost positions (in database but not on exchange)
+    - Position size mismatches
+    
+    Returns:
+        Reconciliation results with any discrepancies found.
+    """
+    from src.services.position_reconciler import PositionReconciler
+    from src.services.kalshi_client import KalshiClient
+    from src.db.crud.polymarket_account import PolymarketAccountCRUD
+    
+    try:
+        # Get user credentials
+        credentials = await PolymarketAccountCRUD.get_decrypted_credentials(
+            db, current_user.id
+        )
+        
+        if not credentials:
+            return {
+                "success": False,
+                "error": "No trading credentials configured"
+            }
+        
+        # Create client
+        if credentials.get("platform") == "kalshi":
+            client = KalshiClient(
+                api_key_id=credentials["api_key"],
+                private_key_pem=credentials["api_secret"],
+                environment=credentials.get("environment", "production")
+            )
+        else:
+            return {
+                "success": False,
+                "error": "Reconciliation currently only supported for Kalshi"
+            }
+        
+        # Run reconciliation
+        reconciler = PositionReconciler(db, current_user.id, kalshi_client=client)
+        result = await reconciler.reconcile()
+        
+        await client.close()
+        
+        # Extract kalshi results
+        kalshi_result = result.get("kalshi", {})
+        
+        # Log the reconciliation
+        from src.db.crud.activity_log import ActivityLogCRUD
+        await ActivityLogCRUD.info(
+            db,
+            current_user.id,
+            "RECONCILIATION",
+            f"Manual reconciliation completed: {result.get('total_synced', 0)} synced, "
+            f"{result.get('total_recovered', 0)} recovered, "
+            f"{result.get('total_closed', 0)} closed",
+            details={
+                "synced": result.get('total_synced', 0),
+                "recovered": result.get('total_recovered', 0),
+                "closed": result.get('total_closed', 0)
+            }
+        )
+        
+        return {
+            "success": True,
+            "timestamp": result.get('reconciled_at'),
+            "polymarket": result.get('polymarket'),
+            "kalshi": kalshi_result,
+            "total_synced": result.get('total_synced', 0),
+            "total_recovered": result.get('total_recovered', 0),
+            "total_closed": result.get('total_closed', 0),
+            "errors": result.get('errors', [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Reconciliation failed: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@router.get("/reconcile/status", response_model=dict)
+async def get_reconciliation_status(
+    db: DbSession,
+    current_user: OnboardedUser
+) -> dict:
+    """
+    Get quick reconciliation status without running full reconciliation.
+    
+    Returns basic counts of exchange vs database positions.
+    """
+    from src.services.position_reconciler import PositionReconciler
+    from src.services.kalshi_client import KalshiClient
+    from src.db.crud.polymarket_account import PolymarketAccountCRUD
+    
+    try:
+        credentials = await PolymarketAccountCRUD.get_decrypted_credentials(
+            db, current_user.id
+        )
+        
+        if not credentials or credentials.get("platform") != "kalshi":
+            return {
+                "status": "not_available",
+                "message": "Reconciliation only available for Kalshi"
+            }
+        
+        client = KalshiClient(
+            api_key_id=credentials["api_key"],
+            private_key_pem=credentials["api_secret"],
+            environment=credentials.get("environment", "production")
+        )
+        
+        # Get quick status by comparing counts
+        try:
+            exchange_positions = await client.get_positions()
+            from src.db.crud.position import PositionCRUD
+            db_positions = await PositionCRUD.get_open_for_user(db, current_user.id)
+            
+            await client.close()
+            
+            return {
+                "status": "ok",
+                "exchange_positions": len(exchange_positions) if exchange_positions else 0,
+                "database_positions": len(db_positions),
+                "discrepancy": len(exchange_positions or []) != len(db_positions),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        except Exception as e:
+            await client.close()
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
