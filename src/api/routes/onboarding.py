@@ -153,7 +153,8 @@ async def connect_wallet(
             user_id=current_user.id,
             platform="kalshi",
             api_key=wallet_data.api_key,
-            api_secret=wallet_data.api_secret
+            api_secret=wallet_data.api_secret,
+            environment=wallet_data.environment
         )
     else:
         # Polymarket needs private key and funder address

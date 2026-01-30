@@ -28,7 +28,8 @@ class PolymarketAccountCRUD:
         funder_address: str | None = None,
         platform: str = "polymarket",
         api_key: str | None = None,
-        api_secret: str | None = None
+        api_secret: str | None = None,
+        environment: str = "production"
     ) -> PolymarketAccount:
         """
         Creates a new trading account with encrypted credentials.
@@ -41,6 +42,7 @@ class PolymarketAccountCRUD:
             platform: Trading platform ('polymarket' or 'kalshi')
             api_key: API key - required for Kalshi (will be encrypted)
             api_secret: API secret - required for Kalshi (will be encrypted)
+            environment: 'production' or 'demo' (Kalshi only)
 
         Returns:
             Created PolymarketAccount instance
@@ -50,6 +52,7 @@ class PolymarketAccountCRUD:
             private_key_encrypted=encrypt_credential(private_key) if private_key else None,
             funder_address=funder_address,
             platform=platform,
+            environment=environment,
             api_key_encrypted=encrypt_credential(api_key) if api_key else None,
             api_secret_encrypted=encrypt_credential(api_secret) if api_secret else None,
             is_connected=True  # Mark as connected when credentials are saved

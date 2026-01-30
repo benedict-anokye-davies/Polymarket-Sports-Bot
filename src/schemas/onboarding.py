@@ -35,6 +35,8 @@ class WalletConnectRequest(BaseModel):
     All sensitive data is encrypted before storage.
     """
     platform: str = Field(default="kalshi", description="Platform: 'kalshi' or 'polymarket'")
+    # Environment: 'production' or 'demo' (for Kalshi)
+    environment: str = Field(default="production", description="Environment: 'production' or 'demo'")
     # Kalshi credentials
     api_key: str | None = Field(default=None, description="Kalshi API Key")
     api_secret: str | None = Field(default=None, description="Kalshi API Secret")
