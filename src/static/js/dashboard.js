@@ -23,14 +23,14 @@ class ToastManager {
     show(message, type = 'info', duration = 4000) {
         const toast = document.createElement('div');
         toast.className = `toast-item toast-${type}`;
-        
+
         const icons = {
             success: '<i class="bi bi-check-circle-fill"></i>',
             error: '<i class="bi bi-x-circle-fill"></i>',
             warning: '<i class="bi bi-exclamation-triangle-fill"></i>',
             info: '<i class="bi bi-info-circle-fill"></i>'
         };
-        
+
         toast.innerHTML = `
             <div class="toast-icon">${icons[type]}</div>
             <div class="toast-message">${message}</div>
@@ -38,21 +38,21 @@ class ToastManager {
                 <i class="bi bi-x"></i>
             </button>
         `;
-        
+
         this.container.appendChild(toast);
-        
+
         // Animate in
         requestAnimationFrame(() => toast.classList.add('toast-visible'));
-        
+
         // Auto dismiss
         setTimeout(() => {
             toast.classList.remove('toast-visible');
             setTimeout(() => toast.remove(), 300);
         }, duration);
-        
+
         return toast;
     }
-    
+
     success(msg) { return this.show(msg, 'success'); }
     error(msg) { return this.show(msg, 'error', 6000); }
     warning(msg) { return this.show(msg, 'warning'); }
@@ -68,7 +68,7 @@ class SkeletonManager {
     static show(selector, rows = 3) {
         const container = document.querySelector(selector);
         if (!container) return;
-        
+
         container.innerHTML = Array(rows).fill(0).map(() => `
             <tr class="skeleton-row">
                 <td><div class="skeleton skeleton-text"></div></td>
@@ -78,16 +78,16 @@ class SkeletonManager {
             </tr>
         `).join('');
     }
-    
+
     static showCard(selector) {
         const container = document.querySelector(selector);
         if (!container) return;
-        
+
         container.innerHTML = `
             <div class="skeleton skeleton-chart" style="height: 300px;"></div>
         `;
     }
-    
+
     static hide(selector) {
         const container = document.querySelector(selector);
         if (container) container.innerHTML = '';
@@ -207,7 +207,7 @@ class StatusManager {
     updateBotStatus(status) {
         const isRunning = status.state === 'running';
         const wasRunning = this.state.bot.running;
-        
+
         this.state.bot = {
             running: isRunning,
             markets: status.tracked_games || 0,
@@ -215,11 +215,11 @@ class StatusManager {
             tradesToday: status.trades_today || 0
         };
         this.state.connection.websocket = status.websocket_status === 'connected';
-        
+
         // Toast on state change
         if (isRunning && !wasRunning) toast.success('Bot started');
         else if (!isRunning && wasRunning) toast.info('Bot stopped');
-        
+
         this._updateUI();
         this._updateConnectionUI();
     }
@@ -258,11 +258,11 @@ class StatusManager {
         const wInd = document.getElementById('wallet-indicator');
         const wVal = document.getElementById('wallet-address');
         if (wInd && wVal) {
-            wInd.className = this.state.wallet.connected 
-                ? 'status-indicator connected' 
+            wInd.className = this.state.wallet.connected
+                ? 'status-indicator connected'
                 : 'status-indicator';
-            wVal.textContent = this.state.wallet.connected 
-                ? this._shortenAddress(this.state.wallet.address) 
+            wVal.textContent = this.state.wallet.connected
+                ? this._shortenAddress(this.state.wallet.address)
                 : 'Disconnected';
         }
 
@@ -270,11 +270,11 @@ class StatusManager {
         const bInd = document.getElementById('bot-indicator');
         const bVal = document.getElementById('bot-status-text');
         if (bInd && bVal) {
-            bInd.className = this.state.bot.running 
-                ? 'status-indicator running' 
+            bInd.className = this.state.bot.running
+                ? 'status-indicator running'
                 : 'status-indicator paused';
-            bVal.textContent = this.state.bot.running 
-                ? `Active (${this.state.bot.markets} games)` 
+            bVal.textContent = this.state.bot.running
+                ? `Active (${this.state.bot.markets} games)`
                 : 'Stopped';
         }
 
@@ -306,18 +306,18 @@ class StatusManager {
     _updateConnectionUI() {
         const sseIndicator = document.getElementById('sse-indicator');
         const wsIndicator = document.getElementById('ws-indicator');
-        
+
         if (sseIndicator) {
-            sseIndicator.className = this.state.connection.sse 
-                ? 'status-pill status-active' 
+            sseIndicator.className = this.state.connection.sse
+                ? 'status-pill status-active'
                 : 'status-pill status-inactive';
             const text = sseIndicator.querySelector('span:last-child');
             if (text) text.textContent = this.state.connection.sse ? 'Live' : 'Offline';
         }
-        
+
         if (wsIndicator) {
-            wsIndicator.className = this.state.connection.websocket 
-                ? 'status-pill status-active' 
+            wsIndicator.className = this.state.connection.websocket
+                ? 'status-pill status-active'
                 : 'status-pill status-inactive';
             const text = wsIndicator.querySelector('span:last-child');
             if (text) text.textContent = this.state.connection.websocket ? 'WS OK' : 'WS Off';
@@ -347,9 +347,9 @@ class GamesTableManager {
 
     update(games) {
         if (!this.tbody || !games) return;
-        
+
         const incomingIds = new Set(games.map(g => g.event_id));
-        
+
         // Remove stale
         for (const [id, row] of this.rows) {
             if (!incomingIds.has(id)) {
@@ -381,9 +381,9 @@ class GamesTableManager {
         const priceCell = tr.querySelector('[data-key="price"]');
         const oldPrice = parseFloat(priceCell?.dataset.value || 0);
         const newPrice = game.current_price || 0;
-        
+
         tr.innerHTML = this._getRowHTML(game);
-        
+
         if (oldPrice !== newPrice) {
             const newCell = tr.querySelector('[data-key="price"]');
             this._flashCell(newCell, newPrice - oldPrice);
@@ -395,10 +395,10 @@ class GamesTableManager {
         const baseline = (game.baseline_price || 0.5) * 100;
         const diff = prob - baseline;
         const diffClass = diff >= 0 ? 'text-success' : 'text-danger';
-        const statusBadge = game.has_position 
-            ? '<span class="badge bg-primary">IN POSITION</span>' 
+        const statusBadge = game.has_position
+            ? '<span class="badge bg-primary">IN POSITION</span>'
             : '';
-        
+
         // Format as percentage (sports betting style)
         return `
             <td class="ps-3">
@@ -507,12 +507,12 @@ async function loadPerformanceData() {
     try {
         const res = await apiRequest('/dashboard/performance?days=30');
         if (!res.ok) {
-            // Use mock data for demo
-            const mockData = generateMockProbabilityHistory(100);
-            performanceSeries?.setData(mockData);
+            // API failed - show empty state instead of mock data
+            console.warn('Performance API failed, showing empty state');
+            performanceSeries?.setData([]);
             return;
         }
-        
+
         const data = await res.json();
         if (performanceSeries && data.chart_data) {
             performanceSeries.setData(data.chart_data.map(p => ({
@@ -535,23 +535,12 @@ async function loadPerformanceData() {
         }
     } catch (e) {
         console.error('Performance load error:', e);
-        // Fallback to mock
-        const mockData = generateMockProbabilityHistory(100);
-        performanceSeries?.setData(mockData);
+        // Show empty state on error instead of mock data
+        performanceSeries?.setData([]);
     }
 }
 
-function generateMockProbabilityHistory(count) {
-    const data = [];
-    let time = Math.floor(Date.now() / 1000) - (count * 60);
-    let value = 0.50;
-    
-    for (let i = 0; i < count; i++) {
-        value = Math.max(0.01, Math.min(0.99, value + (Math.random() - 0.5) * 0.03));
-        data.push({ time: time + (i * 60), value });
-    }
-    return data;
-}
+// Mock function removed - production uses real data from API
 
 // ============================================================================
 // 7. SSE EVENT HANDLERS
@@ -663,18 +652,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Show skeletons
     SkeletonManager.show('#positions-table-body', 2);
     SkeletonManager.show('#games-table-body', 3);
-    
+
     // Initialize
     setupSSEHandlers();
     initPerformanceChart();
     sseManager.connect();
-    
+
     // Load initial data
     await loadDashboardData();
-    
+
     // Fallback polling
     setInterval(loadDashboardData, 30000);
-    
+
     // Display date
     const dateEl = document.getElementById('current-date');
     if (dateEl) {
@@ -698,14 +687,14 @@ async function loadDashboardData() {
 
 function updateStats(stats) {
     if (!stats) return;
-    
+
     const els = {
         portfolio: document.getElementById('portfolio-value'),
         pnl: document.getElementById('daily-pnl'),
         positions: document.getElementById('open-positions'),
         markets: document.getElementById('tracked-markets')
     };
-    
+
     if (els.portfolio) els.portfolio.textContent = formatCurrency(stats.balance_usdc || 0);
     if (els.pnl) {
         const pnl = stats.total_pnl_today || 0;
@@ -714,7 +703,7 @@ function updateStats(stats) {
     }
     if (els.positions) els.positions.textContent = stats.open_positions_count || 0;
     if (els.markets) els.markets.textContent = stats.active_markets_count || 0;
-    
+
     if (stats.bot_status === 'running') statusManager.startBot(stats.active_markets_count || 0);
     else statusManager.stopBot();
 }
@@ -722,10 +711,10 @@ function updateStats(stats) {
 window.toggleBot = async () => {
     const isRunning = document.getElementById('bot-indicator')?.classList.contains('running');
     const endpoint = isRunning ? '/bot/stop' : '/bot/start';
-    
+
     const btn = event?.target;
     if (btn) btn.disabled = true;
-    
+
     try {
         const res = await apiRequest(endpoint, 'POST');
         if (res.ok) {

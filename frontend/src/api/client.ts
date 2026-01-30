@@ -5,7 +5,7 @@
 
 import { logger } from '@/lib/logger';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://combinations-speed-generations-symbols.trycloudflare.com/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sports-bot-production.up.railway.app/api/v1';
 
 // Debug log the API URL on startup
 console.log('[API Client] Base URL:', API_BASE_URL);
@@ -1114,24 +1114,24 @@ export interface MarketConfig {
   sport: string | null;
   home_team: string | null;
   away_team: string | null;
-  
+
   // Entry conditions (null = use sport default)
   entry_threshold_drop: number | null;
   entry_threshold_absolute: number | null;
   min_time_remaining_seconds: number | null;
-  
+
   // Exit conditions
   take_profit_pct: number | null;
   stop_loss_pct: number | null;
-  
+
   // Position sizing
   position_size_usdc: number | null;
   max_positions: number | null;
-  
+
   // Control flags
   enabled: boolean;
   auto_trade: boolean;
-  
+
   created_at: string;
   updated_at: string;
 }
