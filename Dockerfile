@@ -17,5 +17,4 @@ RUN mkdir -p /app/logs
 EXPOSE 8000
 
 # Railway uses PORT env variable, fallback to 8000 for local dev
-# Run migrations then start server
-CMD sh -c "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
