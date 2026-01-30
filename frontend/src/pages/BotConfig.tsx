@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Bot,
   Play,
@@ -109,6 +110,8 @@ const fromApiParams = (params: TradingParameters): TradingParams => ({
 });
 
 export default function BotConfig() {
+  const location = useLocation();
+
   const [botEnabled, setBotEnabled] = useState(false);
   const [selectedSport, setSelectedSport] = useState<string>('nba');
   // Changed: Now tracks game ID -> SelectedGame with side preference
@@ -122,7 +125,7 @@ export default function BotConfig() {
 
   // Simulation mode - test bot without real money
   const [simulationMode, setSimulationMode] = useState(true);
-  
+
   // Wallet/credentials connected status
   const [walletConnected, setWalletConnected] = useState<boolean | null>(null);
 
@@ -131,6 +134,44 @@ export default function BotConfig() {
   const [selectedCategory, setSelectedCategory] = useState<string>('basketball');
   const [selectedLeague, setSelectedLeague] = useState<string>('nba');
   const [loadingCategories, setLoadingCategories] = useState(true);
+
+  // Check if games were passed from Markets page
+  useEffect(() => {
+    const state = location.state as { selectedGames?: any[]; fromMarkets?: boolean } | null;
+    if (state?.fromMarkets && state.selectedGames && state.selectedGames.length > 0) {
+      // Convert passed games to selectedGames record format
+      const gamesRecord: Record<string, SelectedGame> = {};
+      state.selectedGames.forEach((game: any) => {
+        gamesRecord[game.id] = {
+          game: {
+            id: game.id,
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            startTime: game.startTime,
+            status: game.status || 'upcoming',
+            homeOdds: game.homeOdds || 50,
+            awayOdds: game.awayOdds || 50,
+            volume: game.volume || 0,
+          },
+          sport: game.sport || 'nba',
+          side: 'home', // Default to home team, user can change
+        };
+      });
+      setSelectedGames(gamesRecord);
+
+      // Set the league from first game
+      if (state.selectedGames[0]?.sport) {
+        setSelectedLeague(state.selectedGames[0].sport);
+        setSelectedSport(state.selectedGames[0].sport);
+      }
+
+      setSuccessMessage(`${state.selectedGames.length} game(s) imported from Markets. Select which team to bet on for each game.`);
+      setTimeout(() => setSuccessMessage(null), 5000);
+
+      // Clear the navigation state to prevent re-importing on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   // Load categories on mount
   useEffect(() => {
@@ -209,12 +250,12 @@ export default function BotConfig() {
         id: g.id,
         homeTeam: g.homeTeam,
         awayTeam: g.awayTeam,
-        startTime: g.startTime 
-          ? new Date(g.startTime).toLocaleString('en-US', { 
-              hour: 'numeric', 
-              minute: '2-digit', 
-              timeZoneName: 'short' 
-            })
+        startTime: g.startTime
+          ? new Date(g.startTime).toLocaleString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          })
           : 'TBD',
         status: g.status,
         currentPeriod: g.currentPeriod,
@@ -455,12 +496,12 @@ export default function BotConfig() {
           </div>
           <div className="flex items-center gap-4">
             {/* Simulation Mode Toggle */}
-            <div 
+            <div
               onClick={() => setSimulationMode(!simulationMode)}
               className={cn(
                 'flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-all border',
-                simulationMode 
-                  ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' 
+                simulationMode
+                  ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
                   : 'bg-green-500/10 border-green-500/30 text-green-400'
               )}
             >
@@ -476,8 +517,8 @@ export default function BotConfig() {
                 </>
               )}
             </div>
-            <Badge 
-              variant={botEnabled ? 'default' : 'secondary'} 
+            <Badge
+              variant={botEnabled ? 'default' : 'secondary'}
               className={cn(
                 'px-3 py-1',
                 botEnabled && 'bg-green-500/20 text-green-400 border border-green-500/30'
@@ -514,7 +555,7 @@ export default function BotConfig() {
                 <p className="text-sm text-orange-400/80 mt-1">
                   Please connect your Kalshi API credentials or Polymarket wallet in Settings before starting the bot.
                 </p>
-                <a 
+                <a
                   href="/settings"
                   className="mt-2 text-xs text-orange-400 underline hover:no-underline inline-block"
                 >
@@ -536,7 +577,7 @@ export default function BotConfig() {
                   The bot will simulate trades without using real money. Perfect for testing your strategy.
                   All trades will be logged but no actual orders will be placed on Polymarket.
                 </p>
-                <button 
+                <button
                   onClick={() => setSimulationMode(false)}
                   className="mt-2 text-xs text-yellow-400 underline hover:no-underline"
                 >
@@ -628,18 +669,18 @@ export default function BotConfig() {
                     Games {isLoadingGames && <span className="text-xs text-muted-foreground">(loading...)</span>}
                   </Label>
                   <div className="flex gap-2">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={selectAllGames}
                       disabled={availableGames.length === 0}
                       className="text-xs h-7"
                     >
                       Select All
                     </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={clearAllGames}
                       disabled={selectedGamesCount === 0}
                       className="text-xs h-7"
@@ -797,8 +838,8 @@ export default function BotConfig() {
                 )}
 
                 {/* Refresh Button */}
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full gap-2"
                   onClick={() => fetchGames(selectedSport)}
                   disabled={isLoadingGames}
@@ -1066,14 +1107,14 @@ export default function BotConfig() {
 
                 {/* Save Button */}
                 <div className="flex justify-end gap-3">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={() => setTradingParams(DEFAULT_PARAMS)}
                   >
                     Reset to Defaults
                   </Button>
-                  <Button 
-                    onClick={handleSave} 
+                  <Button
+                    onClick={handleSave}
                     disabled={isSaving}
                     className="gap-2"
                   >
@@ -1095,7 +1136,7 @@ export default function BotConfig() {
           <Card className="p-4">
             <div className="text-sm text-muted-foreground">Selected Games</div>
             <div className="text-lg font-semibold">
-              {selectedGamesCount > 0 
+              {selectedGamesCount > 0
                 ? `${selectedGamesCount} game${selectedGamesCount !== 1 ? 's' : ''}`
                 : 'None'
               }

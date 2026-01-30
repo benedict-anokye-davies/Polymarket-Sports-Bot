@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search,
   RefreshCw,
@@ -13,6 +14,7 @@ import {
   Globe,
   Filter,
   Clock,
+  Play,
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/card';
@@ -71,6 +73,8 @@ interface GameData {
 }
 
 export default function Markets() {
+  const navigate = useNavigate();
+
   // All available games from ESPN
   const [allGames, setAllGames] = useState<GameData[]>([]);
   // Selected game IDs - using array instead of Set for proper serialization
@@ -157,11 +161,11 @@ export default function Markets() {
             awayScore: g.awayScore || 0,
             startTime: g.startTime
               ? new Date(g.startTime).toLocaleString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })
               : 'TBD',
             status: g.status || 'upcoming',
             currentPeriod: g.currentPeriod || '',
@@ -284,6 +288,29 @@ export default function Markets() {
     const gameIdsToRemove = filteredGames.map(g => g.id);
     setSelectedGameIds(prev => prev.filter(id => !gameIdsToRemove.includes(id)));
     setSelectingAll(false);
+  };
+
+  // Navigate to Bot Config with selected games
+  const handleTradeSelectedGames = () => {
+    if (selectedGames.length === 0) return;
+
+    // Pass selected games to Bot Config via navigation state
+    navigate('/bot-config', {
+      state: {
+        selectedGames: selectedGames.map(game => ({
+          id: game.id,
+          homeTeam: game.homeTeam,
+          awayTeam: game.awayTeam,
+          startTime: game.startTime,
+          status: game.status,
+          sport: game.sport,
+          homeOdds: game.homeOdds,
+          awayOdds: game.awayOdds,
+          volume: game.volume,
+        })),
+        fromMarkets: true,
+      }
+    });
   };
 
   const GameRow = ({ game }: { game: GameData }) => {
@@ -418,6 +445,15 @@ export default function Markets() {
             <Badge variant="outline" className="border-border">
               {availableGames.length} Available
             </Badge>
+            {selectedGames.length > 0 && (
+              <Button
+                onClick={handleTradeSelectedGames}
+                className="gap-2 bg-primary hover:bg-primary/90"
+              >
+                <Play className="w-4 h-4" />
+                Trade Selected Games
+              </Button>
+            )}
           </div>
         </div>
 
