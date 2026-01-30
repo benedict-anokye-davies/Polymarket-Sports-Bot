@@ -5,8 +5,9 @@ Core logic for automated trading decisions.
 
 import logging
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,7 @@ from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
 from src.db.crud.market_config import MarketConfigCRUD
 from src.services.polymarket_client import PolymarketClient
+from src.services.kalshi_client import KalshiClient
 from src.services.confidence_scorer import ConfidenceScorer, ConfidenceResult
 from src.services.kelly_calculator import KellyCalculator, KellyResult
 from src.services.balance_guardian import BalanceGuardian
@@ -143,7 +145,7 @@ class TradingEngine:
         self,
         db: AsyncSession,
         user_id: str,
-        polymarket_client: PolymarketClient,
+        trading_client: Union[PolymarketClient, KalshiClient],
         global_settings: GlobalSettings,
         sport_configs: dict[str, SportConfig],
         market_configs: dict[str, MarketConfig] | None = None,
@@ -154,8 +156,8 @@ class TradingEngine:
         
         Args:
             db: Database session
-            user_id: User identifier
-            polymarket_client: Initialized Polymarket client
+            user_id: User identifier (string or UUID)
+            trading_client: Initialized trading client (Polymarket or Kalshi)
             global_settings: User's global settings
             sport_configs: Dictionary of sport -> config mappings
             market_configs: Dictionary of condition_id -> market config overrides
@@ -163,7 +165,7 @@ class TradingEngine:
         """
         self.db = db
         self.user_id = user_id
-        self.client = polymarket_client
+        self.client = trading_client
         self.settings = global_settings
         self.sport_configs = sport_configs
         self.market_configs = market_configs or {}
@@ -171,6 +173,60 @@ class TradingEngine:
         
         self.confidence_scorer = ConfidenceScorer()
         self.kelly_calculator = KellyCalculator()
+        
+        # Determine client type for API compatibility
+        self._is_kalshi = isinstance(trading_client, KalshiClient)
+    
+    @property
+    def _user_id_uuid(self) -> UUID:
+        """Convert user_id string to UUID for database operations."""
+        if isinstance(self.user_id, str):
+            return UUID(self.user_id)
+        return self.user_id
+    
+    async def _place_order(self, token_id: str, side: str, price: float, size: float, yes_no: str = "yes") -> Any:
+        """
+        Place order with client-agnostic interface.
+        Handles differences between Polymarket and Kalshi APIs.
+        """
+        if self._is_kalshi:
+            # Kalshi API: place_order(ticker, side, yes_no, price, size)
+            # type: ignore
+            return await self.client.place_order(
+                ticker=token_id,
+                side=side,
+                yes_no=yes_no.lower(),
+                price=price,
+                size=int(size)
+            )
+        else:
+            # Polymarket API: place_order(token_id, side, price, size)
+            # type: ignore
+            return await self.client.place_order(
+                token_id=token_id,
+                side=side,
+                price=price,
+                size=size
+            )
+    
+    async def _get_exit_price(self, token_id: str) -> float:
+        """
+        Get current price for exit with client-agnostic interface.
+        """
+        if self._is_kalshi:
+            # For Kalshi, try to get market data
+            try:
+                # type: ignore
+                market = await self.client.get_market(token_id)
+                # Return yes_price as default
+                return market.yes_price
+            except:
+                # Fallback: return current market price from tracked data
+                return 0.5
+        else:
+            # Polymarket has get_midpoint_price
+            # type: ignore
+            return await self.client.get_midpoint_price(token_id)
     
     def _get_effective_config(self, market: TrackedMarket) -> EffectiveConfig | None:
         """
@@ -236,16 +292,16 @@ class TradingEngine:
             return None
         
         open_positions = await PositionCRUD.count_open_for_market(
-            self.db, self.user_id, market.condition_id
+            self.db, self._user_id_uuid, market.condition_id
         )
         if open_positions >= config.max_positions_per_game:
             return None
         
-        daily_pnl = await PositionCRUD.get_daily_pnl(self.db, self.user_id)
+        daily_pnl = await PositionCRUD.get_daily_pnl(self.db, self._user_id_uuid)
         if daily_pnl < -self.settings.max_daily_loss_usdc:
             return None
         
-        current_exposure = await PositionCRUD.get_open_exposure(self.db, self.user_id)
+        current_exposure = await PositionCRUD.get_open_exposure(self.db, self._user_id_uuid)
         if current_exposure >= self.settings.max_portfolio_exposure_usdc:
             return None
         
@@ -399,7 +455,7 @@ class TradingEngine:
             
             win_prob = 0.5 + (confidence.overall_score - 0.5) * 0.3
             
-            trade_stats = await PositionCRUD.get_trade_stats(self.db, self.user_id)
+            trade_stats = await PositionCRUD.get_trade_stats(self.db, self._user_id_uuid)
             historical_win_rate = trade_stats.get("win_rate") if trade_stats else None
             sample_size = trade_stats.get("total_trades", 0) if trade_stats else 0
             
@@ -522,17 +578,20 @@ class TradingEngine:
                 result = {"id": simulated_order_id, "status": "simulated"}
                 logger.info(f"[PAPER] Simulated BUY order: {token_id} @ {price}")
             else:
-                # Real order execution
-                result = await self.client.place_order(
+                # Real order execution using client-agnostic method
+                order_result = await self._place_order(
                     token_id=token_id,
-                    side="BUY",
+                    side="buy",
                     price=price,
-                    size=size
+                    size=size,
+                    yes_no=side.lower()
                 )
+                # Normalize result to dict format
+                result = {"id": getattr(order_result, 'order_id', str(order_result)), "status": "placed"}
             
             position = await PositionCRUD.create(
                 self.db,
-                user_id=self.user_id,
+                user_id=self._user_id_uuid,
                 condition_id=market.condition_id,
                 token_id=token_id,
                 side=side,
@@ -551,7 +610,7 @@ class TradingEngine:
             mode_prefix = "[PAPER] " if dry_run else ""
             await ActivityLogCRUD.info(
                 self.db,
-                self.user_id,
+                self._user_id_uuid,
                 "TRADE",
                 f"{mode_prefix}Entered {side} position at {price:.4f}",
                 details={
@@ -575,7 +634,7 @@ class TradingEngine:
             
             await ActivityLogCRUD.error(
                 self.db,
-                self.user_id,
+                self._user_id_uuid,
                 "TRADE",
                 f"Entry failed: {str(e)}",
                 details={"token_id": token_id, "side": side}
@@ -608,7 +667,7 @@ class TradingEngine:
             exit_price = exit_signal.get("exit_price")
             
             if not exit_price:
-                exit_price = await self.client.get_midpoint_price(position.token_id)
+                exit_price = await self._get_exit_price(position.token_id)
             
             if dry_run:
                 # Simulate order in paper trading mode
@@ -617,13 +676,16 @@ class TradingEngine:
                 result = {"id": simulated_order_id, "status": "simulated"}
                 logger.info(f"[PAPER] Simulated SELL order: {position.token_id} @ {exit_price}")
             else:
-                # Real order execution
-                result = await self.client.place_order(
+                # Real order execution using client-agnostic method
+                order_result = await self._place_order(
                     token_id=position.token_id,
-                    side="SELL",
+                    side="sell",
                     price=exit_price,
-                    size=float(position.entry_size)
+                    size=float(position.entry_size),
+                    yes_no=position.side.lower()
                 )
+                # Normalize result to dict format
+                result = {"id": getattr(order_result, 'order_id', str(order_result)), "status": "placed"}
             
             exit_proceeds = Decimal(str(exit_price)) * position.entry_size
             
@@ -647,7 +709,7 @@ class TradingEngine:
             mode_prefix = "[PAPER] " if dry_run else ""
             await ActivityLogCRUD.info(
                 self.db,
-                self.user_id,
+                self._user_id_uuid,
                 "TRADE",
                 f"{mode_prefix}Closed position at {exit_price:.4f}, P&L: {pnl:.2f} USDC",
                 details={
@@ -671,7 +733,7 @@ class TradingEngine:
             
             await ActivityLogCRUD.error(
                 self.db,
-                self.user_id,
+                self._user_id_uuid,
                 "TRADE",
                 f"Exit failed: {str(e)}",
                 details={"position_id": str(position.id)}
