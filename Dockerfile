@@ -17,5 +17,5 @@ RUN mkdir -p /app/logs
 EXPOSE 8000
 
 # Railway uses PORT env variable, fallback to 8000 for local dev
-# Run migrations then start server - log any migration errors
-CMD ["sh", "-c", "echo 'Running migrations...' && alembic upgrade head 2>&1 && echo 'Migrations complete!' || echo 'Migration failed, check logs above' && uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Run migrations then start server
+CMD sh -c "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"
