@@ -195,20 +195,20 @@ async def start_bot(
     if status_info and status_info.get("state") == BotState.RUNNING.value:
         return MessageResponse(message="Bot is already running")
     
-    polymarket_client = None
+    trading_client = None
     trading_engine = None
     espn_service = None
     
     try:
         # Create dependencies
-        polymarket_client, trading_engine, espn_service = await _create_bot_dependencies(
+        trading_client, trading_engine, espn_service = await _create_bot_dependencies(
             db, current_user.id, credentials
         )
         
         # Get or create bot runner
         bot_runner = await get_bot_runner(
             user_id=current_user.id,
-            polymarket_client=polymarket_client,
+            trading_client=trading_client,
             trading_engine=trading_engine,
             espn_service=espn_service
         )
@@ -235,11 +235,11 @@ async def start_bot(
         logger.error(f"Failed to start bot: {e}")
         
         # Cleanup resources on error
-        if polymarket_client and hasattr(polymarket_client, 'close'):
+        if trading_client and hasattr(trading_client, 'close'):
             try:
-                await polymarket_client.close()
+                await trading_client.close()
             except Exception as close_err:
-                logger.warning(f"Error closing polymarket client: {close_err}")
+                logger.warning(f"Error closing trading client: {close_err}")
         
         if espn_service and hasattr(espn_service, 'close'):
             try:
