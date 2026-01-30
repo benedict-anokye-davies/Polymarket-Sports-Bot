@@ -30,6 +30,18 @@ curl -X POST "https://your-backend-url/api/onboarding/wallet/connect" \
 
 > ⚠️ **IMPORTANT**: The `api_secret` field must contain your **complete RSA private key** in PEM format, including the header and footer lines.
 
+### Alternative: Store Credentials via Web UI (Recommended)
+
+The web interface provides a much easier way to enter your RSA private key:
+
+1. Navigate to **Onboarding** or **Settings** → **Accounts**
+2. Select **Kalshi** as the trading platform
+3. Enter your **API Key** in the API Key field
+4. Paste your **complete RSA Private Key** into the large textarea (it preserves newlines!)
+5. Click **Test Connection** to verify your credentials work
+
+> ✅ **TIP**: The RSA Private Key field is a multiline textarea, so you can paste your entire PEM key directly without worrying about newlines being stripped.
+
 ### Step 3: Test Connection
 
 ```bash
