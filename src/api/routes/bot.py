@@ -78,7 +78,7 @@ async def _create_bot_dependencies(db, user_id, credentials: dict):
     trading_engine = TradingEngine(
         db=db,
         user_id=str(user_id),
-        polymarket_client=trading_client,  # Works with either client
+        trading_client=trading_client,  # Works with either Polymarket or Kalshi client
         global_settings=global_settings,
         sport_configs=sport_configs,
         market_configs=market_configs
