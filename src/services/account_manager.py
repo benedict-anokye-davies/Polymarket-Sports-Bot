@@ -222,16 +222,18 @@ class AccountManager:
         account_id: UUID,
     ) -> Optional["PolymarketClient"]:
         """
-        Get or create a Polymarket client for specific account.
+        Get or create a trading client for specific account.
+        Supports both Polymarket and Kalshi platforms.
         
         Args:
             account_id: UUID of the account
         
         Returns:
-            Configured PolymarketClient or None
+            Configured trading client (PolymarketClient or KalshiClient) or None
         """
         from src.models import PolymarketAccount
         from src.services.polymarket_client import PolymarketClient
+        from src.services.kalshi_client import KalshiClient
         from src.core.encryption import decrypt_credential
         from src.config import settings
         
@@ -247,34 +249,55 @@ class AccountManager:
             return None
         
         try:
-            private_key = decrypt_credential(account.private_key_encrypted) if account.private_key_encrypted else None
+            platform = account.platform or "polymarket"
+            environment = getattr(account, 'environment', 'production')
             
-            if not private_key:
-                logger.error(f"No private key found for account {account_id}")
-                return None
-            
-            if not account.funder_address:
-                logger.error(f"No funder address found for account {account_id}")
-                return None
-            
-            api_key = None
-            api_secret = None
-            api_passphrase = None
-            
-            if account.api_key_encrypted:
-                api_key = decrypt_credential(account.api_key_encrypted)
-            if account.api_secret_encrypted:
-                api_secret = decrypt_credential(account.api_secret_encrypted)
-            if account.api_passphrase_encrypted:
-                api_passphrase = decrypt_credential(account.api_passphrase_encrypted)
-            
-            client = PolymarketClient(
-                private_key=private_key,
-                funder_address=account.funder_address,
-                api_key=api_key,
-                api_secret=api_secret,
-                passphrase=api_passphrase,
-            )
+            if platform == "kalshi":
+                # Create Kalshi client
+                api_key = decrypt_credential(account.api_key_encrypted) if account.api_key_encrypted else None
+                api_secret = decrypt_credential(account.api_secret_encrypted) if account.api_secret_encrypted else None
+                
+                if not api_key or not api_secret:
+                    logger.error(f"No API credentials found for Kalshi account {account_id}")
+                    return None
+                
+                client = KalshiClient(
+                    api_key_id=api_key,
+                    private_key_pem=api_secret,
+                    environment=environment
+                )
+                logger.debug(f"Created KalshiClient for account {account_id} ({environment})")
+            else:
+                # Create Polymarket client
+                private_key = decrypt_credential(account.private_key_encrypted) if account.private_key_encrypted else None
+                
+                if not private_key:
+                    logger.error(f"No private key found for account {account_id}")
+                    return None
+                
+                if not account.funder_address:
+                    logger.error(f"No funder address found for account {account_id}")
+                    return None
+                
+                api_key = None
+                api_secret = None
+                api_passphrase = None
+                
+                if account.api_key_encrypted:
+                    api_key = decrypt_credential(account.api_key_encrypted)
+                if account.api_secret_encrypted:
+                    api_secret = decrypt_credential(account.api_secret_encrypted)
+                if account.api_passphrase_encrypted:
+                    api_passphrase = decrypt_credential(account.api_passphrase_encrypted)
+                
+                client = PolymarketClient(
+                    private_key=private_key,
+                    funder_address=account.funder_address,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    passphrase=api_passphrase,
+                )
+                logger.debug(f"Created PolymarketClient for account {account_id}")
             
             self._clients_cache[account_id] = client
             return client
