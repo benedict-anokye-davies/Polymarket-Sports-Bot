@@ -235,25 +235,43 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
         </div>
 
         <div className="space-y-2">
-          <Label className="text-muted-foreground">API Secret</Label>
-          <div className="relative">
-            <Input
-              type={showKey ? 'text' : 'password'}
-              placeholder="Your API Secret"
-              className="bg-muted border-border font-mono pr-10"
-              value={data.apiSecret}
-              onChange={(e) => setData(prev => ({ ...prev, apiSecret: e.target.value }))}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-              onClick={() => setShowKey(!showKey)}
-            >
-              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </Button>
-          </div>
+          <Label className="text-muted-foreground">
+            {isKalshi ? 'RSA Private Key' : 'API Secret'}
+          </Label>
+          {isKalshi ? (
+            /* Textarea for Kalshi RSA keys to preserve newlines */
+            <div className="relative">
+              <textarea
+                placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
+                className="flex min-h-[120px] w-full rounded-md border border-border bg-muted px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+                value={data.apiSecret}
+                onChange={(e) => setData(prev => ({ ...prev, apiSecret: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Paste your full RSA private key from Kalshi including the BEGIN/END markers
+              </p>
+            </div>
+          ) : (
+            /* Regular input for non-Kalshi platforms */
+            <div className="relative">
+              <Input
+                type={showKey ? 'text' : 'password'}
+                placeholder="Your API Secret"
+                className="bg-muted border-border font-mono pr-10"
+                value={data.apiSecret}
+                onChange={(e) => setData(prev => ({ ...prev, apiSecret: e.target.value }))}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                onClick={() => setShowKey(!showKey)}
+              >
+                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Polymarket-specific fields */}
@@ -455,8 +473,8 @@ function TourStep({ onNext, onBack, loading }: { onNext: () => void; onBack: () 
           <div>
             <p className="text-sm font-medium text-foreground">Paper Trading Mode</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Paper trading is <strong>enabled by default</strong>. This means all trades are simulated - 
-              no real money is used. You can test strategies, see how the bot performs, and gain 
+              Paper trading is <strong>enabled by default</strong>. This means all trades are simulated -
+              no real money is used. You can test strategies, see how the bot performs, and gain
               confidence before switching to live trading.
             </p>
             <div className="mt-3 flex items-center gap-2">
@@ -474,7 +492,7 @@ function TourStep({ onNext, onBack, loading }: { onNext: () => void; onBack: () 
           <div>
             <p className="text-sm font-medium text-foreground">Try Your First Demo Trade</p>
             <p className="text-xs text-muted-foreground mt-1">
-              After entering the dashboard, go to <strong>Bot Config</strong>, select a game, 
+              After entering the dashboard, go to <strong>Bot Config</strong>, select a game,
               and start the bot with paper trading ON. Watch it monitor odds and simulate trades!
             </p>
           </div>
