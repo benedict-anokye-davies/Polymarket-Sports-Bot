@@ -350,8 +350,8 @@ class PortfolioRebalancer:
                 try:
                     price = await self.price_fetcher(pos.token_id)
                     current_price = Decimal(str(price))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Price fetch failed for {pos.token_id}: {e}")
             
             # Calculate position value
             entry_value = pos.entry_price * pos.entry_size

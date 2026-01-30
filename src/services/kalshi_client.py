@@ -699,5 +699,6 @@ class KalshiClient:
                 # Allow up to 5% slippage for sells
                 slippage = (expected_price - current_price) / expected_price if expected_price > 0 else 0
                 return slippage <= 0.05, current_price
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Slippage check failed: {e}")
             return True, expected_price  # Allow trade if slippage check fails

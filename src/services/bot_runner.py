@@ -626,8 +626,8 @@ class BotRunner:
                             f"Market discovery failed: {str(e)[:200]}",
                             {"error_type": type(e).__name__, "loop": "discovery"}
                         )
-                    except Exception:
-                        pass  # Don't let logging failures crash the bot
+                    except Exception as log_err:
+                        logger.debug(f"Suppressed logging error: {log_err}")
             
             await asyncio.sleep(self.DISCOVERY_INTERVAL)
     
@@ -683,8 +683,8 @@ class BotRunner:
                             f"ESPN polling error: {str(e)[:200]}",
                             {"error_type": type(e).__name__, "loop": "espn_poll"}
                         )
-                    except Exception:
-                        pass
+                    except Exception as log_err:
+                        logger.debug(f"Suppressed logging error: {log_err}")
             
             await asyncio.sleep(self.ESPN_POLL_INTERVAL)
     
@@ -797,8 +797,8 @@ class BotRunner:
                             f"Trading loop error: {str(e)[:200]}",
                             {"error_type": type(e).__name__, "loop": "trading"}
                         )
-                    except Exception:
-                        pass
+                    except Exception as log_err:
+                        logger.debug(f"Suppressed logging error: {log_err}")
             
             await asyncio.sleep(1)  # Check every second
     
@@ -1009,8 +1009,8 @@ class BotRunner:
                         self.pending_orders.pop(order_id, None)
                         try:
                             await self.polymarket_client.cancel_order(order_id)
-                        except Exception:
-                            pass
+                        except Exception as cancel_err:
+                            logger.debug(f"Order cancel failed: {cancel_err}")
                         return
                 
                 # Remove from pending now that it's filled
@@ -1046,8 +1046,8 @@ class BotRunner:
                             f"CRITICAL: Orphaned order {order_id} - position record failed.",
                             level="critical"
                         )
-                    except Exception:
-                        pass
+                    except Exception as alert_err:
+                        logger.debug(f"Alert notification failed: {alert_err}")
                     raise
                 
                 game.has_position = True
@@ -1089,8 +1089,8 @@ class BotRunner:
                             "attempted_size": position_size
                         }
                     )
-                except Exception:
-                    pass
+                except Exception as log_err:
+                    logger.debug(f"Suppressed logging error: {log_err}")
 
     async def _evaluate_exit(self, db: AsyncSession, game: TrackedGame) -> None:
         """
@@ -1277,8 +1277,8 @@ class BotRunner:
                             "current_price": current_price
                         }
                     )
-                except Exception:
-                    pass
+                except Exception as log_err:
+                    logger.debug(f"Suppressed logging error: {log_err}")
 
     async def _health_check_loop(self, db: AsyncSession) -> None:
         """

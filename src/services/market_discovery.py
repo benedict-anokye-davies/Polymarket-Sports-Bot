@@ -351,7 +351,8 @@ class MarketDiscovery:
                 try:
                     details = await self.fetch_market_details(condition_id)
                     tokens = details.get("tokens", [])
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Failed to fetch market details: {e}")
                     continue
             
             if len(tokens) < 2:
