@@ -2310,7 +2310,7 @@ _bot_instances: dict[UUID, BotRunner] = {}
 
 async def get_bot_runner(
     user_id: UUID,
-    polymarket_client: PolymarketClient,
+    trading_client: Union[PolymarketClient, KalshiClient],
     trading_engine: TradingEngine,
     espn_service: ESPNService
 ) -> BotRunner:
@@ -2319,7 +2319,7 @@ async def get_bot_runner(
     
     Args:
         user_id: User ID
-        polymarket_client: Configured Polymarket client
+        trading_client: Configured trading client (Polymarket or Kalshi)
         trading_engine: Trading engine instance
         espn_service: ESPN service instance
     
@@ -2328,7 +2328,7 @@ async def get_bot_runner(
     """
     if user_id not in _bot_instances:
         _bot_instances[user_id] = BotRunner(
-            polymarket_client=polymarket_client,
+            trading_client=trading_client,
             trading_engine=trading_engine,
             espn_service=espn_service
         )
