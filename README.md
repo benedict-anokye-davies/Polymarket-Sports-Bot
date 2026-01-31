@@ -60,3 +60,4 @@ Proprietary - All rights reserved.
 
 ## Auto-Deployment Test
 Testing Railway and Vercel auto-deployment - Fri Jan 30 14:26:47 GMTST 2026
+# Trigger redeploy
