@@ -193,6 +193,8 @@ app = FastAPI(
     description="Automated sports betting on Polymarket prediction markets",
     version="1.0.0",
     lifespan=lifespan,
+    # Disable trailing slash redirects - they cause CORS preflight failures
+    redirect_slashes=False,
 )
 
 # Production middleware stack (order matters - last added = first executed)
