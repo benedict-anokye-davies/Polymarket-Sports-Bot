@@ -980,13 +980,13 @@ export default function BotConfig() {
                     <Slider
                       value={[tradingParams.positionSize]}
                       onValueChange={([v]) => updateParam('positionSize', v)}
-                      min={10}
-                      max={1000}
-                      step={10}
+                      min={1}
+                      max={5000}
+                      step={1}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>$10</span>
-                      <span>$1,000</span>
+                      <span>$1</span>
+                      <span>$5,000</span>
                     </div>
                   </div>
                 </div>
