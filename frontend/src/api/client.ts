@@ -104,7 +104,7 @@ class ApiClient {
 
   private async doTokenRefresh(refreshToken: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+      const response = await fetch(`${this.baseUrl}/auth/refresh/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
@@ -225,7 +225,7 @@ class ApiClient {
     const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
     try {
-      const response = await fetch(`${this.baseUrl}/auth/login`, {
+      const response = await fetch(`${this.baseUrl}/auth/login/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -260,7 +260,7 @@ class ApiClient {
   }
 
   async register(username: string, email: string, password: string): Promise<{ id: string; email: string }> {
-    return this.request('/auth/register', {
+    return this.request('/auth/register/', {
       method: 'POST',
       body: JSON.stringify({ username, email, password }),
     });
