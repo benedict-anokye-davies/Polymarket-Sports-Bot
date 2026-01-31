@@ -299,8 +299,7 @@ class AnalyticsService:
                 func.sum(
                     func.case(
                         (Position.exit_price > Position.entry_price, 1),
-                        else_=0
-                    )
+                    ).else_(0)
                 ).label("wins"),
             )
             .where(
