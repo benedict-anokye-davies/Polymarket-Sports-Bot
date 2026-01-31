@@ -298,6 +298,7 @@ class KalshiClient:
             environment: 'production' or 'demo' - determines which Kalshi API to use
         """
         self.auth = KalshiAuthenticator(api_key_id, private_key_pem)
+        self._private_key_pem = private_key_pem  # Store for official SDK use
         self.environment = environment.lower()
         
         # Select API URLs based on environment
@@ -650,17 +651,58 @@ class KalshiClient:
     
     async def get_balance(self) -> Dict[str, float]:
         """
-        Get account balance.
+        Get account balance using official Kalshi SDK.
         
         Returns:
-            Dictionary with available_balance and total_balance
+            Dictionary with available_balance and total_balance (in dollars)
         """
-        response = await self._request("GET", "/portfolio/balance")
-        return {
-            "available_balance": response.get("available_balance", 0),
-            "total_balance": response.get("total_balance", 0),
-            "pending_withdrawals": response.get("pending_withdrawals", 0)
-        }
+        # Try using official SDK (handles auth correctly)
+        try:
+            from kalshi_python import Configuration, KalshiClient as OfficialKalshiClient
+            import asyncio
+            
+            # Configure the official SDK
+            config = Configuration(
+                host=self.base_url
+            )
+            config.api_key_id = self.auth.api_key_id
+            config.private_key_pem = self._private_key_pem
+            
+            # Create the client and get balance (synchronous SDK call)
+            official_client = OfficialKalshiClient(config)
+            balance_response = await asyncio.to_thread(official_client.get_balance)
+            
+            # SDK returns balance in cents, convert to dollars
+            available_balance = getattr(balance_response, 'balance', 0) / 100
+            
+            logger.info(f"Kalshi balance fetched via official SDK: ${available_balance:.2f}")
+            
+            return {
+                "available_balance": available_balance,
+                "total_balance": available_balance,
+                "balance": available_balance,  # For compatibility
+                "pending_withdrawals": 0
+            }
+        except ImportError:
+            logger.warning("kalshi-python SDK not installed, falling back to custom auth")
+        except Exception as e:
+            logger.error(f"Official SDK balance fetch failed: {e}, trying custom auth")
+        
+        # Fallback to custom implementation
+        try:
+            response = await self._request("GET", "/portfolio/balance")
+            # Balance is in cents, convert to dollars
+            available = response.get("available_balance", 0) / 100
+            total = response.get("total_balance", 0) / 100
+            return {
+                "available_balance": available,
+                "total_balance": total,
+                "balance": available,  # For compatibility
+                "pending_withdrawals": response.get("pending_withdrawals", 0) / 100
+            }
+        except Exception as e:
+            logger.error(f"Custom auth balance fetch also failed: {e}")
+            raise
     
     async def get_positions(self) -> List[Dict]:
         """
