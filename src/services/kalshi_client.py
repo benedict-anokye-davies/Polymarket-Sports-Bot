@@ -299,7 +299,9 @@ class KalshiClient:
         """
         self.auth = KalshiAuthenticator(api_key_id, private_key_pem)
         self._private_key_pem = private_key_pem  # Store for official SDK use
+        self._api_key_id = api_key_id  # Store for SDK
         self.environment = environment.lower()
+        self._official_client = None  # Lazy-init official SDK client
         
         # Select API URLs based on environment
         if self.environment == "demo":
@@ -313,6 +315,26 @@ class KalshiClient:
         
         self._client = httpx.AsyncClient(timeout=30.0)
         self.dry_run = dry_run
+    
+    def _get_sdk_client(self):
+        """
+        Get or create official SDK client (lazy initialization).
+        
+        Returns:
+            OfficialKalshiClient instance configured with current credentials
+        """
+        if self._official_client is None:
+            try:
+                from kalshi_python import Configuration, KalshiClient as OfficialKalshiClient
+                config = Configuration(host=self.base_url)
+                config.api_key_id = self._api_key_id
+                config.private_key_pem = self._private_key_pem
+                self._official_client = OfficialKalshiClient(config)
+                logger.debug("Official Kalshi SDK client initialized")
+            except ImportError:
+                logger.error("kalshi-python SDK not installed")
+                raise TradingError("kalshi-python SDK not installed. Run: pip install kalshi-python")
+        return self._official_client
     
     async def close(self):
         """Close the HTTP client connection"""
@@ -554,31 +576,44 @@ class KalshiClient:
                 created_at=datetime.now(timezone.utc)
             )
         
-        body = {
-            "ticker": ticker,
-            "side": side.lower(),
-            "yes_no": yes_no.lower(),
-            "type": "limit",
-            "price": round(price, 2),
-            "size": size,
-            "time_in_force": time_in_force.lower(),
-            "client_order_id": order_client_id,
-        }
-        
-        response = await self._request("POST", "/portfolio/orders", body=body)
-        
-        order = response.get("order", response)
-        return KalshiOrder(
-            order_id=order.get("order_id", ""),
-            ticker=order.get("ticker", ticker),
-            side=order.get("side", side),
-            yes_no=order.get("yes_no", yes_no),
-            price=order.get("price", price),
-            size=order.get("size", size),
-            status=order.get("status", "pending"),
-            filled_size=order.get("filled_size", 0),
-            created_at=datetime.now(timezone.utc)
-        )
+        # Use official SDK for real order placement
+        import asyncio
+        try:
+            sdk_client = self._get_sdk_client()
+            
+            # SDK create_order expects price in cents (0-99), we have 0.01-0.99
+            price_cents = int(round(price * 100))
+            
+            # Create order via SDK (synchronous call wrapped in thread)
+            order_response = await asyncio.to_thread(
+                sdk_client.create_order,
+                ticker=ticker,
+                side=side.lower(),
+                action=yes_no.lower(),
+                type="limit",
+                count=size,
+                yes_price=price_cents if yes_no.lower() == "yes" else None,
+                no_price=price_cents if yes_no.lower() == "no" else None,
+            )
+            
+            logger.info(f"Order placed via SDK: {ticker} {side} {size} @ {price}")
+            
+            # Extract order details from SDK response
+            order = order_response.order if hasattr(order_response, 'order') else order_response
+            return KalshiOrder(
+                order_id=getattr(order, 'order_id', '') or str(order.get('order_id', '') if isinstance(order, dict) else ''),
+                ticker=ticker,
+                side=side.lower(),
+                yes_no=yes_no.lower(),
+                price=price,
+                size=size,
+                status=getattr(order, 'status', 'pending') if hasattr(order, 'status') else 'pending',
+                filled_size=getattr(order, 'filled_count', 0) if hasattr(order, 'filled_count') else 0,
+                created_at=datetime.now(timezone.utc)
+            )
+        except Exception as e:
+            logger.error(f"SDK order placement failed: {e}")
+            raise TradingError(f"Failed to place order: {e}")
     
     async def cancel_order(self, order_id: str) -> bool:
         """
@@ -590,10 +625,14 @@ class KalshiClient:
         Returns:
             True if cancelled successfully
         """
+        import asyncio
         try:
-            await self._request("DELETE", f"/portfolio/orders/{order_id}")
+            sdk_client = self._get_sdk_client()
+            await asyncio.to_thread(sdk_client.cancel_order, order_id)
+            logger.info(f"Order cancelled via SDK: {order_id}")
             return True
-        except TradingError:
+        except Exception as e:
+            logger.error(f"Failed to cancel order {order_id}: {e}")
             return False
     
     async def get_orders(self, status: str = "open") -> List[KalshiOrder]:
@@ -606,27 +645,30 @@ class KalshiClient:
         Returns:
             List of KalshiOrder objects
         """
-        response = await self._request(
-            "GET",
-            "/portfolio/orders",
-            params={"status": status}
-        )
-        
-        orders = []
-        for o in response.get("orders", []):
-            orders.append(KalshiOrder(
-                order_id=o.get("order_id", ""),
-                ticker=o.get("ticker", ""),
-                side=o.get("side", ""),
-                yes_no=o.get("yes_no", ""),
-                price=o.get("price", 0),
-                size=o.get("size", 0),
-                status=o.get("status", ""),
-                filled_size=o.get("filled_size", 0),
-                created_at=datetime.fromisoformat(o.get("created_time", datetime.now().isoformat()))
-            ))
-        
-        return orders
+        import asyncio
+        try:
+            sdk_client = self._get_sdk_client()
+            response = await asyncio.to_thread(sdk_client.get_orders, status=status)
+            
+            orders_list = getattr(response, 'orders', []) if hasattr(response, 'orders') else []
+            orders = []
+            for o in orders_list:
+                orders.append(KalshiOrder(
+                    order_id=getattr(o, 'order_id', '') or '',
+                    ticker=getattr(o, 'ticker', '') or '',
+                    side=getattr(o, 'side', '') or '',
+                    yes_no=getattr(o, 'action', '') or '',
+                    price=(getattr(o, 'yes_price', 0) or getattr(o, 'no_price', 0) or 0) / 100,
+                    size=getattr(o, 'count', 0) or 0,
+                    status=getattr(o, 'status', '') or '',
+                    filled_size=getattr(o, 'filled_count', 0) or 0,
+                    created_at=datetime.now(timezone.utc)
+                ))
+            
+            return orders
+        except Exception as e:
+            logger.error(f"SDK get_orders failed: {e}")
+            return []
 
     async def get_order(self, order_id: str) -> Dict[str, Any]:
         """
@@ -711,8 +753,25 @@ class KalshiClient:
         Returns:
             List of position objects with market details
         """
-        response = await self._request("GET", "/portfolio/positions")
-        return response.get("positions", [])
+        import asyncio
+        try:
+            sdk_client = self._get_sdk_client()
+            response = await asyncio.to_thread(sdk_client.get_positions)
+            
+            positions = getattr(response, 'market_positions', []) if hasattr(response, 'market_positions') else []
+            # Convert SDK position objects to dicts for compatibility
+            return [
+                {
+                    'ticker': getattr(p, 'ticker', '') or '',
+                    'position': getattr(p, 'position', 0) or 0,
+                    'market_exposure': getattr(p, 'market_exposure', 0) or 0,
+                    'realized_pnl': getattr(p, 'realized_pnl', 0) or 0,
+                }
+                for p in positions
+            ]
+        except Exception as e:
+            logger.error(f"SDK get_positions failed: {e}")
+            return []
     
     # =========================================================================
     # Market State Detection
