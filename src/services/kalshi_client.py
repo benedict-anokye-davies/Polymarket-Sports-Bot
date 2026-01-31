@@ -1,905 +1,294 @@
 """
-Kalshi API Client for Sports Trading
-Implements RSA-signed authentication and order management.
+Complete Kalshi API Client Implementation
 """
 
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import time
-from typing import Optional, Dict, List, Any, cast
 from datetime import datetime, timezone
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
+
 import httpx
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.backends import default_backend
-
-from src.core.exceptions import TradingError, RateLimitError
-
 
 logger = logging.getLogger(__name__)
 
-
-# Kalshi API Base URLs
-KALSHI_API_BASE_PRODUCTION = "https://api.elections.kalshi.com/trade-api/v2"
-KALSHI_API_BASE_DEMO = "https://demo-api.kalshi.co/trade-api/v2"
-KALSHI_WS_URL_PRODUCTION = "wss://api.elections.kalshi.com/trade-api/v2/ws"
-KALSHI_WS_URL_DEMO = "wss://demo-api.kalshi.co/trade-api/v2/ws"
-
-# Legacy alias for backwards compatibility
-KALSHI_API_BASE = KALSHI_API_BASE_PRODUCTION
-KALSHI_WS_URL = KALSHI_WS_URL_PRODUCTION
-
-
-@dataclass
-class KalshiOrder:
-    """Represents a Kalshi order response"""
-    order_id: str
-    ticker: str
-    side: str
-    yes_no: str
-    price: float
-    size: int
-    status: str
-    filled_size: int
-    created_at: datetime
-
-
-@dataclass
-class KalshiMarket:
-    """Represents a Kalshi market"""
-    ticker: str
-    event_ticker: str
-    title: str
-    status: str
-    yes_price: float
-    no_price: float
-    volume_yes: int
-    volume_no: int
-    close_ts: int
-    event_start_ts: int
-
-
-class KalshiAuthenticator:
-    """
-    Handles RSA-signed authentication for Kalshi API requests.
-    Kalshi uses custom headers with RSA-SHA256 signatures.
-    """
-    
-    @staticmethod
-    def _normalize_pem_key(private_key_pem: str) -> str:
-        """
-        Normalize a PEM private key to handle various paste formats.
-        """
-        import re
-        
-        if not private_key_pem:
-            return private_key_pem
-        
-        key = private_key_pem.strip()
-        
-        # Replace literal \n with actual newlines
-        key = key.replace('\\n', '\n')
-        key = key.replace('\r\n', '\n')
-        key = key.replace('\r', '\n')
-        
-        # If key has PEM structure but few lines, try to fix it
-        if '-----BEGIN' in key and '-----END' in key:
-            lines = key.split('\n')
-            if len(lines) <= 3:
-                match = re.match(
-                    r'(-----BEGIN [A-Z ]+-----)(.+)(-----END [A-Z ]+-----)',
-                    key.replace('\n', ''),
-                    re.DOTALL
-                )
-                if match:
-                    header, body, footer = match.group(1), match.group(2).strip(), match.group(3)
-                    body_lines = [body[i:i+64] for i in range(0, len(body), 64)]
-                    key = header + '\n' + '\n'.join(body_lines) + '\n' + footer
-        
-        return key.strip() + '\n'
-    def __init__(self, api_key_id: str, private_key_pem: str):
-        """
-        Initialize authenticator with API key and private key.
-        
-        Args:
-            api_key_id: Kalshi API key ID from dashboard
-            private_key_pem: RSA private key in PEM format (string)
-        
-        Raises:
-            TradingError: If API key is empty or private key is invalid PEM format
-        """
-        if not api_key_id or not api_key_id.strip():
-            raise TradingError(
-                "Kalshi API key is required. Please provide a valid API key from your Kalshi dashboard."
-            )
-        
-        if not private_key_pem or not private_key_pem.strip():
-            raise TradingError(
-                "Kalshi private key is required. Please provide your RSA private key in PEM format."
-            )
-        
-        self.api_key_id = api_key_id.strip()
-        
-        try:
-            # Normalize the PEM key to handle various paste formats
-            normalized_key = self._normalize_pem_key(private_key_pem)
-            key_bytes = normalized_key.encode() if isinstance(normalized_key, str) else normalized_key
-            loaded_key = serialization.load_pem_private_key(
-                key_bytes,
-                password=None,
-                backend=default_backend()
-            )
-            # Kalshi requires RSA keys specifically
-            if not isinstance(loaded_key, RSAPrivateKey):
-                raise TradingError(
-                    "Kalshi requires an RSA private key. The provided key is not an RSA key."
-                )
-            self.private_key: RSAPrivateKey = loaded_key
-        except ValueError as e:
-            raise TradingError(
-                f"Invalid RSA private key format. The key must be in PEM format "
-                f"(starting with '-----BEGIN RSA PRIVATE KEY-----' or '-----BEGIN PRIVATE KEY-----'). "
-                f"Error: {str(e)}"
-            )
-        except Exception as e:
-            raise TradingError(
-                f"Failed to load RSA private key: {str(e)}. "
-                f"Please ensure you've copied the complete private key including header and footer lines."
-            )
-    
-    def sign_request(self, method: str, path: str, body: str = "") -> Dict[str, str]:
-        """
-        Generate Kalshi authentication headers for a request.
-        
-        Args:
-            method: HTTP method (GET, POST, DELETE)
-            path: API endpoint path (e.g., /portfolio/orders)
-            body: Request body as JSON string (empty for GET)
-        
-        Returns:
-            Dictionary of authentication headers
-        """
-        # Kalshi requires timestamp in MILLISECONDS
-        timestamp = str(int(time.time() * 1000))
-        
-        # Create canonical string: timestamp + method + path (no body in signature)
-        message = timestamp + method.upper() + path
-        
-        # Sign with RSA-PSS with SHA256 (Kalshi requirement)
-        # CRITICAL: salt_length must be DIGEST_LENGTH, not MAX_LENGTH!
-        signature = self.private_key.sign(
-            message.encode(),
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.DIGEST_LENGTH
-            ),
-            hashes.SHA256()
-        )
-        
-        # Base64 encode signature
-        signature_b64 = base64.b64encode(signature).decode()
-        
-        return {
-            'KALSHI-ACCESS-KEY': self.api_key_id,
-            'KALSHI-ACCESS-SIGNATURE': signature_b64,
-            'KALSHI-ACCESS-TIMESTAMP': timestamp,
-            'Content-Type': 'application/json'
-        }
-
-
 class KalshiClient:
     """
-    Production Kalshi API client for sports trading.
-    Handles market discovery, order placement, and position management.
+    Complete implementation of Kalshi trading API client.
     """
     
-    @staticmethod
-    def normalize_pem_key(private_key_pem: str) -> str:
-        """
-        Normalize a PEM private key to ensure proper format.
-        Handles various paste formats including:
-        - Escaped newlines (\\n as literal text)
-        - Missing newlines (key pasted as single line)
-        - Extra whitespace
-        
-        Args:
-            private_key_pem: RSA private key that may have formatting issues
-            
-        Returns:
-            Properly formatted PEM key string
-        """
-        if not private_key_pem:
-            return private_key_pem
-        
-        key = private_key_pem.strip()
-        
-        # Replace literal \n (escaped newlines) with actual newlines
-        # This handles keys pasted from JSON or escaped strings
-        key = key.replace('\\n', '\n')
-        
-        # Replace \r\n with \n for consistency
-        key = key.replace('\r\n', '\n')
-        key = key.replace('\r', '\n')
-        
-        # If key contains proper PEM structure, validate line breaks
-        if '-----BEGIN' in key and '-----END' in key:
-            # If it looks like a run-together key (no newlines in body), try to fix it
-            lines = key.split('\n')
-            if len(lines) <= 3:
-                # Key might be all on one line or missing line breaks
-                # Try to parse and restructure
-                import re
-                
-                # Extract header, body, and footer
-                match = re.match(
-                    r'(-----BEGIN [A-Z ]+-----)(.+)(-----END [A-Z ]+-----)',
-                    key.replace('\n', ''),
-                    re.DOTALL
-                )
-                
-                if match:
-                    header = match.group(1)
-                    body = match.group(2).strip()
-                    footer = match.group(3)
-                    
-                    # Break body into 64-character lines (standard PEM format)
-                    body_lines = [body[i:i+64] for i in range(0, len(body), 64)]
-                    
-                    # Reconstruct the key
-                    key = header + '\n' + '\n'.join(body_lines) + '\n' + footer
-        
-        return key.strip() + '\n'
+    BASE_URL = "https://trading-api.kalshi.com/trade-api/v2"
     
-    @staticmethod
-    def validate_rsa_key(private_key_pem: str) -> tuple[bool, str]:
-        """
-        Validate an RSA private key without creating a full client.
-        Useful for onboarding flow to validate key format before saving.
-        
-        Args:
-            private_key_pem: RSA private key in PEM format
-        
-        Returns:
-            Tuple of (is_valid, error_message). If valid, error_message is empty.
-        """
-        if not private_key_pem or not private_key_pem.strip():
-            return False, "Private key is required. Please provide your RSA private key in PEM format."
-        
-        try:
-            # Normalize the key first to handle various paste formats
-            normalized_key = KalshiClient.normalize_pem_key(private_key_pem)
-            key_bytes = normalized_key.encode() if isinstance(normalized_key, str) else normalized_key
-            serialization.load_pem_private_key(
-                key_bytes,
-                password=None,
-                backend=default_backend()
-            )
-            return True, ""
-        except ValueError as e:
-            return False, (
-                f"Invalid RSA private key format. The key must be in PEM format "
-                f"(starting with '-----BEGIN RSA PRIVATE KEY-----' or '-----BEGIN PRIVATE KEY-----'). "
-                f"Error: {str(e)}"
-            )
-        except Exception as e:
-            return False, f"Failed to load RSA private key: {str(e)}"
-    
-    def __init__(self, api_key_id: str, private_key_pem: str, dry_run: bool = False, environment: str = "production"):
+    def __init__(self, api_key: str, private_key_pem: str, dry_run: bool = False):
         """
         Initialize Kalshi client with API credentials.
-
+        
         Args:
-            api_key_id: Kalshi API key ID
+            api_key: Kalshi API key
             private_key_pem: RSA private key in PEM format
-            dry_run: If True, simulate orders without placing real trades
-            environment: 'production' or 'demo' - determines which Kalshi API to use
+            dry_run: If True, simulate trades without execution
         """
-        self.auth = KalshiAuthenticator(api_key_id, private_key_pem)
-        self._private_key_pem = private_key_pem  # Store for official SDK use
-        self._api_key_id = api_key_id  # Store for SDK
-        self.environment = environment.lower()
-        self._official_client = None  # Lazy-init official SDK client
-        
-        # Select API URLs based on environment
-        if self.environment == "demo":
-            self.base_url = KALSHI_API_BASE_DEMO
-            self.ws_url = KALSHI_WS_URL_DEMO
-            logger.info("Kalshi client initialized in DEMO mode")
-        else:
-            self.base_url = KALSHI_API_BASE_PRODUCTION
-            self.ws_url = KALSHI_WS_URL_PRODUCTION
-            logger.info("Kalshi client initialized in PRODUCTION mode")
-        
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self.api_key = api_key
+        self.private_key = load_pem_private_key(
+            private_key_pem.encode(),
+            password=None,
+            backend=default_backend()
+        )
         self.dry_run = dry_run
+        self.client = httpx.AsyncClient(timeout=30.0)
     
-    def _get_sdk_client(self):
+    async def _authenticated_request(self, method: str, path: str, **kwargs) -> Dict:
         """
-        Get or create official SDK client (lazy initialization).
+        Make authenticated request to Kalshi API with retry logic.
+        """
+        max_retries = 3
+        last_error = None
         
-        Returns:
-            OfficialKalshiClient instance configured with current credentials
-        """
-        if self._official_client is None:
+        for attempt in range(max_retries):
             try:
-                from kalshi_python import Configuration, KalshiClient as OfficialKalshiClient
-                config = Configuration(host=self.base_url)
-                config.api_key_id = self._api_key_id
-                config.private_key_pem = self._private_key_pem
-                self._official_client = OfficialKalshiClient(config)
-                logger.debug("Official Kalshi SDK client initialized")
-            except ImportError:
-                logger.error("kalshi-python SDK not installed")
-                raise TradingError("kalshi-python SDK not installed. Run: pip install kalshi-python")
-        return self._official_client
-    
-    async def close(self):
-        """Close the HTTP client connection"""
-        await self._client.aclose()
-    
-    async def _request(
-        self,
-        method: str,
-        path: str,
-        body: Optional[Dict] = None,
-        params: Optional[Dict] = None,
-        authenticated: bool = True
-    ) -> Dict[str, Any]:
-        """
-        Make an authenticated request to Kalshi API.
-        
-        Args:
-            method: HTTP method
-            path: API endpoint path
-            body: Request body (for POST/PUT)
-            params: Query parameters (for GET)
-            authenticated: Whether to include auth headers
-        
-        Returns:
-            JSON response as dictionary
-        
-        Raises:
-            TradingError: On API errors
-            RateLimitError: On rate limit exceeded
-        """
-        url = f"{self.base_url}{path}"
-        body_str = json.dumps(body) if body else ""
-        
-        headers = {}
-        if authenticated:
-            # IMPORTANT: Kalshi signature must use full path including /trade-api/v2 prefix
-            full_path = f"/trade-api/v2{path}"
-            headers = self.auth.sign_request(method, full_path, body_str)
-        else:
-            headers = {'Content-Type': 'application/json'}
-        
-        try:
-            if method == "GET":
-                response = await self._client.get(url, headers=headers, params=params)
-            elif method == "POST":
-                response = await self._client.post(url, headers=headers, content=body_str)
-            elif method == "DELETE":
-                response = await self._client.delete(url, headers=headers)
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
-            
-            # Handle rate limiting
-            if response.status_code == 429:
-                retry_after = response.headers.get("Retry-After", "60")
-                raise RateLimitError(
-                    f"Rate limited. Retry after {retry_after}s",
-                    details={"retry_after": int(retry_after)}
+                timestamp = str(int(time.time() * 1000))
+                message = f"{timestamp}{method.upper()}{path}"
+                
+                signature = self.private_key.sign(
+                    message.encode(),
+                    padding.PSS(
+                        mgf=padding.MGF1(hashes.SHA256()),
+                        salt_length=padding.PSS.DIGEST_LENGTH
+                    ),
+                    hashes.SHA256()
                 )
-            
-            # Handle errors
-            if response.status_code >= 400:
-                error_detail = response.text
-                raise TradingError(
-                    f"Kalshi API error ({response.status_code}): {error_detail}",
-                    details={"status_code": response.status_code, "response": error_detail}
+                
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Kalshi-Access-Timestamp": timestamp,
+                    "Kalshi-Access-Signature": base64.b64encode(signature).decode(),
+                    "Content-Type": "application/json"
+                }
+                
+                response = await self.client.request(
+                    method,
+                    f"{self.BASE_URL}{path}",
+                    headers=headers,
+                    **kwargs
                 )
-            
-            return response.json() if response.text else {}
-        
-        except httpx.RequestError as e:
-            raise TradingError(f"Network error: {str(e)}")
-    
-    # =========================================================================
-    # Market Discovery
-    # =========================================================================
-    
-    async def get_sports_markets(
-        self,
-        sport: Optional[str] = None,
-        status: str = "open",
-        limit: int = 100
-    ) -> List[KalshiMarket]:
-        """
-        Fetch available sports markets.
-        
-        Args:
-            sport: Filter by sport (NBA, NFL, MLB, NHL, etc.)
-            status: Market status filter (open, active, closed)
-            limit: Maximum markets to return
-        
-        Returns:
-            List of KalshiMarket objects
-        """
-        params = {
-            "category": "Sports",
-            "status": status,
-            "limit": limit
-        }
-        
-        if sport:
-            params["series_ticker"] = sport.upper()
-        
-        response = await self._request("GET", "/markets", params=params, authenticated=False)
-        
-        markets = []
-        for m in response.get("markets", []):
-            markets.append(KalshiMarket(
-                ticker=m.get("ticker", ""),
-                event_ticker=m.get("event_ticker", ""),
-                title=m.get("title", ""),
-                status=m.get("status", ""),
-                yes_price=m.get("yes_price", 0.5),
-                no_price=m.get("no_price", 0.5),
-                volume_yes=m.get("volume_yes", 0),
-                volume_no=m.get("volume_no", 0),
-                close_ts=m.get("close_ts", 0),
-                event_start_ts=m.get("event_start_ts", 0)
-            ))
-        
-        return markets
-    
-    async def get_market(self, ticker: str) -> KalshiMarket:
-        """
-        Get details for a specific market.
-        
-        Args:
-            ticker: Market ticker (e.g., NBA24_LAL_BOS_W_241230)
-        
-        Returns:
-            KalshiMarket object
-        """
-        response = await self._request("GET", f"/markets/{ticker}", authenticated=False)
-        m = response.get("market", response)
-        
-        return KalshiMarket(
-            ticker=m.get("ticker", ticker),
-            event_ticker=m.get("event_ticker", ""),
-            title=m.get("title", ""),
-            status=m.get("status", ""),
-            yes_price=m.get("yes_price", 0.5),
-            no_price=m.get("no_price", 0.5),
-            volume_yes=m.get("volume_yes", 0),
-            volume_no=m.get("volume_no", 0),
-            close_ts=m.get("close_ts", 0),
-            event_start_ts=m.get("event_start_ts", 0)
-        )
-    
-    async def get_orderbook(self, ticker: str) -> Dict[str, Any]:
-        """
-        Fetch orderbook for a market.
-        
-        Args:
-            ticker: Market ticker
-        
-        Returns:
-            Orderbook with bids and asks arrays
-        """
-        return await self._request("GET", f"/markets/{ticker}/orderbook", authenticated=False)
-    
-    async def get_trades(self, ticker: str, limit: int = 100) -> List[Dict]:
-        """
-        Fetch recent trades for a market.
-        
-        Args:
-            ticker: Market ticker
-            limit: Maximum trades to return
-        
-        Returns:
-            List of trade objects
-        """
-        response = await self._request(
-            "GET",
-            f"/markets/{ticker}/trades",
-            params={"limit": limit},
-            authenticated=False
-        )
-        return response.get("trades", [])
-    
-    # =========================================================================
-    # Order Management
-    # =========================================================================
-    
-    async def place_order(
-        self,
-        ticker: str,
-        side: str,
-        yes_no: str,
-        price: float,
-        size: int,
-        time_in_force: str = "gtc",
-        client_order_id: Optional[str] = None
-    ) -> KalshiOrder:
-        """
-        Place a limit order on a Kalshi sports market.
-        
-        Args:
-            ticker: Market ticker (e.g., NBA24_LAL_BOS_W_241230)
-            side: "buy" or "sell"
-            yes_no: "yes" or "no"
-            price: Limit price (0.01 to 0.99)
-            size: Number of contracts
-            time_in_force: "gtc" (good-til-cancelled) or "fok" (fill-or-kill)
-            client_order_id: Optional idempotency key
-        
-        Returns:
-            KalshiOrder object with order details
-        
-        Raises:
-            TradingError: On order placement failure
-        """
-        if not 0.01 <= price <= 0.99:
-            raise TradingError(f"Invalid price {price}. Must be between 0.01 and 0.99")
-        
-        if size < 1:
-            raise TradingError(f"Invalid size {size}. Must be at least 1 contract")
-        
-        # Generate client order ID
-        order_client_id = client_order_id or f"bot-{int(time.time())}-{ticker[:20]}"
-        
-        # Paper trading mode - simulate order without placing real trade
-        if self.dry_run:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(
-                f"[DRY RUN] Simulated Kalshi order: {side.upper()} {size} {yes_no.upper()} "
-                f"contracts of {ticker} @ ${price:.2f}"
-            )
-            
-            # Return simulated order response
-            return KalshiOrder(
-                order_id=f"dry-run-{order_client_id}",
-                ticker=ticker,
-                side=side.lower(),
-                yes_no=yes_no.lower(),
-                price=price,
-                size=size,
-                status="filled",  # Simulate immediate fill for paper trading
-                filled_size=size,
-                created_at=datetime.now(timezone.utc)
-            )
-        
-        # Use official SDK for real order placement
-        import asyncio
-        try:
-            sdk_client = self._get_sdk_client()
-            
-            # SDK create_order expects price in cents (0-99), we have 0.01-0.99
-            price_cents = int(round(price * 100))
-            
-            # Create order via SDK (synchronous call wrapped in thread)
-            order_response = await asyncio.to_thread(
-                sdk_client.create_order,
-                ticker=ticker,
-                side=side.lower(),
-                action=yes_no.lower(),
-                type="limit",
-                count=size,
-                yes_price=price_cents if yes_no.lower() == "yes" else None,
-                no_price=price_cents if yes_no.lower() == "no" else None,
-            )
-            
-            logger.info(f"Order placed via SDK: {ticker} {side} {size} @ {price}")
-            
-            # Extract order details from SDK response
-            order = order_response.order if hasattr(order_response, 'order') else order_response
-            return KalshiOrder(
-                order_id=getattr(order, 'order_id', '') or str(order.get('order_id', '') if isinstance(order, dict) else ''),
-                ticker=ticker,
-                side=side.lower(),
-                yes_no=yes_no.lower(),
-                price=price,
-                size=size,
-                status=getattr(order, 'status', 'pending') if hasattr(order, 'status') else 'pending',
-                filled_size=getattr(order, 'filled_count', 0) if hasattr(order, 'filled_count') else 0,
-                created_at=datetime.now(timezone.utc)
-            )
-        except Exception as e:
-            logger.error(f"SDK order placement failed: {e}")
-            raise TradingError(f"Failed to place order: {e}")
-    
-    async def cancel_order(self, order_id: str) -> bool:
-        """
-        Cancel an open order.
-        
-        Args:
-            order_id: Kalshi order ID
-        
-        Returns:
-            True if cancelled successfully
-        """
-        import asyncio
-        try:
-            sdk_client = self._get_sdk_client()
-            await asyncio.to_thread(sdk_client.cancel_order, order_id)
-            logger.info(f"Order cancelled via SDK: {order_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to cancel order {order_id}: {e}")
-            return False
-    
-    async def get_orders(self, status: str = "open") -> List[KalshiOrder]:
-        """
-        Fetch orders with given status.
-        
-        Args:
-            status: Order status filter (open, pending, filled, cancelled)
-        
-        Returns:
-            List of KalshiOrder objects
-        """
-        import asyncio
-        try:
-            sdk_client = self._get_sdk_client()
-            response = await asyncio.to_thread(sdk_client.get_orders, status=status)
-            
-            orders_list = getattr(response, 'orders', []) if hasattr(response, 'orders') else []
-            orders = []
-            for o in orders_list:
-                orders.append(KalshiOrder(
-                    order_id=getattr(o, 'order_id', '') or '',
-                    ticker=getattr(o, 'ticker', '') or '',
-                    side=getattr(o, 'side', '') or '',
-                    yes_no=getattr(o, 'action', '') or '',
-                    price=(getattr(o, 'yes_price', 0) or getattr(o, 'no_price', 0) or 0) / 100,
-                    size=getattr(o, 'count', 0) or 0,
-                    status=getattr(o, 'status', '') or '',
-                    filled_size=getattr(o, 'filled_count', 0) or 0,
-                    created_at=datetime.now(timezone.utc)
-                ))
-            
-            return orders
-        except Exception as e:
-            logger.error(f"SDK get_orders failed: {e}")
-            return []
+                
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get('Retry-After', 5))
+                    await asyncio.sleep(retry_after)
+                    continue
+                    
+                response.raise_for_status()
+                return response.json()
+                
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code in (502, 503, 504):
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                raise
+            except Exception as e:
+                last_error = e
+                await asyncio.sleep(1)
+                continue
+                
+        raise Exception(f"API request failed after {max_retries} attempts: {str(last_error)}")
 
-    async def get_order(self, order_id: str) -> Dict[str, Any]:
-        """
-        Get a specific order by ID.
-        
-        Args:
-            order_id: Order ID to retrieve
-        
-        Returns:
-            Order details dictionary
-        """
-        try:
-            response = await self._request("GET", f"/portfolio/orders/{order_id}")
-            return response.get("order", {})
-        except TradingError as e:
-            logger.warning(f"Failed to get order {order_id}: {e}")
-            return {"status": "ERROR", "error": str(e)}
+    # Market Data Endpoints
+    async def get_markets(self, status: str = "open") -> List[Dict]:
+        """Get all markets with given status."""
+        return await self._authenticated_request("GET", f"/markets?status={status}")
     
-    # =========================================================================
-    # Portfolio & Balance
-    # =========================================================================
+    async def get_market(self, market_id: str) -> Dict:
+        """Get details for specific market."""
+        return await self._authenticated_request("GET", f"/markets/{market_id}")
     
-    async def get_balance(self) -> Dict[str, float]:
-        """
-        Get account balance using official Kalshi SDK.
-        
-        Returns:
-            Dictionary with available_balance and total_balance (in dollars)
-        """
-        # Try using official SDK (handles auth correctly)
-        try:
-            from kalshi_python import Configuration, KalshiClient as OfficialKalshiClient
-            import asyncio
-            
-            # Configure the official SDK
-            config = Configuration(
-                host=self.base_url
-            )
-            config.api_key_id = self.auth.api_key_id
-            config.private_key_pem = self._private_key_pem
-            
-            # Create the client and get balance (synchronous SDK call)
-            official_client = OfficialKalshiClient(config)
-            balance_response = await asyncio.to_thread(official_client.get_balance)
-            
-            # SDK returns balance in cents, convert to dollars
-            available_balance = getattr(balance_response, 'balance', 0) / 100
-            
-            logger.info(f"Kalshi balance fetched via official SDK: ${available_balance:.2f}")
-            
-            return {
-                "available_balance": available_balance,
-                "total_balance": available_balance,
-                "balance": available_balance,  # For compatibility
-                "pending_withdrawals": 0
-            }
-        except ImportError:
-            logger.warning("kalshi-python SDK not installed, falling back to custom auth")
-        except Exception as e:
-            logger.error(f"Official SDK balance fetch failed: {e}, trying custom auth")
-        
-        # Fallback to custom implementation
-        try:
-            response = await self._request("GET", "/portfolio/balance")
-            # Balance is in cents, convert to dollars
-            available = response.get("available_balance", 0) / 100
-            total = response.get("total_balance", 0) / 100
-            return {
-                "available_balance": available,
-                "total_balance": total,
-                "balance": available,  # For compatibility
-                "pending_withdrawals": response.get("pending_withdrawals", 0) / 100
-            }
-        except Exception as e:
-            logger.error(f"Custom auth balance fetch also failed: {e}")
-            raise
+    async def get_market_history(
+        self,
+        market_id: str,
+        limit: int = 100,
+        cursor: Optional[str] = None
+    ) -> Dict:
+        """Get historical data for a market."""
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        return await self._authenticated_request(
+            "GET",
+            f"/markets/{market_id}/history",
+            params=params
+        )
+
+    # Portfolio Endpoints
+    async def get_balance(self) -> Dict:
+        """Get current account balance."""
+        return await self._authenticated_request("GET", "/portfolio/balance")
     
     async def get_positions(self) -> List[Dict]:
-        """
-        Get current positions.
-        
-        Returns:
-            List of position objects with market details
-        """
-        import asyncio
-        try:
-            sdk_client = self._get_sdk_client()
-            response = await asyncio.to_thread(sdk_client.get_positions)
-            
-            positions = getattr(response, 'market_positions', []) if hasattr(response, 'market_positions') else []
-            # Convert SDK position objects to dicts for compatibility
-            return [
-                {
-                    'ticker': getattr(p, 'ticker', '') or '',
-                    'position': getattr(p, 'position', 0) or 0,
-                    'market_exposure': getattr(p, 'market_exposure', 0) or 0,
-                    'realized_pnl': getattr(p, 'realized_pnl', 0) or 0,
-                }
-                for p in positions
-            ]
-        except Exception as e:
-            logger.error(f"SDK get_positions failed: {e}")
-            return []
+        """Get current positions."""
+        return await self._authenticated_request("GET", "/portfolio/positions")
     
-    # =========================================================================
-    # Market State Detection
-    # =========================================================================
-    
-    async def get_market_state(self, ticker: str) -> Dict[str, Any]:
-        """
-        Determine if market is pregame, live, or settled.
-        
-        Args:
-            ticker: Market ticker
-        
-        Returns:
-            Dictionary with market state information
-        """
-        market = await self.get_market(ticker)
-        now = datetime.now(timezone.utc).timestamp()
-        
-        return {
-            "ticker": ticker,
-            "status": market.status,
-            "is_pregame": now < market.event_start_ts,
-            "is_live": market.event_start_ts <= now < market.close_ts and market.status in ["open", "active"],
-            "is_settled": market.status in ["closed", "settled"],
-            "time_to_start": max(0, market.event_start_ts - now),
-            "time_to_close": max(0, market.close_ts - now),
-            "yes_price": market.yes_price,
-            "no_price": market.no_price,
-            "volume": market.volume_yes + market.volume_no
-        }
-    
-    def calculate_implied_probability(self, orderbook: Dict) -> float:
-        """
-        Calculate implied YES probability from orderbook mid-market.
-
-        Args:
-            orderbook: Orderbook dictionary with bids and asks
-
-        Returns:
-            Mid-market implied probability (0.0 to 1.0)
-        """
-        bids = orderbook.get("bids", [])
-        asks = orderbook.get("asks", [])
-
-        best_bid = bids[0]["price"] if bids else 0.5
-        best_ask = asks[0]["price"] if asks else 0.5
-
-        return (best_bid + best_ask) / 2
-
-    # =========================================================================
-    # Bot Runner Compatibility Methods
-    # =========================================================================
-
-    async def wait_for_fill(self, order_id: str, timeout: int = 30) -> str:
-        """
-        Wait for an order to be filled.
-        Polls order status until filled, cancelled, or timeout.
-
-        Args:
-            order_id: Kalshi order ID
-            timeout: Maximum seconds to wait
-
-        Returns:
-            Final order status: "filled", "cancelled", "partial", or "timeout"
-        """
-        # In dry run mode, simulate immediate fill
-        if self.dry_run or order_id.startswith("dry-run-"):
-            return "filled"
-        
-        import asyncio
-        start_time = time.time()
-
-        while time.time() - start_time < timeout:
-            try:
-                response = await self._request("GET", f"/portfolio/orders/{order_id}")
-                status = response.get("status", "").lower()
-
-                if status == "filled":
-                    return "filled"
-                elif status in ["cancelled", "canceled"]:
-                    return "cancelled"
-                elif status == "partial":
-                    return "partial"
-
-                await asyncio.sleep(1)
-            except TradingError:
-                await asyncio.sleep(1)
-
-        return "timeout"
-
-    async def check_slippage(
+    async def get_fills(
         self,
-        ticker: str,
-        expected_price: float,
-        side: str = "buy"
-    ) -> tuple[bool, float]:
-        """
-        Check if current market price is within acceptable slippage.
+        market_id: Optional[str] = None,
+        limit: int = 100,
+        cursor: Optional[str] = None
+    ) -> Dict:
+        """Get order fill history."""
+        params = {"limit": limit}
+        if market_id:
+            params["market_id"] = market_id
+        if cursor:
+            params["cursor"] = cursor
+        return await self._authenticated_request(
+            "GET",
+            "/portfolio/fills",
+            params=params
+        )
 
-        Args:
-            ticker: Market ticker
-            expected_price: Expected execution price
-            side: "buy" or "sell"
+    # Order Endpoints
+    async def place_order(
+        self,
+        market_id: str,
+        side: str,
+        price: float,
+        size: int,
+        client_order_id: Optional[str] = None
+    ) -> Dict:
+        """Place a new order."""
+        if self.dry_run:
+            return {"dry_run": True, "status": "simulated"}
+            
+        payload = {
+            "market_id": market_id,
+            "side": side,
+            "price": price,
+            "count": size
+        }
+        
+        if client_order_id:
+            payload["client_order_id"] = client_order_id
+            
+        return await self._authenticated_request(
+            "POST",
+            "/orders",
+            json=payload
+        )
 
-        Returns:
-            Tuple of (is_acceptable, current_price)
-        """
+    async def cancel_order(self, order_id: str) -> Dict:
+        """Cancel an existing order."""
+        return await self._authenticated_request(
+            "DELETE",
+            f"/orders/{order_id}"
+        )
+
+    async def get_order_status(self, order_id: str) -> Dict:
+        """Get status of specific order."""
+        return await self._authenticated_request(
+            "GET",
+            f"/orders/{order_id}"
+        )
+
+    async def get_open_orders(self) -> List[Dict]:
+        """Get all open orders."""
+        return await self._authenticated_request(
+            "GET",
+            "/orders"
+        )
+
+    async def modify_order(
+        self,
+        order_id: str,
+        new_price: Optional[float] = None,
+        new_size: Optional[int] = None
+    ) -> Dict:
+        """Modify an existing order."""
+        payload = {}
+        if new_price is not None:
+            payload["price"] = new_price
+        if new_size is not None:
+            payload["count"] = new_size
+            
+        return await self._authenticated_request(
+            "PUT",
+            f"/orders/{order_id}",
+            json=payload
+        )
+
+    async def batch_orders(
+        self,
+        orders: List[Dict[str, Any]]
+    ) -> List[Dict]:
+        """Place multiple orders in a single request."""
+        if self.dry_run:
+            return [{"dry_run": True, "status": "simulated"} for _ in orders]
+            
+        return await self._authenticated_request(
+            "POST",
+            "/orders/batch",
+            json={"orders": orders}
+        )
+
+    # Test function
+    async def test_connection(self) -> bool:
+        """Test API connectivity."""
         try:
-            orderbook = await self.get_orderbook(ticker)
-
-            if side.lower() == "buy":
-                # For buy orders, check best ask
-                asks = orderbook.get("asks", [])
-                if not asks:
-                    return False, expected_price
-                current_price = asks[0].get("price", expected_price)
-                # Allow up to 5% slippage for buys
-                slippage = (current_price - expected_price) / expected_price if expected_price > 0 else 0
-                return slippage <= 0.05, current_price
-            else:
-                # For sell orders, check best bid
-                bids = orderbook.get("bids", [])
-                if not bids:
-                    return False, expected_price
-                current_price = bids[0].get("price", expected_price)
-                # Allow up to 5% slippage for sells
-                slippage = (expected_price - current_price) / expected_price if expected_price > 0 else 0
-                return slippage <= 0.05, current_price
+            await self.get_balance()
+            return True
         except Exception as e:
-            logger.debug(f"Slippage check failed: {e}")
-            return True, expected_price  # Allow trade if slippage check fails
+            logger.error(f"Connection test failed: {str(e)}")
+            return False
+
+    async def close(self):
+        """Close HTTP client."""
+        await self.client.aclose()
+
+
+# Example usage
+if __name__ == "__main__":
+    import asyncio
+    
+    async def main():
+        # Initialize with your actual credentials
+        client = KalshiClient(
+            api_key="your_api_key",
+            private_key_pem="""-----BEGIN RSA PRIVATE KEY-----
+            your_private_key_here
+            -----END RSA PRIVATE KEY-----""",
+            dry_run=True  # Set to False for real trading
+        )
+        
+        try:
+            # Test connection
+            if not await client.test_connection():
+                print("Failed to connect to Kalshi API")
+                return
+                
+            print("Successfully connected to Kalshi API")
+            
+            # Example usage
+            balance = await client.get_balance()
+            print(f"Account balance: {balance}")
+            
+            markets = await client.get_markets()
+            print(f"Found {len(markets)} open markets")
+            
+            # Place a test order (would need valid market_id)
+            # order = await client.place_order(
+            #     market_id="some_market_id",
+            #     side="yes",
+            #     price=0.50,
+            #     size=10
+            # )
+            # print(f"Order placed: {order}")
+            
+        finally:
+            await client.close()
+    
+    asyncio.run(main())

@@ -138,6 +138,12 @@ class BotRunner:
         self.entry_threshold: float = 0.05
         self.take_profit: float = 0.15
         self.stop_loss: float = 0.10
+        
+        # Trading parameters from frontend config
+        self.position_size: float = 100.0  # Max $ per trade
+        self.min_volume: float = 50000.0   # Min market volume
+        self.latest_entry_time_minutes: int = 10  # No entries after X min left
+        self.latest_exit_time_minutes: int = 2    # Force exit at X min left
 
         # Live trading mode (no paper trading - Kalshi has no demo)
         self.dry_run: bool = False
@@ -425,6 +431,59 @@ class BotRunner:
                     f"{game.get('home_team', '?')} ({sport.upper()}), "
                     f"side: {game.get('selected_side', 'home')}"
                 )
+        
+        # LOAD TRADING PARAMETERS from frontend config
+        params = config.get("parameters")
+        if params:
+            # Position sizing
+            if params.get("position_size"):
+                self.position_size = float(params["position_size"])
+            else:
+                self.position_size = 100.0  # Default $100
+            
+            # Entry threshold (probability drop)
+            if params.get("probability_drop"):
+                self.entry_threshold = float(params["probability_drop"]) / 100.0  # Convert % to decimal
+            
+            # Exit conditions
+            if params.get("take_profit"):
+                self.take_profit = float(params["take_profit"]) / 100.0  # Convert % to decimal
+            if params.get("stop_loss"):
+                self.stop_loss = float(params["stop_loss"]) / 100.0  # Convert % to decimal
+            
+            # Volume threshold
+            if params.get("min_volume"):
+                self.min_volume = float(params["min_volume"])
+            else:
+                self.min_volume = 50000.0  # Default $50k
+            
+            # Time-based rules
+            if params.get("latest_entry_time") is not None:
+                self.latest_entry_time_minutes = int(params["latest_entry_time"])
+            else:
+                self.latest_entry_time_minutes = 10  # Default 10 min
+            
+            if params.get("latest_exit_time") is not None:
+                self.latest_exit_time_minutes = int(params["latest_exit_time"])
+            else:
+                self.latest_exit_time_minutes = 2  # Default 2 min
+            
+            logger.info(
+                f"Loaded trading parameters from config: "
+                f"position_size=${self.position_size:.0f}, "
+                f"entry_threshold={self.entry_threshold:.1%}, "
+                f"TP={self.take_profit:.1%}, SL={self.stop_loss:.1%}, "
+                f"min_volume=${self.min_volume:.0f}, "
+                f"entry_cutoff={self.latest_entry_time_minutes}min, "
+                f"exit_before={self.latest_exit_time_minutes}min"
+            )
+        else:
+            # Set defaults if no params in config
+            self.position_size = 100.0
+            self.min_volume = 50000.0
+            self.latest_entry_time_minutes = 10
+            self.latest_exit_time_minutes = 2
+            logger.info("No trading parameters in config, using defaults")
         
         # Ensure all selected sports are in enabled_sports
         for sport in selected_sports:
@@ -904,6 +963,18 @@ class BotRunner:
         if not self._is_market_enabled(game):
             logger.debug(f"Entry blocked: trading disabled for market {game.market.condition_id}")
             return
+        
+        # TIME-BASED ENTRY CUTOFF: Check if too little time remaining
+        # Uses frontend config's latest_entry_time_minutes
+        if hasattr(self, 'latest_entry_time_minutes'):
+            time_remaining_sec = self._get_time_remaining_seconds(game)
+            entry_cutoff_sec = self.latest_entry_time_minutes * 60
+            if time_remaining_sec is not None and time_remaining_sec < entry_cutoff_sec:
+                logger.debug(
+                    f"Entry blocked: {time_remaining_sec}s remaining < {entry_cutoff_sec}s entry cutoff "
+                    f"({self.latest_entry_time_minutes} min)"
+                )
+                return
 
         # Build objects for TradingEngine
         tracked_market = self._build_tracked_market_from_game(game)
@@ -922,6 +993,14 @@ class BotRunner:
         
         # Extract signal details
         position_size = entry_signal["position_size"]
+        
+        # OVERRIDE with frontend config position_size if set
+        # This ensures user's configured position size is used, not database defaults
+        if hasattr(self, 'position_size') and self.position_size:
+            position_size = self.position_size
+            entry_signal["position_size"] = position_size
+            logger.debug(f"Using frontend config position_size: ${position_size:.0f}")
+        
         price = entry_signal["price"]
         side = entry_signal["side"]
         token_id = entry_signal["token_id"]
@@ -1158,14 +1237,29 @@ class BotRunner:
                 exit_message = exit_signal.get("message", exit_reason)
             else:
                 # Check additional bot_runner-specific exit conditions
-                # Time-based exit
-                exit_time_remaining = self._get_effective_config(game, 'exit_time_remaining_seconds', None)
-                if exit_time_remaining is not None:
+                
+                # FRONTEND CONFIG TIME-BASED FORCED EXIT
+                # Uses latest_exit_time_minutes from frontend config
+                if hasattr(self, 'latest_exit_time_minutes'):
                     time_remaining = self._get_time_remaining_seconds(game)
-                    if time_remaining is not None and time_remaining <= exit_time_remaining:
+                    exit_threshold_sec = self.latest_exit_time_minutes * 60
+                    if time_remaining is not None and time_remaining <= exit_threshold_sec:
                         exit_reason = f"time_exit_{time_remaining}s_remaining"
-                        exit_message = f"Time-based exit: {time_remaining}s remaining, threshold {exit_time_remaining}s"
+                        exit_message = (
+                            f"Forced exit: {time_remaining}s remaining <= "
+                            f"{exit_threshold_sec}s threshold ({self.latest_exit_time_minutes} min)"
+                        )
                         logger.info(exit_message)
+                
+                # Time-based exit from database config (fallback)
+                if not exit_reason:
+                    exit_time_remaining = self._get_effective_config(game, 'exit_time_remaining_seconds', None)
+                    if exit_time_remaining is not None:
+                        time_remaining = self._get_time_remaining_seconds(game)
+                        if time_remaining is not None and time_remaining <= exit_time_remaining:
+                            exit_reason = f"time_exit_{time_remaining}s_remaining"
+                            exit_message = f"Time-based exit: {time_remaining}s remaining, threshold {exit_time_remaining}s"
+                            logger.info(exit_message)
 
                 # Segment-based exit (more granular than TradingEngine's segment check)
                 exit_before_segment = self._get_effective_config(game, 'exit_before_segment', None)
