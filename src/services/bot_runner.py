@@ -460,11 +460,12 @@ class BotRunner:
         await discord_notifier.notify_bot_started(str(self.user_id), self.enabled_sports)
         
         # Log activity
-        await ActivityLogCRUD.create(
+        await ActivityLogCRUD.info(
             db,
-            user_id=self.user_id,
-            action="bot_started",
-            details={"sports": self.enabled_sports}
+            self.user_id,
+            "BOT",
+            f"Bot started for sports: {', '.join(self.enabled_sports)}",
+            {"sports": self.enabled_sports}
         )
         
         # Start background tasks
@@ -526,11 +527,12 @@ class BotRunner:
         
         # Log activity
         if self.user_id:
-            await ActivityLogCRUD.create(
+            await ActivityLogCRUD.info(
                 db,
-                user_id=self.user_id,
-                action="bot_stopped",
-                details={
+                self.user_id,
+                "BOT",
+                f"Bot stopped. Trades: {self.trades_today}, PnL: ${self.daily_pnl:.2f}",
+                {
                     "trades": self.trades_today,
                     "pnl": self.daily_pnl
                 }
