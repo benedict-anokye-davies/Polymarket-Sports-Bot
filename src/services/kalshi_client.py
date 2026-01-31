@@ -135,11 +135,12 @@ class KalshiAuthenticator:
         message = timestamp + method.upper() + path
         
         # Sign with RSA-PSS with SHA256 (Kalshi requirement)
+        # CRITICAL: salt_length must be DIGEST_LENGTH, not MAX_LENGTH!
         signature = self.private_key.sign(
             message.encode(),
             padding.PSS(
                 mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
+                salt_length=padding.PSS.DIGEST_LENGTH
             ),
             hashes.SHA256()
         )
