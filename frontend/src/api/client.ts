@@ -281,11 +281,11 @@ class ApiClient {
   }
 
   async startBot(): Promise<{ message: string }> {
-    return this.request('/bot/start', { method: 'POST' });
+    return this.request('/bot/start/', { method: 'POST' });
   }
 
   async stopBot(): Promise<{ message: string }> {
-    return this.request('/bot/stop', { method: 'POST' });
+    return this.request('/bot/stop/', { method: 'POST' });
   }
 
   // ==========================================================================
