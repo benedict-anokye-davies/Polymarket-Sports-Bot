@@ -321,10 +321,16 @@ class AccountManager:
                 client = await self.get_client_for_account(account.id)
                 if client:
                     balance = await client.get_balance()
+                    # Handle different key names: Polymarket uses 'balance', Kalshi uses 'available_balance'
+                    balance_value = 0
+                    if isinstance(balance, dict):
+                        balance_value = balance.get("balance") or balance.get("available_balance") or balance.get("total_balance") or 0
+                    else:
+                        balance_value = balance or 0
                     balances.append({
                         "account_id": str(account.id),
                         "account_name": account.account_name or "Primary",
-                        "balance": float(balance.get("balance", 0)) if isinstance(balance, dict) else float(balance or 0),
+                        "balance": float(balance_value),
                         "allocation_pct": float(account.allocation_pct or 100),
                         "is_primary": account.is_primary,
                     })
