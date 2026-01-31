@@ -302,29 +302,29 @@ export default function BotConfig() {
 
     if (sport.includes('nfl') || sport.includes('football')) {
       return {
-        entryLabel: 'Min Time Remaining (Quarter)',
+        entryLabel: 'Min Game Time Remaining',
         exitLabel: 'Exit Before (Game End)',
-        entryMax: 45, // Up to 45 min remaining in game (3 quarters)
+        entryMax: 60, // Full game is 60 minutes
         exitMax: 15,
-        entryHelper: 'Minimum minutes left in quarter to enter trade',
+        entryHelper: 'Minimum minutes left in game to enter trade',
         exitHelper: 'Must close positions with this much time left in game',
       };
     } else if (sport.includes('nba') || sport.includes('basketball')) {
       return {
-        entryLabel: 'Min Time Remaining (Quarter)',
+        entryLabel: 'Min Game Time Remaining',
         exitLabel: 'Exit Before (Game End)',
-        entryMax: 36, // Up to 36 min remaining (3 quarters)
+        entryMax: 48, // Full game is 48 minutes
         exitMax: 12,
-        entryHelper: 'Minimum minutes left in quarter to enter trade',
+        entryHelper: 'Minimum minutes left in game to enter trade',
         exitHelper: 'Must close positions with this much time left in game',
       };
     } else if (sport.includes('nhl') || sport.includes('hockey')) {
       return {
-        entryLabel: 'Min Time Remaining (Period)',
+        entryLabel: 'Min Game Time Remaining',
         exitLabel: 'Exit Before (Game End)',
-        entryMax: 40, // Up to 40 min remaining (2 periods)
+        entryMax: 60, // Full game is 60 minutes (3x20)
         exitMax: 10,
-        entryHelper: 'Minimum minutes left in period to enter trade',
+        entryHelper: 'Minimum minutes left in game to enter trade',
         exitHelper: 'Must close positions with this much time left in game',
       };
     } else if (sport.includes('soccer') || sport.includes('mls') || sport.includes('epl') || sport.includes('laliga')) {
@@ -338,11 +338,11 @@ export default function BotConfig() {
       };
     } else {
       return {
-        entryLabel: 'Latest Entry Time',
-        exitLabel: 'Latest Exit Time',
-        entryMax: 30,
+        entryLabel: 'Min Game Time Remaining',
+        exitLabel: 'Exit Before (Game End)',
+        entryMax: 48,
         exitMax: 15,
-        entryHelper: 'No new positions after this much time remaining',
+        entryHelper: 'Minimum minutes left in game to enter trade',
         exitHelper: 'Must close all positions by this time remaining',
       };
     }
