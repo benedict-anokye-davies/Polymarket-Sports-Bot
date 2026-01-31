@@ -254,7 +254,9 @@ class KalshiClient:
         
         headers = {}
         if authenticated:
-            headers = self.auth.sign_request(method, path, body_str)
+            # IMPORTANT: Kalshi signature must use full path including /trade-api/v2 prefix
+            full_path = f"/trade-api/v2{path}"
+            headers = self.auth.sign_request(method, full_path, body_str)
         else:
             headers = {'Content-Type': 'application/json'}
         
