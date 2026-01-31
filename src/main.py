@@ -201,9 +201,11 @@ app = FastAPI(
 # All middlewares use pure ASGI implementation to avoid body consumption issues
 
 # 1. CORS (must be outermost for preflight requests)
+# Use allow_origin_regex to support wildcard subdomains (e.g., *.polymarket-sports-bot.pages.dev)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=app_settings.cors_origins_list,
+    allow_origin_regex=r"https://.*\.polymarket-sports-bot\.pages\.dev",
     allow_credentials=app_settings.cors_allow_credentials,
     allow_methods=app_settings.cors_allow_methods.split(","),
     allow_headers=app_settings.cors_allow_headers.split(","),

@@ -68,6 +68,38 @@ class KalshiAuthenticator:
     Kalshi uses custom headers with RSA-SHA256 signatures.
     """
     
+    @staticmethod
+    def _normalize_pem_key(private_key_pem: str) -> str:
+        """
+        Normalize a PEM private key to handle various paste formats.
+        """
+        import re
+        
+        if not private_key_pem:
+            return private_key_pem
+        
+        key = private_key_pem.strip()
+        
+        # Replace literal \n with actual newlines
+        key = key.replace('\\n', '\n')
+        key = key.replace('\r\n', '\n')
+        key = key.replace('\r', '\n')
+        
+        # If key has PEM structure but few lines, try to fix it
+        if '-----BEGIN' in key and '-----END' in key:
+            lines = key.split('\n')
+            if len(lines) <= 3:
+                match = re.match(
+                    r'(-----BEGIN [A-Z ]+-----)(.+)(-----END [A-Z ]+-----)',
+                    key.replace('\n', ''),
+                    re.DOTALL
+                )
+                if match:
+                    header, body, footer = match.group(1), match.group(2).strip(), match.group(3)
+                    body_lines = [body[i:i+64] for i in range(0, len(body), 64)]
+                    key = header + '\n' + '\n'.join(body_lines) + '\n' + footer
+        
+        return key.strip() + '\n'
     def __init__(self, api_key_id: str, private_key_pem: str):
         """
         Initialize authenticator with API key and private key.
@@ -92,7 +124,9 @@ class KalshiAuthenticator:
         self.api_key_id = api_key_id.strip()
         
         try:
-            key_bytes = private_key_pem.encode() if isinstance(private_key_pem, str) else private_key_pem
+            # Normalize the PEM key to handle various paste formats
+            normalized_key = self._normalize_pem_key(private_key_pem)
+            key_bytes = normalized_key.encode() if isinstance(normalized_key, str) else normalized_key
             loaded_key = serialization.load_pem_private_key(
                 key_bytes,
                 password=None,
@@ -163,6 +197,63 @@ class KalshiClient:
     """
     
     @staticmethod
+    def normalize_pem_key(private_key_pem: str) -> str:
+        """
+        Normalize a PEM private key to ensure proper format.
+        Handles various paste formats including:
+        - Escaped newlines (\\n as literal text)
+        - Missing newlines (key pasted as single line)
+        - Extra whitespace
+        
+        Args:
+            private_key_pem: RSA private key that may have formatting issues
+            
+        Returns:
+            Properly formatted PEM key string
+        """
+        if not private_key_pem:
+            return private_key_pem
+        
+        key = private_key_pem.strip()
+        
+        # Replace literal \n (escaped newlines) with actual newlines
+        # This handles keys pasted from JSON or escaped strings
+        key = key.replace('\\n', '\n')
+        
+        # Replace \r\n with \n for consistency
+        key = key.replace('\r\n', '\n')
+        key = key.replace('\r', '\n')
+        
+        # If key contains proper PEM structure, validate line breaks
+        if '-----BEGIN' in key and '-----END' in key:
+            # If it looks like a run-together key (no newlines in body), try to fix it
+            lines = key.split('\n')
+            if len(lines) <= 3:
+                # Key might be all on one line or missing line breaks
+                # Try to parse and restructure
+                import re
+                
+                # Extract header, body, and footer
+                match = re.match(
+                    r'(-----BEGIN [A-Z ]+-----)(.+)(-----END [A-Z ]+-----)',
+                    key.replace('\n', ''),
+                    re.DOTALL
+                )
+                
+                if match:
+                    header = match.group(1)
+                    body = match.group(2).strip()
+                    footer = match.group(3)
+                    
+                    # Break body into 64-character lines (standard PEM format)
+                    body_lines = [body[i:i+64] for i in range(0, len(body), 64)]
+                    
+                    # Reconstruct the key
+                    key = header + '\n' + '\n'.join(body_lines) + '\n' + footer
+        
+        return key.strip() + '\n'
+    
+    @staticmethod
     def validate_rsa_key(private_key_pem: str) -> tuple[bool, str]:
         """
         Validate an RSA private key without creating a full client.
@@ -178,7 +269,9 @@ class KalshiClient:
             return False, "Private key is required. Please provide your RSA private key in PEM format."
         
         try:
-            key_bytes = private_key_pem.encode() if isinstance(private_key_pem, str) else private_key_pem
+            # Normalize the key first to handle various paste formats
+            normalized_key = KalshiClient.normalize_pem_key(private_key_pem)
+            key_bytes = normalized_key.encode() if isinstance(normalized_key, str) else normalized_key
             serialization.load_pem_private_key(
                 key_bytes,
                 password=None,
