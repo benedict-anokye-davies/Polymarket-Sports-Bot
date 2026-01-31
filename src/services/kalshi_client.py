@@ -145,7 +145,7 @@ class KalshiAuthenticator:
         
         return {
             'KALSHI-ACCESS-KEY': self.api_key_id,
-            'KALSHI-ACCESS-SIGN': signature_b64,
+            'KALSHI-ACCESS-SIGNATURE': signature_b64,
             'KALSHI-ACCESS-TIMESTAMP': timestamp,
             'Content-Type': 'application/json'
         }
