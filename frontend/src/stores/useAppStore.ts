@@ -22,6 +22,7 @@ interface TourState {
   isRunning: boolean;
   currentPage: 'dashboard' | 'bot-config' | null;
   stepIndex: number;
+  hasCompletedTour: boolean;
 }
 
 interface AppState {
@@ -30,7 +31,7 @@ interface AppState {
   connection: ConnectionState;
   tour: TourState;
   sidebarCollapsed: boolean;
-  
+
   // Actions
   setWalletConnected: (connected: boolean, address?: string) => void;
   setWalletBalance: (balance: number) => void;
@@ -66,6 +67,7 @@ export const useAppStore = create<AppState>((set) => ({
     isRunning: false,
     currentPage: null,
     stepIndex: 0,
+    hasCompletedTour: localStorage.getItem('kalshi-bot-tour-completed') === 'true',
   },
   sidebarCollapsed: false,
 
@@ -112,14 +114,21 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
   startTour: () =>
-    set((state) => ({
-      tour: { ...state.tour, isRunning: true, currentPage: 'dashboard', stepIndex: 0 },
-    })),
+    set((state) => {
+      // Don't start tour if already completed
+      if (state.tour.hasCompletedTour) return state;
+      return {
+        tour: { ...state.tour, isRunning: true, currentPage: 'dashboard', stepIndex: 0 },
+      };
+    }),
 
-  stopTour: () =>
-    set((state) => ({
-      tour: { ...state.tour, isRunning: false, currentPage: null, stepIndex: 0 },
-    })),
+  stopTour: () => {
+    // Mark tour as completed in localStorage
+    localStorage.setItem('kalshi-bot-tour-completed', 'true');
+    return set((state) => ({
+      tour: { ...state.tour, isRunning: false, currentPage: null, stepIndex: 0, hasCompletedTour: true },
+    }));
+  },
 
   setTourPage: (page) =>
     set((state) => ({

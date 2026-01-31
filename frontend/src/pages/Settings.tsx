@@ -3,6 +3,7 @@ import { Eye, EyeOff, Bell, Shield, Wallet, TestTube2, Save, Loader2, ShieldAler
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -220,12 +221,12 @@ export default function Settings() {
       // Save global settings
       const globalPromise = globalSettings
         ? updateGlobalSettingsMutation.mutateAsync({
-            bot_enabled: globalSettings.bot_enabled,
-            max_daily_loss_usdc: globalSettings.max_daily_loss_usdc,
-            max_portfolio_exposure_usdc: globalSettings.max_portfolio_exposure_usdc,
-            discord_webhook_url: globalSettings.discord_webhook_url,
-            discord_alerts_enabled: globalSettings.discord_alerts_enabled,
-          })
+          bot_enabled: globalSettings.bot_enabled,
+          max_daily_loss_usdc: globalSettings.max_daily_loss_usdc,
+          max_portfolio_exposure_usdc: globalSettings.max_portfolio_exposure_usdc,
+          discord_webhook_url: globalSettings.discord_webhook_url,
+          discord_alerts_enabled: globalSettings.discord_alerts_enabled,
+        })
         : Promise.resolve();
 
       await Promise.all([...sportPromises, globalPromise]);
@@ -464,11 +465,10 @@ export default function Settings() {
                     <button
                       type="button"
                       onClick={() => setWallet(prev => ({ ...prev, platform: 'kalshi' }))}
-                      className={`p-3 rounded-lg border text-left transition-all ${
-                        wallet.platform === 'kalshi'
+                      className={`p-3 rounded-lg border text-left transition-all ${wallet.platform === 'kalshi'
                           ? 'bg-primary/10 border-primary/50'
                           : 'bg-muted/30 border-border hover:border-primary/30'
-                      }`}
+                        }`}
                     >
                       <span className={`font-medium ${wallet.platform === 'kalshi' ? 'text-primary' : 'text-foreground'}`}>
                         Kalshi
@@ -478,11 +478,10 @@ export default function Settings() {
                     <button
                       type="button"
                       onClick={() => setWallet(prev => ({ ...prev, platform: 'polymarket' }))}
-                      className={`p-3 rounded-lg border text-left transition-all ${
-                        wallet.platform === 'polymarket'
+                      className={`p-3 rounded-lg border text-left transition-all ${wallet.platform === 'polymarket'
                           ? 'bg-primary/10 border-primary/50'
                           : 'bg-muted/30 border-border hover:border-primary/30'
-                      }`}
+                        }`}
                     >
                       <span className={`font-medium ${wallet.platform === 'polymarket' ? 'text-primary' : 'text-foreground'}`}>
                         Polymarket
@@ -494,124 +493,126 @@ export default function Settings() {
 
                 <Separator />
 
-            {/* Kalshi Credentials */}
-            {wallet.platform === 'kalshi' ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="apiKey" className="text-muted-foreground">Kalshi API Key</Label>
-                  <Input
-                    id="apiKey"
-                    type="text"
-                    placeholder="Your Kalshi API Key"
-                    className="bg-muted border-border font-mono"
-                    value={wallet.api_key}
-                    onChange={(e) => setWallet(prev => ({ ...prev, api_key: e.target.value }))}
-                  />
-                  <p className="text-xs text-muted-foreground">From Kalshi Settings {'>'} API Keys</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="apiSecret" className="text-muted-foreground">Kalshi API Secret</Label>
-                  <div className="relative">
-                    <Input
-                      id="apiSecret"
-                      type={showPrivateKey ? 'text' : 'password'}
-                      placeholder="Your Kalshi API Secret"
-                      className="bg-muted border-border pr-10 font-mono"
-                      value={wallet.api_secret}
-                      onChange={(e) => setWallet(prev => ({ ...prev, api_secret: e.target.value }))}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      type="button"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                      onClick={() => setShowPrivateKey(!showPrivateKey)}
-                    >
-                      {showPrivateKey ? (
-                        <EyeOff className="w-4 h-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Keep this secret! Used for signing requests.</p>
-                </div>
-              </>
-            ) : (
-              /* Polymarket Credentials */
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="privateKey" className="text-muted-foreground">Private Key</Label>
-                  <div className="relative">
-                    <Input
-                      id="privateKey"
-                      type={showPrivateKey ? 'text' : 'password'}
-                      placeholder="0x..."
-                      className="bg-muted border-border pr-10 font-mono"
-                      value={wallet.api_key}
-                      onChange={(e) => setWallet(prev => ({ ...prev, api_key: e.target.value }))}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      type="button"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                      onClick={() => setShowPrivateKey(!showPrivateKey)}
-                    >
-                      {showPrivateKey ? (
-                        <EyeOff className="w-4 h-4 text-muted-foreground" />
-                      ) : (
-                        <Eye className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Your Polygon wallet private key (64 hex chars)</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="walletAddress" className="text-muted-foreground">Wallet Address</Label>
-                  <Input
-                    id="walletAddress"
-                    placeholder="0x..."
-                    className="bg-muted border-border font-mono"
-                    value={wallet.funder_address}
-                    onChange={(e) => setWallet(prev => ({ ...prev, funder_address: e.target.value }))}
-                  />
-                  <p className="text-xs text-muted-foreground">Your Polygon wallet holding USDC</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="apiPassphrase" className="text-muted-foreground">API Passphrase (Optional)</Label>
-                  <Input
-                    id="apiPassphrase"
-                    type="password"
-                    placeholder="For L2 authentication"
-                    className="bg-muted border-border font-mono"
-                    value={wallet.api_passphrase}
-                    onChange={(e) => setWallet(prev => ({ ...prev, api_passphrase: e.target.value }))}
-                  />
-                </div>
-              </>
-            )}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${walletConnected ? 'bg-primary' : 'bg-muted-foreground'}`} />
-                <span className={`text-sm ${walletConnected ? 'text-primary' : 'text-muted-foreground'}`}>
-                  {walletConnected ? 'Connected' : 'Not Connected'}
-                </span>
-              </div>
-              <Button
-                variant="outline"
-                className="border-border hover:bg-muted gap-2"
-                onClick={handleTestConnection}
-                disabled={testingConnection}
-              >
-                {testingConnection ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                {/* Kalshi Credentials */}
+                {wallet.platform === 'kalshi' ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="apiKey" className="text-muted-foreground">Kalshi API Key</Label>
+                      <Input
+                        id="apiKey"
+                        type="text"
+                        placeholder="Your Kalshi API Key"
+                        className="bg-muted border-border font-mono"
+                        value={wallet.api_key}
+                        onChange={(e) => setWallet(prev => ({ ...prev, api_key: e.target.value }))}
+                      />
+                      <p className="text-xs text-muted-foreground">From Kalshi Settings {'>'} API Keys</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="apiSecret" className="text-muted-foreground">Kalshi RSA Private Key</Label>
+                      <div className="relative">
+                        <Textarea
+                          id="apiSecret"
+                          placeholder="-----BEGIN RSA PRIVATE KEY-----
+MIIEow...
+-----END RSA PRIVATE KEY-----"
+                          className="bg-muted border-border pr-10 font-mono min-h-[120px] text-xs"
+                          value={wallet.api_secret}
+                          onChange={(e) => setWallet(prev => ({ ...prev, api_secret: e.target.value }))}
+                          style={{ whiteSpace: 'pre-wrap' }}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          type="button"
+                          className="absolute right-1 top-2 h-7 w-7"
+                          onClick={() => setShowPrivateKey(!showPrivateKey)}
+                        >
+                          {showPrivateKey ? (
+                            <EyeOff className="w-4 h-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Paste your complete RSA private key including header and footer lines.</p>
+                    </div>
+                  </>
                 ) : (
-                  <TestTube2 className="w-4 h-4" />
+                  /* Polymarket Credentials */
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="privateKey" className="text-muted-foreground">Private Key</Label>
+                      <div className="relative">
+                        <Input
+                          id="privateKey"
+                          type={showPrivateKey ? 'text' : 'password'}
+                          placeholder="0x..."
+                          className="bg-muted border-border pr-10 font-mono"
+                          value={wallet.api_key}
+                          onChange={(e) => setWallet(prev => ({ ...prev, api_key: e.target.value }))}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          type="button"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                          onClick={() => setShowPrivateKey(!showPrivateKey)}
+                        >
+                          {showPrivateKey ? (
+                            <EyeOff className="w-4 h-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Your Polygon wallet private key (64 hex chars)</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="walletAddress" className="text-muted-foreground">Wallet Address</Label>
+                      <Input
+                        id="walletAddress"
+                        placeholder="0x..."
+                        className="bg-muted border-border font-mono"
+                        value={wallet.funder_address}
+                        onChange={(e) => setWallet(prev => ({ ...prev, funder_address: e.target.value }))}
+                      />
+                      <p className="text-xs text-muted-foreground">Your Polygon wallet holding USDC</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="apiPassphrase" className="text-muted-foreground">API Passphrase (Optional)</Label>
+                      <Input
+                        id="apiPassphrase"
+                        type="password"
+                        placeholder="For L2 authentication"
+                        className="bg-muted border-border font-mono"
+                        value={wallet.api_passphrase}
+                        onChange={(e) => setWallet(prev => ({ ...prev, api_passphrase: e.target.value }))}
+                      />
+                    </div>
+                  </>
                 )}
-                Test Connection
-              </Button>
-            </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${walletConnected ? 'bg-primary' : 'bg-muted-foreground'}`} />
+                    <span className={`text-sm ${walletConnected ? 'text-primary' : 'text-muted-foreground'}`}>
+                      {walletConnected ? 'Connected' : 'Not Connected'}
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="border-border hover:bg-muted gap-2"
+                    onClick={handleTestConnection}
+                    disabled={testingConnection}
+                  >
+                    {testingConnection ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <TestTube2 className="w-4 h-4" />
+                    )}
+                    Test Connection
+                  </Button>
+                </div>
               </>
             )}
           </CardContent>
@@ -951,7 +952,7 @@ export default function Settings() {
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {globalSettings?.kill_switch_active 
+                  {globalSettings?.kill_switch_active
                     ? `Activated at ${globalSettings.kill_switch_activated_at ? new Date(globalSettings.kill_switch_activated_at).toLocaleString() : 'unknown time'}`
                     : 'Not activated'}
                 </p>
@@ -1083,8 +1084,8 @@ export default function Settings() {
                 {sessions.map((session) => {
                   const isCurrentSession = session.id === 'current'; // You might want to mark the current session
                   const isMobile = session.device_info?.toLowerCase().includes('mobile') ||
-                                   session.device_info?.toLowerCase().includes('android') ||
-                                   session.device_info?.toLowerCase().includes('iphone');
+                    session.device_info?.toLowerCase().includes('android') ||
+                    session.device_info?.toLowerCase().includes('iphone');
 
                   return (
                     <div
