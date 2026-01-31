@@ -457,7 +457,7 @@ class BotRunner:
         self.start_time = datetime.now(timezone.utc)
         
         # Send start notification
-        await discord_notifier.notify_bot_started(self.enabled_sports)
+        await discord_notifier.notify_bot_started(str(self.user_id), self.enabled_sports)
         
         # Log activity
         await ActivityLogCRUD.create(
