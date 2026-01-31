@@ -1,0 +1,26 @@
+============================================================
+KALSHI API CONNECTION TEST
+============================================================
+
+1. Testing PRODUCTION API (public markets endpoint)...
+   [OK] SUCCESS - Found 5 markets
+   Sample market: yes Yale,yes Saint Louis,yes Harvard,yes VCU,yes Michigan,ye...
+
+2. Testing DEMO API (public markets endpoint)...
+   [OK] SUCCESS - Found 5 markets
+   Sample market: Will 1+1 equal 3 on Jan 30 at 20:30?...
+
+3. Testing SPORTS markets fetch...
+   [WARN] No NBA markets found (may be off-season or none open)
+
+4. Testing market orderbook fetch...
+   [OK] SUCCESS - KXMVESPORTSMULTIGAMEEXTENDED-S202606950A60D60-D2DEDC6A25A orderbook: 0 bids, 0 asks
+
+============================================================
+TEST COMPLETE
+============================================================
+
+NOTES:
+- Public endpoints work = API client code is correct
+- Authenticated endpoints (placing orders) require valid API credentials
+- To test authenticated endpoints, user must connect their Kalshi account

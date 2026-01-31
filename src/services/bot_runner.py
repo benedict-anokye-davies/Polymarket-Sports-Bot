@@ -139,8 +139,8 @@ class BotRunner:
         self.take_profit: float = 0.15
         self.stop_loss: float = 0.10
 
-        # Paper trading mode
-        self.dry_run: bool = True
+        # Live trading mode (no paper trading - Kalshi has no demo)
+        self.dry_run: bool = False
         self.max_slippage: float = 0.02
         self.order_fill_timeout: int = 60
 

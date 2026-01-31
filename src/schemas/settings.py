@@ -321,7 +321,7 @@ class GlobalSettingsResponse(BaseModel):
     discord_alerts_enabled: bool
     poll_interval_seconds: int
     # Paper trading and safety
-    dry_run_mode: bool | None = True
+    dry_run_mode: bool | None = False
     emergency_stop: bool | None = False
     max_slippage_pct: Decimal | None = None
     order_fill_timeout_seconds: int | None = None

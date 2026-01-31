@@ -189,7 +189,7 @@ class KalshiClient:
         except Exception as e:
             return False, f"Failed to load RSA private key: {str(e)}"
     
-    def __init__(self, api_key_id: str, private_key_pem: str, dry_run: bool = True, environment: str = "production"):
+    def __init__(self, api_key_id: str, private_key_pem: str, dry_run: bool = False, environment: str = "production"):
         """
         Initialize Kalshi client with API credentials.
 

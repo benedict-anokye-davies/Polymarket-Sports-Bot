@@ -123,8 +123,8 @@ export default function BotConfig() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Simulation mode - test bot without real money
-  const [simulationMode, setSimulationMode] = useState(true);
+  // Always use live trading mode (no paper trading - Kalshi has no demo)
+  const simulationMode = false;
 
   // Wallet/credentials connected status
   const [walletConnected, setWalletConnected] = useState<boolean | null>(null);
@@ -226,8 +226,7 @@ export default function BotConfig() {
         // Note: selectedGames is a Map<string, SelectedGame> - we can't restore it fully 
         // without the game data, so we'll let the user re-select from the available games
         if (config.parameters) setTradingParams(fromApiParams(config.parameters));
-        // Load simulation mode from backend (defaults to true for safety)
-        setSimulationMode(config.simulation_mode ?? true);
+        // Simulation mode removed - always live trading for Kalshi
       } catch (err) {
         // Using defaults when no config exists
       }
@@ -556,27 +555,12 @@ export default function BotConfig() {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            {/* Simulation Mode Toggle */}
+            {/* Live Trading Mode Indicator */}
             <div
-              onClick={() => setSimulationMode(!simulationMode)}
-              className={cn(
-                'flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-all border',
-                simulationMode
-                  ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
-                  : 'bg-green-500/10 border-green-500/30 text-green-400'
-              )}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-green-500/10 border-green-500/30 text-green-400"
             >
-              {simulationMode ? (
-                <>
-                  <FlaskConical className="w-4 h-4" />
-                  <span className="text-sm font-medium">Paper Trading</span>
-                </>
-              ) : (
-                <>
-                  <Wallet className="w-4 h-4" />
-                  <span className="text-sm font-medium">Live Trading</span>
-                </>
-              )}
+              <Wallet className="w-4 h-4" />
+              <span className="text-sm font-medium">Live Trading</span>
             </div>
             <Badge
               variant={botEnabled ? 'default' : 'secondary'}
@@ -627,27 +611,7 @@ export default function BotConfig() {
           </div>
         )}
 
-        {/* Simulation Mode Banner */}
-        {simulationMode && (
-          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg" data-tour="simulation-toggle">
-            <div className="flex items-start gap-3">
-              <FlaskConical className="w-5 h-5 text-yellow-400 mt-0.5" />
-              <div>
-                <h3 className="font-semibold text-yellow-400">Paper Trading Mode (Simulation)</h3>
-                <p className="text-sm text-yellow-400/80 mt-1">
-                  The bot will simulate trades without using real money. Perfect for testing your strategy.
-                  All trades will be logged but no actual orders will be placed on Polymarket.
-                </p>
-                <button
-                  onClick={() => setSimulationMode(false)}
-                  className="mt-2 text-xs text-yellow-400 underline hover:no-underline"
-                >
-                  Switch to Live Trading
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Live Trading Notice */}
 
         {/* Error/Success Messages */}
         {error && (

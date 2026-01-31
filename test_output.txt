@@ -1,0 +1,33 @@
+============================================================
+Traceback (most recent call last):
+KALSHI API CONNECTION TEST
+============================================================
+
+1. Testing PRODUCTION API (public markets endpoint)...
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\test_kalshi_api.py", line 30, in test_kalshi_api
+    print(f"   \u2705 SUCCESS - Found {len(markets)} markets")
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 3: character maps to <undefined>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\test_kalshi_api.py", line 113, in <module>
+    asyncio.run(test_kalshi_api())
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\test_kalshi_api.py", line 36, in test_kalshi_api
+    print(f"   \u274c ERROR - {type(e).__name__}: {e}")
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u274c' in position 3: character maps to <undefined>
