@@ -167,6 +167,15 @@ class BotRunner:
         self.kelly_fraction: float = 0.25
         self.min_confidence_score: float = 0.6
 
+        # Stats
+        self.start_time: datetime | None = None
+        self.trades_today: int = 0
+        self.daily_pnl: float = 0.0
+        
+        # Control (required for start/stop)
+        self._stop_event = asyncio.Event()
+        self._tasks: list[asyncio.Task] = []
+
     def _detect_platform(self, client) -> str:
         """Detect which trading platform the client is for."""
         client_class = client.__class__.__name__
@@ -233,15 +242,6 @@ class BotRunner:
             if isinstance(result, tuple):
                 return result[0]
             return result
-        
-        # Stats
-        self.start_time: datetime | None = None
-        self.trades_today: int = 0
-        self.daily_pnl: float = 0.0
-        
-        # Control
-        self._stop_event = asyncio.Event()
-        self._tasks: list[asyncio.Task] = []
     
     async def initialize(
         self,
