@@ -242,8 +242,8 @@ async def test_wallet_connection(
             balance_data = await client.get_balance()
             await client.close()
             
-            # Kalshi returns balance in cents, convert to dollars
-            balance = balance_data.get("available_balance", 0) / 100
+            # get_balance now returns in dollars (SDK converts from cents)
+            balance = balance_data.get("available_balance", 0) or balance_data.get("balance", 0)
             
             await PolymarketAccountCRUD.update_connection_status(db, current_user.id, True)
             
