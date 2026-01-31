@@ -50,7 +50,7 @@ export default function Register() {
     try {
       await register(username.trim(), email, password);
       toast.success('Account created successfully!');
-      navigate('/onboarding');
+      navigate('/dashboard');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Registration failed');
     }
@@ -157,8 +157,8 @@ export default function Register() {
                             'h-1 flex-1 rounded-full transition-colors',
                             level <= strengthScore
                               ? strengthScore <= 2 ? 'bg-destructive'
-                              : strengthScore <= 3 ? 'bg-warning'
-                              : 'bg-primary'
+                                : strengthScore <= 3 ? 'bg-warning'
+                                  : 'bg-primary'
                               : 'bg-muted'
                           )}
                         />

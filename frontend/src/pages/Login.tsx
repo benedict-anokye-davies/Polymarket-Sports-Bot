@@ -20,16 +20,12 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
-    
+
     try {
-      const user = await login(email, password);
+      await login(email, password);
       toast.success('Welcome back!');
-      // Redirect to onboarding if not completed, otherwise dashboard
-      if (user && !user.onboarding_completed) {
-        navigate('/onboarding');
-      } else {
-        navigate('/dashboard');
-      }
+      // Always go to dashboard - onboarding is optional during registration only
+      navigate('/dashboard');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Login failed');
     }
@@ -57,7 +53,7 @@ export default function Login() {
               Sign in to your trading dashboard
             </CardDescription>
           </CardHeader>
-          
+
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -72,7 +68,7 @@ export default function Login() {
                   required
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-muted-foreground">Password</Label>
                 <div className="relative">
@@ -116,18 +112,18 @@ export default function Login() {
             </CardContent>
 
             <CardFooter className="flex flex-col gap-4">
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full bg-primary hover:bg-primary/90"
                 disabled={isLoading}
               >
                 {isLoading ? 'Signing in...' : 'Sign In'}
               </Button>
-              
+
               <p className="text-sm text-muted-foreground text-center">
                 Don't have an account?{' '}
-                <Link 
-                  to="/register" 
+                <Link
+                  to="/register"
                   className="text-primary hover:text-primary/80 transition-colors"
                 >
                   Create one
