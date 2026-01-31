@@ -128,15 +128,19 @@ class KalshiAuthenticator:
         Returns:
             Dictionary of authentication headers
         """
-        timestamp = str(int(time.time()))
+        # Kalshi requires timestamp in MILLISECONDS
+        timestamp = str(int(time.time() * 1000))
         
-        # Create canonical string: timestamp + method + path + body
-        message = timestamp + method.upper() + path + body
+        # Create canonical string: timestamp + method + path (no body in signature)
+        message = timestamp + method.upper() + path
         
-        # Sign with RSA-SHA256 using PKCS1v15 padding
+        # Sign with RSA-PSS with SHA256 (Kalshi requirement)
         signature = self.private_key.sign(
             message.encode(),
-            padding.PKCS1v15(),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
             hashes.SHA256()
         )
         
