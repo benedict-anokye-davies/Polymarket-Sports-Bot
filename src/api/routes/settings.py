@@ -481,7 +481,7 @@ async def get_user_league_status(
                 stop_loss_pct=config.stop_loss_pct,
                 position_size_usdc=config.position_size_usdc,
                 min_time_remaining_seconds=int(config.min_time_remaining_seconds) if config.min_time_remaining_seconds else None,
-                max_positions=int(config.max_concurrent_positions) if config.max_concurrent_positions else None,
+                max_positions=int(config.max_total_positions) if config.max_total_positions else None,
             ))
             if config.enabled:
                 enabled_count += 1
