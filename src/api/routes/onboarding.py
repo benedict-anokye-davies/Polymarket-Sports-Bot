@@ -230,9 +230,13 @@ async def test_wallet_connection(
                     message="Kalshi API key or secret not found in stored credentials."
                 )
             
+            # Get environment (demo/production)
+            environment = credentials.get("environment", "production")
+            
             client = KalshiClient(
                 api_key_id=api_key,
-                private_key_pem=api_secret
+                private_key_pem=api_secret,
+                environment=environment
             )
             
             balance_data = await client.get_balance()
