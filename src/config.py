@@ -93,6 +93,33 @@ class Settings(BaseSettings):
             return ["*"]
         return [header.strip() for header in self.cors_allow_headers.split(",") if header.strip()]
 
+    # Encryption key for sensitive data (must be 32+ characters)
+    encryption_key: str | None = None
+    
+    @field_validator("encryption_key")
+    @classmethod
+    def validate_encryption_key(cls, v: str | None) -> str | None:
+        """
+        Validates that encryption_key is suitable for cryptographic use.
+        Requires minimum 32 characters (256 bits) for AES-256.
+        """
+        if v is None:
+            return v
+        if len(v) < 32:
+            raise ValueError(
+                "ENCRYPTION_KEY must be at least 32 characters for AES-256. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        # Warn about common weak keys
+        weak_keys = ["changeme", "secret", "password", "12345678", "encryptionkey"]
+        if any(weak in v.lower() for weak in weak_keys):
+            import logging
+            logging.getLogger(__name__).warning(
+                "ENCRYPTION_KEY appears to contain a weak pattern. "
+                "Use a cryptographically random value in production."
+            )
+        return v
+    
     # Discord webhook for alerts
     discord_webhook_url: str | None = None
     

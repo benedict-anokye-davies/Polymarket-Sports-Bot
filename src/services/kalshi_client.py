@@ -2,6 +2,7 @@
 Complete Kalshi API Client Implementation
 """
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -47,6 +48,8 @@ class KalshiClient:
     async def _authenticated_request(self, method: str, path: str, **kwargs) -> Dict:
         """
         Make authenticated request to Kalshi API with retry logic.
+        
+        Implements exponential backoff for rate limiting (429) and server errors (5xx).
         """
         max_retries = 3
         last_error = None
@@ -79,9 +82,19 @@ class KalshiClient:
                     **kwargs
                 )
                 
+                # Handle rate limiting (429) with exponential backoff
                 if response.status_code == 429:
                     retry_after = int(response.headers.get('Retry-After', 5))
-                    await asyncio.sleep(retry_after)
+                    wait_time = max(retry_after, 2 ** attempt)
+                    logger.warning(f"Rate limited (429), waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                    await asyncio.sleep(wait_time)
+                    continue
+                
+                # Handle server errors (5xx) with exponential backoff
+                if response.status_code in (502, 503, 504):
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Server error ({response.status_code}), waiting {wait_time}s before retry {attempt + 1}/{max_retries}")
+                    await asyncio.sleep(wait_time)
                     continue
                     
                 response.raise_for_status()
@@ -89,14 +102,22 @@ class KalshiClient:
                 
             except httpx.HTTPStatusError as e:
                 last_error = e
-                if e.response.status_code in (502, 503, 504):
-                    await asyncio.sleep(2 ** attempt)
+                # Don't retry on client errors (4xx except 429)
+                if 400 <= e.response.status_code < 500 and e.response.status_code != 429:
+                    raise
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"HTTP error ({e.response.status_code}), retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
                     continue
                 raise
             except Exception as e:
                 last_error = e
-                await asyncio.sleep(1)
-                continue
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Request error: {str(e)}, retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
                 
         raise Exception(f"API request failed after {max_retries} attempts: {str(last_error)}")
 
@@ -155,20 +176,34 @@ class KalshiClient:
     # Order Endpoints
     async def place_order(
         self,
-        market_id: str,
+        ticker: str,
         side: str,
+        yes_no: str,
         price: float,
         size: int,
         client_order_id: Optional[str] = None
     ) -> Dict:
-        """Place a new order."""
+        """Place a new order.
+        
+        Args:
+            ticker: Market ticker symbol (e.g., "NBA-2025-01-15-LAL-BOS")
+            side: Order side - "buy" or "sell"
+            yes_no: Contract side - "yes" or "no"
+            price: Price in cents (1-100, where 100 = $1.00)
+            size: Number of contracts to trade
+            client_order_id: Optional client order ID
+        """
         if self.dry_run:
             return {"dry_run": True, "status": "simulated"}
-            
+        
+        # Convert price to cents if it's in decimal form (0-1 range)
+        price_cents = int(price * 100) if price <= 1.0 else int(price)
+        
         payload = {
-            "market_id": market_id,
+            "ticker": ticker,
             "side": side,
-            "price": price,
+            "yes": yes_no.lower() == "yes",
+            "price": price_cents,
             "count": size
         }
         

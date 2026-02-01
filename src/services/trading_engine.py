@@ -188,15 +188,18 @@ class TradingEngine:
         """
         Place order with client-agnostic interface.
         Handles differences between Polymarket and Kalshi APIs.
+        
+        Note: Kalshi API uses cents (1-100) for price, while Polymarket uses 0-1 range.
         """
         if self._is_kalshi:
             # Kalshi API: place_order(ticker, side, yes_no, price, size)
+            # Kalshi price is in cents, so we convert from 0-1 range to cents
             # type: ignore
             return await self.client.place_order(
                 ticker=token_id,
                 side=side,
                 yes_no=yes_no.lower(),
-                price=price,
+                price=price,  # Client expects 0-1, will convert to cents internally
                 size=int(size)
             )
         else:

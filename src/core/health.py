@@ -7,11 +7,14 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Any, Callable, Awaitable
+from typing import Any, Callable, Awaitable, Optional
 from enum import Enum
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy import text
+
+
+logger = logging.getLogger(__name__)
 
 
 logger = logging.getLogger(__name__)
@@ -324,3 +327,77 @@ class HealthCheckScheduler:
                 logger.error(f"Health check error: {e}")
             
             await asyncio.sleep(self._interval)
+
+
+# Kalshi health check helper
+async def check_kalshi_health(kalshi_client: Any) -> HealthCheckResult:
+    """
+    Health check for Kalshi API connectivity.
+    
+    Args:
+        kalshi_client: Initialized KalshiClient instance
+        
+    Returns:
+        HealthCheckResult with Kalshi API status
+    """
+    from src.services.kalshi_client import KalshiClient
+    
+    timestamp = datetime.now(timezone.utc)
+    start = timestamp
+    
+    try:
+        if not isinstance(kalshi_client, KalshiClient):
+            return HealthCheckResult(
+                status=HealthStatus.UNHEALTHY,
+                response_time_ms=0,
+                message="Invalid Kalshi client provided",
+                details={"error": "Client is not a KalshiClient instance"},
+                timestamp=timestamp,
+            )
+        
+        # Test connectivity by fetching balance
+        balance_result = await kalshi_client.get_balance()
+        latency = (datetime.now(timezone.utc) - start).total_seconds() * 1000
+        
+        return HealthCheckResult(
+            status=HealthStatus.HEALTHY,
+            response_time_ms=latency,
+            message="Kalshi API connection healthy",
+            details={
+                "connected": True,
+                "balance_available": balance_result is not None,
+            },
+            timestamp=timestamp,
+        )
+        
+    except Exception as e:
+        latency = (datetime.now(timezone.utc) - start).total_seconds() * 1000
+        logger.error(f"Kalshi health check failed: {e}")
+        
+        return HealthCheckResult(
+            status=HealthStatus.UNHEALTHY,
+            response_time_ms=latency,
+            message=f"Kalshi API connection failed: {str(e)}",
+            details={
+                "connected": False,
+                "error_type": type(e).__name__,
+            },
+            timestamp=timestamp,
+        )
+
+
+class KalshiHealthMonitor:
+    """
+    Wrapper to provide Kalshi health check as a callable for ServiceHealthAggregator.
+    """
+    
+    def __init__(self, kalshi_client: Any):
+        self._client = kalshi_client
+    
+    async def check(self) -> HealthCheckResult:
+        """Run health check."""
+        return await check_kalshi_health(self._client)
+    
+    def __call__(self) -> Awaitable[HealthCheckResult]:
+        """Make instance callable for ServiceHealthAggregator."""
+        return self.check()
