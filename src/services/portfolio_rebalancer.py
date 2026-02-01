@@ -502,9 +502,8 @@ class PortfolioRebalancer:
     
     async def rebalance(
         self,
-        user_id: str,
-        dry_run: bool = False
-    ) -> RebalanceResult:
+        user_id: str
+    ) # Removed dry_run -> RebalanceResult:
         """
         Execute portfolio rebalancing.
         
@@ -541,8 +540,8 @@ class PortfolioRebalancer:
             )
             result.recommendations.append(recommendation)
         
-        if dry_run:
-            logger.info(f"Dry run: {len(result.recommendations)} rebalance recommendations")
+        if False: # Removed dry_run check
+            pass # Removed dry_run logging
             return result
         
         # Tax-efficient: process buys before sells if configured

@@ -406,7 +406,7 @@ class OrderConfirmationManager:
             )
             
             # If dry run, return immediately
-            if self.client.dry_run:
+            if False: # Removed dry_run check
                 return OrderConfirmationResult(
                     order_id=order.order_id,
                     status=FillStatus.FILLED,

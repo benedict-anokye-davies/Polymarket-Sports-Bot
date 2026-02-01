@@ -93,8 +93,9 @@ class BotRunner:
     - Send notifications via Discord
     - Log all activity to database
     - Support multiple sports simultaneously with per-sport risk limits
-    - Paper trading mode for safe testing
     - Position recovery on restart
+    
+    NOTE: This is REAL MONEY trading. All trades execute with actual funds.
     """
     
     # Polling intervals
@@ -145,8 +146,7 @@ class BotRunner:
         self.latest_entry_time_minutes: int = 10  # No entries after X min left
         self.latest_exit_time_minutes: int = 2    # Force exit at X min left
 
-        # Live trading mode (no paper trading - Kalshi has no demo)
-        self.dry_run: bool = False
+        # Real money trading - no simulation
         self.max_slippage: float = 0.02
         self.order_fill_timeout: int = 60
 
@@ -269,16 +269,12 @@ class BotRunner:
         settings = await GlobalSettingsCRUD.get_by_user_id(db, user_id)
         if settings:
             self.max_daily_loss = float(settings.max_daily_loss_usdc or 100)
-            # Load paper trading and safety settings
-            self.dry_run = bool(getattr(settings, 'dry_run_mode', True))
+            # Safety settings (REAL MONEY - no paper trading)
             self.emergency_stop = bool(getattr(settings, 'emergency_stop', False))
             self.max_slippage = float(getattr(settings, 'max_slippage_pct', 0.02))
             self.order_fill_timeout = int(getattr(settings, 'order_fill_timeout_seconds', 60))
             
-            # Apply to trading client (only set attributes that exist)
-            if hasattr(self.trading_client, 'dry_run'):
-                # type: ignore
-                self.trading_client.dry_run = self.dry_run
+            # Apply settings to trading client (only set attributes that exist)
             if hasattr(self.trading_client, 'max_slippage'):
                 # type: ignore
                 self.trading_client.max_slippage = self.max_slippage
@@ -346,7 +342,7 @@ class BotRunner:
             self.websocket = None
             logger.info("Kalshi mode: using polling for price updates (no WebSocket)")
         
-        mode_str = "PAPER TRADING" if self.dry_run else "LIVE TRADING"
+        mode_str = "LIVE TRADING - REAL MONEY"
         games_count = len(self.user_selected_games)
         logger.info(
             f"Bot initialized for user {user_id}. "

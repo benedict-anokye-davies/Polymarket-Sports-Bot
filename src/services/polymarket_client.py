@@ -2,8 +2,9 @@
 Polymarket CLOB API client implementation.
 Handles L1/L2 authentication and all trading operations.
 Includes retry logic with circuit breakers for resilience.
-Supports paper trading mode for safe testing.
 Implements idempotency key generation to prevent duplicate orders.
+
+NOTE: This is REAL MONEY trading. All orders execute with actual funds.
 """
 
 import asyncio
@@ -71,7 +72,6 @@ class PolymarketClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         passphrase: str | None = None,
-        dry_run: bool = False,
         max_slippage: float = 0.02
     ):
         """
@@ -83,7 +83,6 @@ class PolymarketClient:
             api_key: Optional API key for L2 auth
             api_secret: Optional API secret for L2 auth
             passphrase: Optional passphrase for L2 auth
-            dry_run: If True, simulate orders without executing
             max_slippage: Maximum acceptable slippage (0.02 = 2%)
         """
         self.private_key = private_key
@@ -91,15 +90,10 @@ class PolymarketClient:
         self.api_key = api_key
         self.api_secret = api_secret
         self.passphrase = passphrase
-        self.dry_run = dry_run
         self.max_slippage = max_slippage
         
         self._clob_client: ClobClient | None = None
         self._http_client: httpx.AsyncClient | None = None
-        
-        # Track simulated orders for paper trading
-        self._simulated_orders: dict[str, dict] = {}
-        self._simulated_order_counter: int = 0
         
         # Track recently submitted idempotency keys to prevent duplicates
         # Key: idempotency_key, Value: (timestamp, order_result)
@@ -259,7 +253,7 @@ class PolymarketClient:
         order_type: str = "GTC"
     ) -> dict[str, Any]:
         """
-        Places an order on Polymarket (or simulates in dry_run mode).
+        Places an order on Polymarket.
         
         Uses idempotency key generation to prevent duplicate orders from
         retries or accidental double-submissions within a short time window.
@@ -274,10 +268,6 @@ class PolymarketClient:
         Returns:
             Order response from API
         """
-        # Paper trading mode - simulate the order
-        if self.dry_run:
-            return await self._simulate_order(token_id, side, price, size, order_type)
-        
         # Generate idempotency key for this order
         idempotency_key = generate_idempotency_key(token_id, side, price, size)
         
@@ -342,53 +332,6 @@ class PolymarketClient:
                 raise InsufficientBalanceError(f"Insufficient balance: {str(e)}")
             raise PolymarketAPIError(f"Failed to place order: {str(e)}")
     
-    async def _simulate_order(
-        self,
-        token_id: str,
-        side: str,
-        price: float,
-        size: float,
-        order_type: str
-    ) -> dict[str, Any]:
-        """
-        Simulates an order for paper trading mode.
-        
-        Args:
-            token_id: Token ID to trade
-            side: "BUY" or "SELL"
-            price: Limit price
-            size: Number of contracts
-            order_type: Order type
-        
-        Returns:
-            Simulated order response
-        """
-        self._simulated_order_counter += 1
-        order_id = f"DRY_RUN_{self._simulated_order_counter:06d}"
-        
-        order = {
-            "id": order_id,
-            "token_id": token_id,
-            "side": side.upper(),
-            "price": price,
-            "size": size,
-            "order_type": order_type,
-            "status": "FILLED",  # Assume immediate fill for simulation
-            "filled_size": size,
-            "filled_price": price,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "is_simulated": True
-        }
-        
-        self._simulated_orders[order_id] = order
-        
-        logger.info(
-            f"[DRY RUN] Simulated order: {side} {size} @ {price} "
-            f"for token {token_id[:16]}... (order_id={order_id})"
-        )
-        
-        return {"id": order_id, "status": "FILLED", "is_simulated": True, "raw": order}
-    
     async def get_order_status(self, order_id: str) -> dict[str, Any]:
         """
         Gets the current status of an order.
@@ -399,10 +342,6 @@ class PolymarketClient:
         Returns:
             Order status dictionary
         """
-        # Check simulated orders first
-        if order_id.startswith("DRY_RUN_"):
-            return self._simulated_orders.get(order_id, {"status": "NOT_FOUND"})
-        
         try:
             client = await self._get_clob_client()
             
@@ -447,10 +386,6 @@ class PolymarketClient:
         Returns:
             Final order status
         """
-        # Simulated orders are instantly filled
-        if order_id.startswith("DRY_RUN_"):
-            return self._simulated_orders.get(order_id, {"status": "FILLED"})
-        
         import time
         start_time = time.time()
         

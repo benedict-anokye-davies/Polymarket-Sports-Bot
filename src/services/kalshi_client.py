@@ -25,16 +25,15 @@ class KalshiClient:
     Complete implementation of Kalshi trading API client.
     """
     
-    BASE_URL = "https://trading-api.kalshi.com/trade-api/v2"
+    BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
     
-    def __init__(self, api_key: str, private_key_pem: str, dry_run: bool = False):
+    def __init__(self, api_key: str, private_key_pem: str):
         """
         Initialize Kalshi client with API credentials.
         
         Args:
             api_key: Kalshi API key
             private_key_pem: RSA private key in PEM format
-            dry_run: If True, simulate trades without execution
         """
         self.api_key = api_key
         self.private_key = load_pem_private_key(
@@ -42,7 +41,6 @@ class KalshiClient:
             password=None,
             backend=default_backend()
         )
-        self.dry_run = dry_run
         self.client = httpx.AsyncClient(timeout=30.0)
     
     async def _authenticated_request(self, method: str, path: str, **kwargs) -> Dict:
@@ -193,9 +191,6 @@ class KalshiClient:
             size: Number of contracts to trade
             client_order_id: Optional client order ID
         """
-        if self.dry_run:
-            return {"dry_run": True, "status": "simulated"}
-        
         # Convert price to cents if it's in decimal form (0-1 range)
         price_cents = int(price * 100) if price <= 1.0 else int(price)
         

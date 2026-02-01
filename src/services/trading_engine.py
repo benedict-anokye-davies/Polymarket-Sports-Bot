@@ -548,17 +548,14 @@ class TradingEngine:
     async def execute_entry(
         self,
         market: TrackedMarket,
-        entry_signal: dict[str, Any],
-        dry_run: bool = False
+        entry_signal: dict[str, Any]
     ) -> dict[str, Any]:
         """
         Executes an entry trade based on the provided signal.
-        In dry_run mode, simulates the trade without placing real orders.
         
         Args:
             market: Market to enter
             entry_signal: Entry signal from evaluate_entry
-            dry_run: If True, simulate trade without real execution
         
         Returns:
             Execution result dictionary
@@ -651,17 +648,14 @@ class TradingEngine:
     async def execute_exit(
         self,
         position: Any,
-        exit_signal: dict[str, Any],
-        dry_run: bool = False
+        exit_signal: dict[str, Any]
     ) -> dict[str, Any]:
         """
         Executes an exit trade based on the provided signal.
-        In dry_run mode, simulates the trade without placing real orders.
         
         Args:
             position: Position to exit
             exit_signal: Exit signal from evaluate_exit
-            dry_run: If True, simulate trade without real execution
         
         Returns:
             Execution result dictionary

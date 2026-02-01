@@ -143,7 +143,7 @@ async def trading_health_check(
             health["checks"]["settings"] = {
                 "status": "pass",
                 "bot_enabled": settings.bot_enabled,
-                "dry_run_mode": getattr(settings, 'dry_run_mode', True),
+                # Removed dry_run_mode from health response
                 "max_daily_loss": float(settings.max_daily_loss_usdc)
             }
         else:

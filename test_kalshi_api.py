@@ -7,7 +7,7 @@ import asyncio
 import httpx
 
 # Kalshi API URLs
-KALSHI_API_PRODUCTION = "https://trading-api.kalshi.com/trade-api/v2"
+KALSHI_API_PRODUCTION = "https://api.elections.kalshi.com/trade-api/v2"
 KALSHI_API_DEMO = "https://demo-api.kalshi.co/trade-api/v2"
 
 

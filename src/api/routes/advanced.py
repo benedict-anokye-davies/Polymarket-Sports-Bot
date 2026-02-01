@@ -894,14 +894,13 @@ async def analyze_portfolio(
 
 @router.post("/portfolio/rebalance", response_model=RebalanceResponse)
 async def rebalance_portfolio(
-    dry_run: bool = False,
     db: DbSession = None,
     current_user: OnboardedUser = None
 ):
     """
     Execute portfolio rebalancing.
     
-    Set dry_run=true to preview actions without executing.
+    NOTE: This executes REAL MONEY trades.
     """
     from src.services.portfolio_rebalancer import get_portfolio_rebalancer
     
@@ -913,18 +912,16 @@ async def rebalance_portfolio(
         )
     
     result = await rebalancer.rebalance(
-        user_id=str(current_user.id),
-        dry_run=dry_run
+        user_id=str(current_user.id)
     )
     
-    if not dry_run:
-        await ActivityLogCRUD.info(
-            db,
-            current_user.id,
-            "PORTFOLIO",
-            f"Rebalanced portfolio: {result.success_count} trades",
-            {"result_id": result.id, "status": result.status}
-        )
+    await ActivityLogCRUD.info(
+        db,
+        current_user.id,
+        "PORTFOLIO",
+        f"Rebalanced portfolio: {result.success_count} trades",
+        {"result_id": result.id, "status": result.status}
+    )
     
     return RebalanceResponse(
         id=result.id,

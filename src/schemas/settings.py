@@ -297,7 +297,7 @@ class GlobalSettingsUpdate(BaseModel):
     discord_alerts_enabled: bool | None = None
     poll_interval_seconds: int | None = Field(default=None, ge=5, le=60)
     # Paper trading and safety
-    dry_run_mode: bool | None = None
+    pass # Removed dry_run_mode
     emergency_stop: bool | None = None
     max_slippage_pct: Decimal | None = Field(default=None, ge=0, le=0.5)
     order_fill_timeout_seconds: int | None = Field(default=None, ge=10, le=300)
@@ -321,7 +321,7 @@ class GlobalSettingsResponse(BaseModel):
     discord_alerts_enabled: bool
     poll_interval_seconds: int
     # Paper trading and safety
-    dry_run_mode: bool | None = False
+    pass # Removed dry_run_mode
     emergency_stop: bool | None = False
     max_slippage_pct: Decimal | None = None
     order_fill_timeout_seconds: int | None = None

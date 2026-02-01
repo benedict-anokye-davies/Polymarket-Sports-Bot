@@ -61,10 +61,11 @@ class GlobalSettings(Base):
         default=10
     )
     
-    # Paper Trading Mode - simulate trades without real money
+    # Trading mode - always real money (no paper trading)
+    # This field kept for backwards compatibility but forced to False
     dry_run_mode: Mapped[bool] = mapped_column(
         Boolean,
-        default=True  # Default to safe mode
+        default=False  # REAL MONEY TRADING ONLY
     )
     
     # Emergency stop flag - halts all trading immediately
