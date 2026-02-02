@@ -33,7 +33,7 @@ websockets==14.1
 py-clob-client==0.17.0
 
 # Kalshi SDK (official)
-kalshi-python==2.2.0
+kalshi-python==2.1.4
 
 # Templates
 jinja2==3.1.4
