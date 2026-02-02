@@ -1035,6 +1035,7 @@ export interface Market {
   game_start_time?: string;
   baseline_price_yes: number;
   current_price_yes: number;
+  current_price_no: number;
   is_live: boolean;
   is_finished: boolean;
   is_tracked: boolean;
