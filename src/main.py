@@ -5,8 +5,6 @@ Integrates production infrastructure for monitoring, security, and observability
 
 Build: 2026-02-02-v3
 """
-import sys
-print("[STARTUP] main.py loading - Python", sys.version, flush=True)
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -20,11 +18,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 import logging
 import asyncio
 
-print("[STARTUP] Loading config...", flush=True)
 from src.config import get_settings
-print("[STARTUP] Loading database...", flush=True)
 from src.db.database import init_db, engine
-print("[STARTUP] Config and DB loaded OK", flush=True)
 # Import all models so they register with Base.metadata before init_db() creates tables
 from src.models import (
     User,
@@ -249,8 +244,6 @@ app.include_router(websocket_router, prefix="/api/v1")
 app.include_router(advanced_router)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
-
-print("[STARTUP] All routers registered, app ready to serve", flush=True)
 
 
 @app.get("/health")
