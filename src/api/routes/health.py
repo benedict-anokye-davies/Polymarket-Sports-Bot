@@ -57,9 +57,8 @@ async def trading_health_check(
             if platform == "kalshi":
                 from src.services.kalshi_client import KalshiClient
                 client = KalshiClient(
-                    api_key_id=credentials["api_key"],
+                    api_key=credentials["api_key"],
                     private_key_pem=credentials["api_secret"],
-                    environment=credentials.get("environment", "production")
                 )
                 balance = await client.get_balance()
                 
@@ -239,11 +238,10 @@ async def detailed_health_check(
         if credentials and credentials.get("platform") == "kalshi":
             from src.services.kalshi_client import KalshiClient
             client = KalshiClient(
-                api_key_id=credentials["api_key"],
+                api_key=credentials["api_key"],
                 private_key_pem=credentials["api_secret"],
-                environment=credentials.get("environment", "production")
             )
-            
+
             reconciler = PositionReconciler(db, current_user.id, client)
             quick_check = await reconciler.quick_check()
             

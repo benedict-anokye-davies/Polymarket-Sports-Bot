@@ -208,7 +208,6 @@ class BotRunner:
                 yes_no="yes",
                 price=price,
                 size=int(size),
-                time_in_force="gtc"
             )
         else:
             # Polymarket order format
@@ -224,7 +223,9 @@ class BotRunner:
     def _get_order_id(self, order: dict) -> str | None:
         """Get order ID from order response, handling platform differences."""
         if self.platform == "kalshi":
-            return order.get("order_id")
+            # Kalshi wraps response in {"order": {...}}
+            order_data = order.get("order", order)
+            return order_data.get("order_id") or order_data.get("id")
         return order.get("id")
 
     async def _check_slippage(self, game: TrackedGame, price: float, side: str = "buy") -> bool:
@@ -1032,11 +1033,10 @@ class BotRunner:
                 return
 
             # Slippage check before execution
-            if not self.dry_run:
-                slippage_ok = await self._check_slippage(game, price, "buy")
-                if not slippage_ok:
-                    logger.warning(f"Slippage too high for {game.home_team} vs {game.away_team}")
-                    return
+            slippage_ok = await self._check_slippage(game, price, "buy")
+            if not slippage_ok:
+                logger.warning(f"Slippage too high for {game.home_team} vs {game.away_team}")
+                return
 
             # Execute entry
             await self._execute_entry_order(
@@ -1079,23 +1079,21 @@ class BotRunner:
                     "action": "BUY"
                 }
 
-                # Wait for fill with timeout (skip for paper trading)
-                fill_status = "filled"
-                if not self.dry_run:
-                    fill_status = await self.trading_client.wait_for_fill(
-                        order_id,
-                        timeout=self.order_fill_timeout
-                    )
+                # Wait for fill with timeout
+                fill_status = await self.trading_client.wait_for_fill(
+                    order_id,
+                    timeout=self.order_fill_timeout
+                )
 
-                    if fill_status != "filled":
-                        logger.warning(f"Order not filled: {fill_status}")
-                        # Remove from pending
-                        self.pending_orders.pop(order_id, None)
-                        try:
-                            await self.trading_client.cancel_order(order_id)
-                        except Exception as cancel_err:
-                            logger.debug(f"Order cancel failed: {cancel_err}")
-                        return
+                if fill_status != "filled":
+                    logger.warning(f"Order not filled: {fill_status}")
+                    # Remove from pending
+                    self.pending_orders.pop(order_id, None)
+                    try:
+                        await self.trading_client.cancel_order(order_id)
+                    except Exception as cancel_err:
+                        logger.debug(f"Order cancel failed: {cancel_err}")
+                    return
                 
                 # Remove from pending now that it's filled
                 self.pending_orders.pop(order_id, None)
@@ -1144,9 +1142,8 @@ class BotRunner:
                     sport_stats.trades_today += 1
                     sport_stats.open_positions += 1
                 
-                mode_str = "[PAPER] " if self.dry_run else ""
                 await discord_notifier.notify_trade_entry(
-                    market_name=f"{mode_str}{game.market.question[:100]}",
+                    market_name=f"{game.market.question[:100]}",
                     side=side,
                     price=price,
                     size=position_size,
@@ -1316,10 +1313,7 @@ class BotRunner:
                 pnl = (current_price - entry_price) * exit_size
                 exit_proceeds = current_price * exit_size
                 
-                # Remove from pending (for paper trading, assume instant fill)
-                # For live trading, we'd want to wait for fill confirmation
-                if self.dry_run:
-                    self.pending_orders.pop(order_id, None)
+                # Remove from pending after order placed
 
                 # Update position using close_position method
                 await PositionCRUD.close_position(
@@ -1347,9 +1341,8 @@ class BotRunner:
                         0, self.sport_stats[sport_key].open_positions - 1
                     )
                 
-                mode_str = "[PAPER] " if self.dry_run else ""
                 await discord_notifier.notify_trade_exit(
-                    market_name=f"{mode_str}{game.market.question[:100]}",
+                    market_name=f"{game.market.question[:100]}",
                     exit_price=current_price,
                     entry_price=entry_price,
                     pnl=pnl,
@@ -2363,7 +2356,7 @@ class BotRunner:
         return {
             "state": self.state.value,
             "runtime": runtime,
-            "paper_trading": self.dry_run,
+            "paper_trading": False,
             "emergency_stop": self.emergency_stop,
             "tracked_games": len(self.tracked_games),
             "enabled_sports": self.enabled_sports,

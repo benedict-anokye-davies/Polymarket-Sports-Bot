@@ -262,9 +262,8 @@ class AccountManager:
                     return None
                 
                 client = KalshiClient(
-                    api_key_id=api_key,
+                    api_key=api_key,
                     private_key_pem=api_secret,
-                    environment=environment
                 )
                 logger.debug(f"Created KalshiClient for account {account_id} ({environment})")
             else:

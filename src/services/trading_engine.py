@@ -571,24 +571,19 @@ class TradingEngine:
         confidence_breakdown = entry_signal.get("confidence_breakdown")
         
         try:
-            if dry_run:
-                # Simulate order in paper trading mode
-                import uuid
-                simulated_order_id = f"SIM_{uuid.uuid4().hex[:8]}"
-                result = {"id": simulated_order_id, "status": "simulated"}
-                logger.info(f"[PAPER] Simulated BUY order: {token_id} @ {price}")
+            order_result = await self._place_order(
+                token_id=token_id,
+                side="buy",
+                price=price,
+                size=size,
+                yes_no=side.lower()
+            )
+            if isinstance(order_result, dict):
+                order_data = order_result.get("order", order_result)
+                result = {"id": order_data.get("order_id", str(order_result)), "status": "placed"}
             else:
-                # Real order execution using client-agnostic method
-                order_result = await self._place_order(
-                    token_id=token_id,
-                    side="buy",
-                    price=price,
-                    size=size,
-                    yes_no=side.lower()
-                )
-                # Normalize result to dict format
                 result = {"id": getattr(order_result, 'order_id', str(order_result)), "status": "placed"}
-            
+
             position = await PositionCRUD.create(
                 self.db,
                 user_id=self._user_id_uuid,
@@ -606,27 +601,24 @@ class TradingEngine:
                 entry_confidence_score=Decimal(str(confidence_score)) if confidence_score else None,
                 entry_confidence_breakdown=confidence_breakdown,
             )
-            
-            mode_prefix = "[PAPER] " if dry_run else ""
+
             await ActivityLogCRUD.info(
                 self.db,
                 self._user_id_uuid,
                 "TRADE",
-                f"{mode_prefix}Entered {side} position at {price:.4f}",
+                f"Entered {side} position at {price:.4f}",
                 details={
                     "position_id": str(position.id),
                     "token_id": token_id,
                     "size": size,
                     "reason": entry_signal["reason"],
-                    "simulated": dry_run,
                 }
             )
-            
+
             return {
                 "success": True,
                 "position_id": str(position.id),
                 "order_id": result.get("id"),
-                "simulated": dry_run,
             }
             
         except Exception as e:
@@ -666,26 +658,21 @@ class TradingEngine:
             if not exit_price:
                 exit_price = await self._get_exit_price(position.token_id)
             
-            if dry_run:
-                # Simulate order in paper trading mode
-                import uuid
-                simulated_order_id = f"SIM_{uuid.uuid4().hex[:8]}"
-                result = {"id": simulated_order_id, "status": "simulated"}
-                logger.info(f"[PAPER] Simulated SELL order: {position.token_id} @ {exit_price}")
+            order_result = await self._place_order(
+                token_id=position.token_id,
+                side="sell",
+                price=exit_price,
+                size=float(position.entry_size),
+                yes_no=position.side.lower()
+            )
+            if isinstance(order_result, dict):
+                order_data = order_result.get("order", order_result)
+                result = {"id": order_data.get("order_id", str(order_result)), "status": "placed"}
             else:
-                # Real order execution using client-agnostic method
-                order_result = await self._place_order(
-                    token_id=position.token_id,
-                    side="sell",
-                    price=exit_price,
-                    size=float(position.entry_size),
-                    yes_no=position.side.lower()
-                )
-                # Normalize result to dict format
                 result = {"id": getattr(order_result, 'order_id', str(order_result)), "status": "placed"}
-            
+
             exit_proceeds = Decimal(str(exit_price)) * position.entry_size
-            
+
             closed_position = await PositionCRUD.close_position(
                 self.db,
                 position.id,
@@ -695,34 +682,31 @@ class TradingEngine:
                 exit_reason=exit_signal["reason"],
                 exit_order_id=result.get("id")
             )
-            
+
             pnl = closed_position.realized_pnl_usdc
-            
+
             # Record trade outcome for streak tracking
             if self.balance_guardian and pnl is not None:
                 is_win = float(pnl) > 0
                 await self.balance_guardian.record_trade_outcome(is_win)
-            
-            mode_prefix = "[PAPER] " if dry_run else ""
+
             await ActivityLogCRUD.info(
                 self.db,
                 self._user_id_uuid,
                 "TRADE",
-                f"{mode_prefix}Closed position at {exit_price:.4f}, P&L: {pnl:.2f} USDC",
+                f"Closed position at {exit_price:.4f}, P&L: {pnl:.2f} USDC",
                 details={
                     "position_id": str(position.id),
                     "reason": exit_signal["reason"],
                     "pnl_usdc": float(pnl) if pnl else 0,
-                    "simulated": dry_run,
                 }
             )
-            
+
             return {
                 "success": True,
                 "position_id": str(position.id),
                 "order_id": result.get("id"),
                 "pnl_usdc": float(pnl) if pnl else 0,
-                "simulated": dry_run,
             }
             
         except Exception as e:

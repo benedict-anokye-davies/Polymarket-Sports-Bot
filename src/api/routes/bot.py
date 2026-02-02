@@ -414,7 +414,7 @@ async def get_sport_stats(current_user: OnboardedUser) -> dict:
     return {
         "sports": bot_runner.get_sport_stats(),
         "enabled_sports": bot_runner.enabled_sports,
-        "paper_trading": bot_runner.dry_run
+        "paper_trading": False
     }
 
 
@@ -438,59 +438,29 @@ async def toggle_paper_trading(
     enabled: bool = True
 ) -> MessageResponse:
     """
-    Toggles paper trading mode.
-    
-    Paper trading executes simulated trades without real money.
-    Recommended for testing strategies before going live.
-    
-    Args:
-        enabled: True for paper trading, False for live trading
+    Paper trading is not supported. All trading uses real money.
+    This endpoint is kept for API compatibility but always returns live mode.
     """
-    from src.services.bot_runner import _bot_instances
-    
-    # Update database setting
-    await GlobalSettingsCRUD.update(db, current_user.id, dry_run_mode=enabled)
-    
-    # Update running bot if exists
-    bot_runner = _bot_instances.get(current_user.id)
-    if bot_runner:
-        bot_runner.dry_run = enabled
-        bot_runner.polymarket_client.dry_run = enabled
-    
-    mode_str = "PAPER TRADING" if enabled else "LIVE TRADING"
     await ActivityLogCRUD.info(
         db,
         current_user.id,
         "BOT",
-        f"Trading mode changed to {mode_str}"
+        "Trading mode is LIVE TRADING (paper trading not supported)"
     )
-    
-    return MessageResponse(message=f"Trading mode set to {mode_str}")
+
+    return MessageResponse(message="Trading mode is LIVE TRADING. Paper trading is not supported.")
 
 
 @router.get("/paper-trading", response_model=dict)
 async def get_paper_trading_status(db: DbSession, current_user: OnboardedUser) -> dict:
     """
-    Returns current paper trading status and simulated trades if in paper mode.
+    Returns trading mode status. Always live - paper trading not supported.
     """
-    from src.services.bot_runner import _bot_instances
-    
-    settings = await GlobalSettingsCRUD.get_by_user_id(db, current_user.id)
-    is_paper = settings.dry_run_mode if settings and hasattr(settings, 'dry_run_mode') else True
-    
-    result = {
-        "paper_trading_enabled": is_paper,
-        "mode": "PAPER" if is_paper else "LIVE",
+    return {
+        "paper_trading_enabled": False,
+        "mode": "LIVE",
         "simulated_trades": []
     }
-    
-    # Get simulated trades from running bot
-    bot_runner = _bot_instances.get(current_user.id)
-    if bot_runner and bot_runner.polymarket_client:
-        simulated = getattr(bot_runner.polymarket_client, '_simulated_orders', {})
-        result["simulated_trades"] = list(simulated.values())
-    
-    return result
 
 
 # =============================================================================
@@ -542,10 +512,9 @@ async def get_bot_config(db: DbSession, current_user: OnboardedUser) -> BotConfi
     status_info = get_bot_status(current_user.id)
     is_running = bool(status_info and status_info.get("state") == BotState.RUNNING.value)
     
-    # Get simulation mode from database
-    settings = await GlobalSettingsCRUD.get_by_user_id(db, current_user.id)
-    simulation_mode = settings.dry_run_mode if settings and hasattr(settings, 'dry_run_mode') else True
-    
+    # All trading is live
+    simulation_mode = False
+
     # Convert stored dict back to Pydantic models
     game_data = config.get("game")
     game = GameSelection(**game_data) if game_data else None
@@ -608,25 +577,14 @@ async def save_bot_config(
     # Persist to database for recovery after server restart
     await GlobalSettingsCRUD.save_bot_config(db, current_user.id, _bot_configs[user_id])
     
-    # Persist simulation mode to database
-    await GlobalSettingsCRUD.update(db, current_user.id, dry_run_mode=request.simulation_mode)
-    
-    # Update running bot if exists
-    bot_runner = _bot_instances.get(current_user.id)
-    if bot_runner:
-        bot_runner.dry_run = request.simulation_mode
-        if bot_runner.polymarket_client:
-            bot_runner.polymarket_client.dry_run = request.simulation_mode
-    
     # Log the configuration change
-    mode_str = "PAPER" if request.simulation_mode else "LIVE"
     games_count = len(all_games)
     if games_count > 1:
-        log_msg = f"[{mode_str}] Configuration updated: {games_count} games selected across multiple sports"
+        log_msg = f"[LIVE] Configuration updated: {games_count} games selected across multiple sports"
     elif games_count == 1 and request.game:
-        log_msg = f"[{mode_str}] Configuration updated for {request.sport}: {request.game.away_team} @ {request.game.home_team}"
+        log_msg = f"[LIVE] Configuration updated for {request.sport}: {request.game.away_team} @ {request.game.home_team}"
     else:
-        log_msg = f"[{mode_str}] Game selection cleared"
+        log_msg = f"[LIVE] Game selection cleared"
     
     await ActivityLogCRUD.info(
         db,
@@ -1061,9 +1019,8 @@ async def manual_reconciliation(
         # Create client
         if credentials.get("platform") == "kalshi":
             client = KalshiClient(
-                api_key_id=credentials["api_key"],
+                api_key=credentials["api_key"],
                 private_key_pem=credentials["api_secret"],
-                environment=credentials.get("environment", "production")
             )
         else:
             return {
@@ -1141,11 +1098,10 @@ async def get_reconciliation_status(
             }
         
         client = KalshiClient(
-            api_key_id=credentials["api_key"],
+            api_key=credentials["api_key"],
             private_key_pem=credentials["api_secret"],
-            environment=credentials.get("environment", "production")
         )
-        
+
         # Get quick status by comparing counts
         try:
             exchange_positions = await client.get_positions()

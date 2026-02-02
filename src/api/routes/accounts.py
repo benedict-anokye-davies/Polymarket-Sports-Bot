@@ -463,9 +463,8 @@ async def test_account_connection(
             # Try to create client and fetch balance
             env = getattr(account, 'environment', 'production')
             client = KalshiClient(
-                api_key_id=api_key,
+                api_key=api_key,
                 private_key_pem=api_secret,
-                environment=env
             )
             
             balance = await client.get_balance()

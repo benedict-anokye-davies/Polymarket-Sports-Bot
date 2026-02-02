@@ -234,9 +234,8 @@ async def test_wallet_connection(
             environment = credentials.get("environment", "production")
             
             client = KalshiClient(
-                api_key_id=api_key,
+                api_key=api_key,
                 private_key_pem=api_secret,
-                environment=environment
             )
             
             balance_data = await client.get_balance()

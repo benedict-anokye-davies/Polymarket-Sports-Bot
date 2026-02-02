@@ -53,8 +53,8 @@ async def get_dashboard_stats(db: DbSession, current_user: OnboardedUser) -> Das
                 
                 if api_key and api_secret:
                     client = KalshiClient(
-                        api_key_id=api_key,
-                        private_key_pem=api_secret
+                        api_key=api_key,
+                        private_key_pem=api_secret,
                     )
                     balance_data = await client.get_balance()
                     await client.close()
