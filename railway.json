@@ -6,7 +6,7 @@
   },
   "deploy": {
     "startCommand": "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}",
-    "healthcheckPath": "/api/health/quick",
+    "healthcheckPath": "/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
