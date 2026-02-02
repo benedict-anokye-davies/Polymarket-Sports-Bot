@@ -211,7 +211,7 @@ class TestTradingEngineCreation:
         engine = TradingEngine(
             db=mock_db,
             user_id="test-user-123",
-            polymarket_client=mock_client,
+            trading_client=mock_client,
             global_settings=mock_settings,
             sport_configs=mock_sport_configs
         )
@@ -231,7 +231,7 @@ class TestTradingEngineCreation:
         engine = TradingEngine(
             db=mock_db,
             user_id="test-user-123",
-            polymarket_client=mock_client,
+            trading_client=mock_client,
             global_settings=mock_settings,
             sport_configs=mock_sport_configs,
             market_configs=market_configs
@@ -267,7 +267,7 @@ class TestEffectiveConfigRetrieval:
         engine = TradingEngine(
             db=mock_db,
             user_id="test-user",
-            polymarket_client=mock_client,
+            trading_client=mock_client,
             global_settings=mock_settings,
             sport_configs=sport_configs
         )
@@ -293,7 +293,7 @@ class TestEffectiveConfigRetrieval:
         engine = TradingEngine(
             db=mock_db,
             user_id="test-user",
-            polymarket_client=mock_client,
+            trading_client=mock_client,
             global_settings=mock_settings,
             sport_configs=sport_configs,
             market_configs=market_configs
@@ -314,7 +314,7 @@ class TestEffectiveConfigRetrieval:
         engine = TradingEngine(
             db=mock_db,
             user_id="test-user",
-            polymarket_client=mock_client,
+            trading_client=mock_client,
             global_settings=mock_settings,
             sport_configs=sport_configs
         )
