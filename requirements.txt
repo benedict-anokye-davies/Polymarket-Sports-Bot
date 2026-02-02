@@ -31,6 +31,7 @@ websockets==14.1
 
 # Polymarket SDK
 py-clob-client==0.17.0
+web3>=6.0.0
 
 # Kalshi SDK (official)
 kalshi-python==2.1.4
