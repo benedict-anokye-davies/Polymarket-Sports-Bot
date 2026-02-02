@@ -405,19 +405,6 @@ class OrderConfirmationManager:
                 client_order_id=client_order_id
             )
             
-            # If dry run, return immediately
-            if False: # Removed dry_run check
-                return OrderConfirmationResult(
-                    order_id=order.order_id,
-                    status=FillStatus.FILLED,
-                    filled_size=size,
-                    avg_fill_price=price,
-                    wait_time_seconds=0.0,
-                    ticker=ticker,
-                    side=side,
-                    platform="kalshi"
-                )
-            
             # Wait for fill
             result = await self._wait_for_fill(
                 order_id=order.order_id,

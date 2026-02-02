@@ -61,7 +61,7 @@ export default function Accounts() {
   const [newAccount, setNewAccount] = useState({
     account_name: '',
     platform: 'polymarket' as 'polymarket' | 'kalshi',
-    environment: 'demo' as 'production' | 'demo',  // Default to demo for safety
+    environment: 'production' as 'production' | 'demo',  // Default to production for live trading
     private_key: '',
     funder_address: '',
     api_key: '',
@@ -94,7 +94,7 @@ export default function Accounts() {
   const createAccount = async () => {
     // Create a copy of credentials before clearing them from state
     const accountData = { ...newAccount };
-    
+
     // Clear sensitive data from state immediately to minimize exposure
     setNewAccount((prev) => ({
       ...prev,
@@ -103,7 +103,7 @@ export default function Accounts() {
       api_secret: '',
       api_passphrase: '',
     }));
-    
+
     try {
       setSaving(true);
       await apiClient.createAccount(accountData);
@@ -115,7 +115,7 @@ export default function Accounts() {
       setNewAccount({
         account_name: '',
         platform: 'polymarket',
-        environment: 'demo',
+        environment: 'production',
         private_key: '',
         funder_address: '',
         api_key: '',
@@ -324,7 +324,7 @@ export default function Accounts() {
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        {newAccount.environment === 'demo' 
+                        {newAccount.environment === 'demo'
                           ? 'Uses demo.kalshi.com API - no real money involved'
                           : 'Uses production Kalshi API - real money trades'}
                       </p>

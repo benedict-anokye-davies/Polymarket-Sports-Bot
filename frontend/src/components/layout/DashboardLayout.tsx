@@ -28,7 +28,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       try {
         // Check wallet/credentials status and sync onboarding state
         const onboardingStatus = await apiClient.getOnboardingStatus();
-        setWalletConnected(onboardingStatus.wallet_connected, 'Connected');
+
+        // Fetch accurate wallet status with masked identifier
+        const walletStatus = await apiClient.getWalletStatus();
+        setWalletConnected(
+          onboardingStatus.wallet_connected,
+          walletStatus.masked_identifier || 'Connected'
+        );
 
         // If backend says onboarding is not complete (step < 5), refresh user and redirect
         if (onboardingStatus.current_step < 5) {

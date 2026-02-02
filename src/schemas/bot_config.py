@@ -83,7 +83,7 @@ class BotConfigRequest(BaseModel):
         description="Additional games to trade (can be from different sports)"
     )
     parameters: Optional[TradingParameters] = Field(default=None, description="Trading parameters")
-    simulation_mode: bool = Field(default=True, description="Paper trading mode - simulate trades without real money")
+    simulation_mode: bool = Field(default=False, description="Paper trading mode - simulate trades without real money")
 
 
 class BotConfigResponse(BaseModel):
@@ -94,7 +94,7 @@ class BotConfigResponse(BaseModel):
     # Support multiple games from different sports
     additional_games: Optional[List[GameSelection]] = None
     parameters: Optional[TradingParameters] = None
-    simulation_mode: bool = True
+    simulation_mode: bool = False
     last_updated: Optional[str] = None
 
 

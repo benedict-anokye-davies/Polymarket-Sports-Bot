@@ -503,13 +503,12 @@ class PortfolioRebalancer:
     async def rebalance(
         self,
         user_id: str
-    ) # Removed dry_run -> RebalanceResult:
+    ) -> RebalanceResult:
         """
         Execute portfolio rebalancing.
         
         Args:
             user_id: User ID
-            dry_run: If True, only generate recommendations without executing
         
         Returns:
             RebalanceResult with actions taken
@@ -540,9 +539,6 @@ class PortfolioRebalancer:
             )
             result.recommendations.append(recommendation)
         
-        if False: # Removed dry_run check
-            pass # Removed dry_run logging
-            return result
         
         # Tax-efficient: process buys before sells if configured
         if config.get("tax_efficient", True):
