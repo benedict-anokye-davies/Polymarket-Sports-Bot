@@ -236,7 +236,15 @@ class ApiClient {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Login failed' }));
-        throw new Error(error.detail || 'Login failed');
+        let message: string;
+        if (typeof error.detail === 'string') {
+          message = error.detail;
+        } else if (error.detail?.message) {
+          message = error.detail.message;
+        } else {
+          message = `Login failed (${response.status})`;
+        }
+        throw new Error(message);
       }
 
       return response.json();

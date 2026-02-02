@@ -205,7 +205,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=app_settings.cors_origins_list,
-    allow_origin_regex=r"https://.*\.polymarket-sports-bot\.pages\.dev",
+    allow_origin_regex=r"https://(.*\.polymarket-sports-bot\.pages\.dev|polymarket-sports-bot.*\.vercel\.app)",
     allow_credentials=app_settings.cors_allow_credentials,
     allow_methods=app_settings.cors_allow_methods.split(","),
     allow_headers=app_settings.cors_allow_headers.split(","),
