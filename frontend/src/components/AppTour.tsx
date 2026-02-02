@@ -20,9 +20,9 @@ const tourSteps: Step[] = [
           Let me show you around. This bot automates sports betting on Kalshi prediction markets
           using real-time game data and smart entry/exit strategies.
         </p>
-        <div className="bg-primary/10 rounded-lg p-3 mt-2">
-          <p className="text-sm font-medium text-primary">
-            Paper Trading Mode is ON by default - all trades are simulated!
+        <div className="bg-warning/10 rounded-lg p-3 mt-2">
+          <p className="text-sm font-medium text-warning">
+            This bot trades with real money on Kalshi.
           </p>
         </div>
       </div>
@@ -52,7 +52,6 @@ const tourSteps: Step[] = [
         <h3 className="text-lg font-bold text-foreground">Your Stats</h3>
         <p className="text-muted-foreground">
           View your portfolio value, active P&L, open positions, and tracked markets at a glance.
-          In paper trading mode, these numbers are simulated.
         </p>
       </div>
     ),
@@ -66,14 +65,8 @@ const tourSteps: Step[] = [
       <div className="space-y-2">
         <h3 className="text-lg font-bold text-foreground">Bot Status</h3>
         <p className="text-muted-foreground">
-          See if your bot is running, how many positions it has, and whether you're in 
-          Paper Trading (safe) or Live Trading mode.
+          See if your bot is running, how many positions it has, and your current trading mode.
         </p>
-        <div className="bg-warning/10 rounded-lg p-3 mt-2">
-          <p className="text-sm text-warning">
-            The paper trading badge means no real money is at risk!
-          </p>
-        </div>
       </div>
     ),
     placement: 'left',
@@ -86,7 +79,7 @@ const tourSteps: Step[] = [
       <div className="space-y-2">
         <h3 className="text-lg font-bold text-foreground">Quick Actions</h3>
         <p className="text-muted-foreground">
-          Start or stop the bot, configure settings, and access paper trading controls quickly.
+          Start or stop the bot and configure settings quickly.
         </p>
       </div>
     ),
@@ -161,36 +154,17 @@ const botConfigSteps: Step[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-tour="simulation-toggle"]',
-    content: (
-      <div className="space-y-2">
-        <h3 className="text-lg font-bold text-foreground">Paper Trading Toggle</h3>
-        <p className="text-muted-foreground">
-          Keep this ON to test the bot safely without real money. 
-          All trades will be simulated and you'll see how the bot would perform.
-        </p>
-        <div className="bg-success/10 rounded-lg p-3 mt-2">
-          <p className="text-sm text-success font-medium">
-            Perfect for testing your strategy!
-          </p>
-        </div>
-      </div>
-    ),
-    placement: 'top',
-    disableBeacon: true,
-  },
-  {
     target: '[data-tour="start-bot"]',
     content: (
       <div className="space-y-2">
         <h3 className="text-lg font-bold text-foreground">Start the Bot!</h3>
         <p className="text-muted-foreground">
           Once you've selected games and configured parameters, click here to start the bot.
-          In paper trading mode, it will simulate trades and show you results.
+          It will monitor live game data and place real trades on Kalshi.
         </p>
         <div className="bg-primary/10 rounded-lg p-3 mt-2">
           <p className="text-sm text-primary font-medium">
-            Ready to try it? Select a game and start paper trading!
+            Ready to try it? Select a game and start trading!
           </p>
         </div>
       </div>

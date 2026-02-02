@@ -466,21 +466,16 @@ function TourStep({ onNext, onBack, loading }: { onNext: () => void; onBack: () 
         </ol>
       </div>
 
-      {/* Paper Trading Explanation */}
-      <div className="bg-success/10 border border-success/20 rounded-lg p-4">
+      {/* Live Trading Notice */}
+      <div className="bg-warning/10 border border-warning/20 rounded-lg p-4">
         <div className="flex gap-3">
-          <FlaskConical className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
+          <Play className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-foreground">Paper Trading Mode</p>
+            <p className="text-sm font-medium text-foreground">Live Trading</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Paper trading is <strong>enabled by default</strong>. This means all trades are simulated -
-              no real money is used. You can test strategies, see how the bot performs, and gain
-              confidence before switching to live trading.
+              This bot trades with <strong>real money</strong> on Kalshi. Make sure your API credentials
+              are configured and you have set appropriate risk limits before starting the bot.
             </p>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-              <span className="text-xs text-success font-medium">Safe to experiment!</span>
-            </div>
           </div>
         </div>
       </div>
@@ -490,10 +485,10 @@ function TourStep({ onNext, onBack, loading }: { onNext: () => void; onBack: () 
         <div className="flex gap-3">
           <Play className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-foreground">Try Your First Demo Trade</p>
+            <p className="text-sm font-medium text-foreground">Get Started</p>
             <p className="text-xs text-muted-foreground mt-1">
               After entering the dashboard, go to <strong>Bot Config</strong>, select a game,
-              and start the bot with paper trading ON. Watch it monitor odds and simulate trades!
+              set your trading parameters, and start the bot to begin live trading.
             </p>
           </div>
         </div>

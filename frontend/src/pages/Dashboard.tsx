@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Wallet, TrendingUp, Briefcase, Eye, Loader2, FlaskConical, HelpCircle } from 'lucide-react';
+import { Wallet, TrendingUp, Briefcase, Eye, Loader2, HelpCircle } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { PriceChart } from '@/components/dashboard/PriceChart';
@@ -15,7 +15,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isPaperTrading, setIsPaperTrading] = useState(true);
+  const [isPaperTrading, setIsPaperTrading] = useState(false);
   const { startTour } = useAppStore();
 
   useEffect(() => {
@@ -32,14 +32,14 @@ export default function Dashboard() {
         setStats(data);
         setError(null);
         
-        // Check paper trading status
+        // Check trading status
         try {
           const botStatus = await apiClient.getBotStatus();
           if (isMounted) {
-            setIsPaperTrading(botStatus.paper_trading ?? true);
+            setIsPaperTrading(botStatus.paper_trading ?? false);
           }
         } catch (e) {
-          // Default to paper trading if can't fetch
+          // Default to live trading
         }
       } catch (err) {
         if (!isMounted) return;
@@ -100,35 +100,14 @@ export default function Dashboard() {
               <HelpCircle className="w-4 h-4" />
               Take a Tour
             </Button>
-            {/* Paper Trading Badge */}
             <div data-tour="bot-status">
-              {isPaperTrading ? (
-                <Badge variant="outline" className="bg-success/10 text-success border-success/20 flex items-center gap-2 px-3 py-1">
-                  <FlaskConical className="w-4 h-4" />
-                  Paper Trading Mode
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 flex items-center gap-2 px-3 py-1">
-                  <TrendingUp className="w-4 h-4" />
-                  Live Trading
-                </Badge>
-              )}
+              <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 flex items-center gap-2 px-3 py-1">
+                <TrendingUp className="w-4 h-4" />
+                Live Trading
+              </Badge>
             </div>
           </div>
         </div>
-
-        {/* Paper Trading Info Banner */}
-        {isPaperTrading && (
-          <div className="bg-success/10 border border-success/20 rounded-lg p-4 flex items-start gap-3">
-            <FlaskConical className="w-5 h-5 text-success flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Paper Trading Active</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                All trades are simulated - no real money is being used. Go to Bot Config to start paper trading and see how the bot performs.
-              </p>
-            </div>
-          </div>
-        )}
 
         {/* Error Banner */}
         {error && (
