@@ -3,72 +3,90 @@ FastAPI application entry point.
 Configures middleware, routes, and application lifecycle events.
 Integrates production infrastructure for monitoring, security, and observability.
 
-Build: 2026-02-02-v3
+Build: 2026-02-02-v4
 """
+import sys
+import traceback
 
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from pathlib import Path
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-import logging
-import asyncio
+print("[BOOT] main.py starting", flush=True)
 
-from src.config import get_settings
-from src.db.database import init_db, engine
-# Import all models so they register with Base.metadata before init_db() creates tables
-from src.models import (
-    User,
-    PolymarketAccount,
-    SportConfig,
-    TrackedMarket,
-    Position,
-    Trade,
-    GlobalSettings,
-    ActivityLog,
-    MarketConfig,
-    RefreshToken,
-)
-from src.api.routes.auth import router as auth_router
-from src.api.routes.onboarding import router as onboarding_router
-from src.api.routes.dashboard import router as dashboard_router
-from src.api.routes.settings import router as settings_router
-from src.api.routes.bot import router as bot_router
-from src.api.routes.trading import router as trading_router
-from src.api.routes.logs import router as logs_router
-from src.api.routes.market_config import router as market_config_router
-from src.api.routes.analytics import router as analytics_router
-from src.api.routes.accounts import router as accounts_router
-from src.api.routes.websocket import router as websocket_router
-from src.api.routes.advanced import router as advanced_router
+try:
+    from contextlib import asynccontextmanager
+    from datetime import datetime, timezone
+    from pathlib import Path
+    from fastapi import FastAPI, Request
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.middleware.gzip import GZipMiddleware
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.templating import Jinja2Templates
+    from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+    import logging
+    import asyncio
+    print("[BOOT] stdlib imports OK", flush=True)
 
-# Production infrastructure imports
-from src.core.rate_limiter import RateLimitMiddleware, RateLimitConfig
-from src.core.logging_service import (
-    setup_structured_logging,
-    RequestLoggingMiddleware,
-    get_logger,
-    log_system_event,
-)
-from src.core.validation import RequestValidationMiddleware, create_validation_config
-from src.core.health import (
-    DatabaseHealthMonitor,
-    ServiceHealthAggregator,
-    HealthCheckScheduler,
-    HealthStatus,
-)
-from src.core.shutdown import ShutdownHandler, BotShutdownManager, shutdown_handler
-from src.core.alerts import setup_default_alerts, alert_manager, AlertSeverity
-from src.core.audit import audit_logger, AuditEventType, AuditSeverity
+    from src.config import get_settings
+    print("[BOOT] config OK", flush=True)
+    from src.db.database import init_db, engine
+    print("[BOOT] database OK", flush=True)
+    # Import all models so they register with Base.metadata before init_db() creates tables
+    from src.models import (
+        User,
+        PolymarketAccount,
+        SportConfig,
+        TrackedMarket,
+        Position,
+        Trade,
+        GlobalSettings,
+        ActivityLog,
+        MarketConfig,
+        RefreshToken,
+    )
+    print("[BOOT] models OK", flush=True)
+    from src.api.routes.auth import router as auth_router
+    print("[BOOT] auth router OK", flush=True)
+    from src.api.routes.onboarding import router as onboarding_router
+    from src.api.routes.dashboard import router as dashboard_router
+    print("[BOOT] dashboard router OK", flush=True)
+    from src.api.routes.settings import router as settings_router
+    from src.api.routes.bot import router as bot_router
+    print("[BOOT] bot router OK", flush=True)
+    from src.api.routes.trading import router as trading_router
+    from src.api.routes.logs import router as logs_router
+    from src.api.routes.market_config import router as market_config_router
+    from src.api.routes.analytics import router as analytics_router
+    from src.api.routes.accounts import router as accounts_router
+    from src.api.routes.websocket import router as websocket_router
+    from src.api.routes.advanced import router as advanced_router
+    print("[BOOT] all routers OK", flush=True)
 
-# Advanced infrastructure imports
-from src.core.prometheus import metrics, get_prometheus_metrics, get_json_metrics
-from src.core.incident_management import setup_incident_management, incident_manager
-from src.core.security_headers import SecurityHeadersMiddleware, create_security_headers_config
+    # Production infrastructure imports
+    from src.core.rate_limiter import RateLimitMiddleware, RateLimitConfig
+    from src.core.logging_service import (
+        setup_structured_logging,
+        RequestLoggingMiddleware,
+        get_logger,
+        log_system_event,
+    )
+    from src.core.validation import RequestValidationMiddleware, create_validation_config
+    from src.core.health import (
+        DatabaseHealthMonitor,
+        ServiceHealthAggregator,
+        HealthCheckScheduler,
+        HealthStatus,
+    )
+    from src.core.shutdown import ShutdownHandler, BotShutdownManager, shutdown_handler
+    from src.core.alerts import setup_default_alerts, alert_manager, AlertSeverity
+    from src.core.audit import audit_logger, AuditEventType, AuditSeverity
+
+    # Advanced infrastructure imports
+    from src.core.prometheus import metrics, get_prometheus_metrics, get_json_metrics
+    from src.core.incident_management import setup_incident_management, incident_manager
+    from src.core.security_headers import SecurityHeadersMiddleware, create_security_headers_config
+    print("[BOOT] all imports OK", flush=True)
+except Exception as e:
+    print(f"[BOOT FATAL] Import failed: {e}", flush=True)
+    traceback.print_exc()
+    sys.exit(1)
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
