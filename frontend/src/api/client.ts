@@ -10,7 +10,7 @@ const rawApiUrl = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sp
 const API_BASE_URL = rawApiUrl.replace(/^http:\/\//i, 'https://');
 
 // Debug log the API URL on startup
-console.log('[API Client] Base URL:', API_BASE_URL);
+// console.log('[API Client] Base URL:', API_BASE_URL);
 
 const DEFAULT_TIMEOUT_MS = 30000;
 
@@ -514,7 +514,7 @@ class ApiClient {
   /**
    * Bulk configure multiple leagues with same settings
    */
-  async bulkConfigureLeagues(config: BulkLeagueConfig): Promise<BulkLeagueConfigResponse> {
+  async bulkConfigureLeagues(config: BulkLeagueConfigRequest): Promise<BulkLeagueConfigResponse> {
     return this.request('/settings/leagues/bulk', {
       method: 'POST',
       body: JSON.stringify(config),

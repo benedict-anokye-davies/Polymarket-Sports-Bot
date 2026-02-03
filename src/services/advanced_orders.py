@@ -126,6 +126,7 @@ class BracketOrder:
     entry_price: Decimal = Decimal("0")
     entry_size: Decimal = Decimal("0")
     entry_status: OrderStatus = OrderStatus.PENDING
+    entry_order_id: str | None = None  # Added field to track the entry order
     entry_filled_at: datetime | None = None
     
     # Take profit (active after entry fills)
@@ -489,6 +490,14 @@ class AdvancedOrderManager:
                 size=float(entry_size)
             )
             
+            # Extract order ID to track status
+            if entry_result:
+                # Handle different client response formats
+                if isinstance(entry_result, dict):
+                    order.entry_order_id = entry_result.get("id") or entry_result.get("order_id")
+                elif hasattr(entry_result, "id"):
+                    order.entry_order_id = entry_result.id
+
             order.status = OrderStatus.ACTIVE
             order.entry_status = OrderStatus.ACTIVE
             
@@ -755,7 +764,35 @@ class AdvancedOrderManager:
         """Check bracket order TP and SL conditions."""
         # Only check if entry has filled and TP/SL are active
         if order.entry_status != OrderStatus.FILLED:
-            # TODO: Check if entry order filled via API
+            # Check if entry order filled via API
+            if order.entry_order_id:
+                try:
+                    # Fetch fresh order status
+                    if hasattr(self.client, 'get_order'):
+                        # Support both async and sync clients (though we likely use async here)
+                        result = self.client.get_order(order.entry_order_id)
+                        if asyncio.iscoroutine(result):
+                            result = await result
+                            
+                        # Parse result (Kalshi vs Polymarket format)
+                        status = None
+                        if isinstance(result, dict):
+                            # Kalshi: {"order": {"status": "executed"}}
+                            # Polymarket: {"status": "cancellable"} or similar
+                            order_data = result.get("order", result)
+                            status = order_data.get("status")
+                            
+                        if status in ["executed", "filled", "matched"]:
+                            order.entry_status = OrderStatus.FILLED
+                            order.status = OrderStatus.ACTIVE  # TP/SL now active
+                            logger.info(f"Bracket entry confirmed filled: {order.id[:8]}...")
+                        elif status in ["canceled", "expired", "killed"]:
+                            order.entry_status = OrderStatus.CANCELLED
+                            order.status = OrderStatus.CANCELLED
+                            logger.info(f"Bracket entry travelled/expired: {order.id[:8]}...")
+                            
+                except Exception as e:
+                    logger.debug(f"Failed to check entry status for {order.entry_order_id}: {e}")
             return
         
         # Check take profit

@@ -28,7 +28,9 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nFix kalshi-python version - 2.2.0 does not exist, use 2.1.4\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit:*)",
       "Bash(pip show:*)",
-      "WebFetch(domain:pypi.org)"
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:docs.kalshi.com)",
+      "Bash(GIT_TERMINAL_PROMPT=0 git push:*)"
     ]
   }
 }

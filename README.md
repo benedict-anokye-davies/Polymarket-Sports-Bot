@@ -6,7 +6,8 @@ Automated sports betting on Polymarket and Kalshi prediction markets. Monitors l
 
 - **Multi-Platform**: Supports both Polymarket and Kalshi markets
 - **Live Game Monitoring**: Real-time ESPN game state tracking
-- **Paper Trading**: Test strategies with Kalshi Demo environment
+- **Live Trading**: Execute real-money trades on Kalshi Production
+- **Paper Trading**: Test strategies with simulation mode
 - **Configurable Thresholds**: Set entry/exit prices per sport
 - **Multi-Account**: Manage multiple exchange accounts
 - **Position Tracking**: Monitor open positions and P&L
@@ -24,19 +25,20 @@ Automated sports betting on Polymarket and Kalshi prediction markets. Monitors l
 
 1. Push to GitHub
 2. Connect repository to Railway
-3. Add PostgreSQL database
+3. Add PostgreSQL database (Auto-injected `DATABASE_URL`)
 4. Set environment variables:
-   - `DATABASE_URL` - PostgreSQL connection
    - `SECRET_KEY` - JWT signing key
+   - `ENCRYPTION_KEY` - Key for encrypting API credentials
 
-### Frontend (Cloudflare Pages)
+### Frontend (Vercel)
 
 1. Connect GitHub repository
 2. Set build settings:
+   - Framework Preset: Vite
    - Build command: `npm run build`
    - Output directory: `dist`
 3. Set environment variable:
-   - `VITE_API_URL` - Backend URL
+   - `VITE_API_URL` - Backend URL (Railway App URL)
 
 ## Local Development
 
@@ -57,7 +59,3 @@ npm run dev
 ## License
 
 Proprietary - All rights reserved.
-
-## Auto-Deployment Test
-Testing Railway and Vercel auto-deployment - Fri Jan 30 14:26:47 GMTST 2026
-# Trigger redeploy

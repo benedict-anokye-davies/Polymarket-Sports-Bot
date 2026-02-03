@@ -12,7 +12,9 @@ export const logger = {
    */
   debug: (...args: unknown[]) => {
     if (isDebug) {
-      console.log(...args);
+      if (import.meta.env.DEV) {
+        console.log(...args);
+      }
     }
   },
 

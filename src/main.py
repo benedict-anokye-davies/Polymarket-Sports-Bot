@@ -109,12 +109,14 @@ async def lifespan(app: FastAPI):
         await init_db()
         logger.info("Database initialized successfully")
     except Exception as e:
-        logger.warning(f"Database initialization failed (app will continue): {e}")
+        logger.error(f"Database initialization failed: {e}", exc_info=True)
+        # We continue, but the app might be unstable without DB
     
     # Setup database health monitoring (skip if no engine)
     try:
-        db_health_monitor = DatabaseHealthMonitor(engine)
-        health_aggregator.register_service("database", db_health_monitor.run_health_check)
+        if engine:
+            db_health_monitor = DatabaseHealthMonitor(engine)
+            health_aggregator.register_service("database", db_health_monitor.run_health_check)
     except Exception as e:
         logger.warning(f"Health monitor setup skipped: {e}")
     
@@ -123,7 +125,7 @@ async def lifespan(app: FastAPI):
         health_scheduler = HealthCheckScheduler(health_aggregator, interval_seconds=30)
         await health_scheduler.start()
     except Exception as e:
-        logger.warning(f"Health scheduler setup skipped: {e}")
+        logger.error(f"Health scheduler setup failed: {e}", exc_info=True)
     
     # Setup alert channels (non-blocking)
     try:
@@ -152,7 +154,7 @@ async def lifespan(app: FastAPI):
             environment="debug" if app_settings.debug else "production",
         )
     except Exception as e:
-        logger.warning(f"Audit log skipped: {e}")
+        logger.debug(f"Audit log skipped: {e}")
     
     # Send startup alert (non-blocking)
     try:
@@ -162,7 +164,7 @@ async def lifespan(app: FastAPI):
             category="system",
         )
     except Exception as e:
-        logger.warning(f"Startup alert skipped: {e}")
+        logger.debug(f"Startup alert skipped: {e}")
     
     log_system_event("startup", {"environment": "debug" if app_settings.debug else "production"})
     
