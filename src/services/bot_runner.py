@@ -2299,7 +2299,7 @@ _bot_instances: dict[UUID, BotRunner] = {}
 
 async def get_bot_runner(
     user_id: UUID,
-    trading_client: Union[PolymarketClient, KalshiClient],
+    trading_client: KalshiClient,
     trading_engine: TradingEngine,
     espn_service: ESPNService
 ) -> BotRunner:
