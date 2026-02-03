@@ -14,10 +14,10 @@ from sqlalchemy.dialects.postgresql import UUID
 from src.db.database import Base
 
 
-class PolymarketAccount(Base):
+class TradingAccount(Base):
     """
     Stores encrypted trading platform credentials for a user.
-    Supports both Polymarket and Kalshi platforms.
+    Supports only Kalshi platform (renamed from PolymarketAccount).
     The API credentials are encrypted before storage
     and decrypted only when needed for API calls.
     """
@@ -125,7 +125,7 @@ class PolymarketAccount(Base):
     
     user: Mapped["User"] = relationship(
         "User",
-        back_populates="polymarket_account"
+        back_populates="trading_account"
     )
     
     def __repr__(self) -> str:

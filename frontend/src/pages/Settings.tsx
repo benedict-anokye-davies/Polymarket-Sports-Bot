@@ -23,11 +23,9 @@ import { logger } from '@/lib/logger';
 
 // Wallet credentials interface
 interface WalletCredentials {
-  platform: 'kalshi' | 'polymarket';
+  platform: 'kalshi';
   api_key: string;
   api_secret: string;
-  api_passphrase: string;
-  funder_address: string;
 }
 
 const SPORTS = ['nba', 'nfl', 'mlb', 'nhl', 'soccer', 'mma', 'tennis', 'golf', 'ncaab', 'ncaaf'] as const;
@@ -270,14 +268,10 @@ export default function Settings() {
 
     try {
       setTestingConnection(true);
-      await apiClient.connectWallet(wallet.platform, {
+      await apiClient.connectWallet('kalshi', {
         // Kalshi uses api_key and api_secret (RSA private key)
-        apiKey: isKalshi ? wallet.api_key : wallet.api_key,
-        apiSecret: isKalshi ? wallet.api_secret : wallet.api_secret,
-        // Polymarket uses private_key, funder_address, and passphrase
-        privateKey: !isKalshi ? wallet.api_secret : undefined,
-        funderAddress: !isKalshi ? wallet.funder_address : undefined,
-        passphrase: !isKalshi ? wallet.api_passphrase : undefined,
+        apiKey: wallet.api_key,
+        apiSecret: wallet.api_secret,
       });
       setWalletConnected(true);
 
@@ -297,7 +291,7 @@ export default function Settings() {
 
       toast({
         title: 'Success',
-        description: `${isKalshi ? 'Kalshi' : 'Polymarket'} connection successful.`,
+        description: 'Connection successful.',
       });
     } catch (error) {
       toast({
@@ -415,7 +409,7 @@ export default function Settings() {
                     <div className="w-3 h-3 bg-primary rounded-full animate-pulse" />
                     <div>
                       <p className="font-medium text-foreground">
-                        {walletStatus.platform === 'kalshi' ? 'Kalshi' : 'Polymarket'} Connected
+                        Kalshi Connected
                       </p>
                       <p className="text-sm text-muted-foreground font-mono">
                         {walletStatus.masked_identifier || 'Credentials saved'}
@@ -446,7 +440,7 @@ export default function Settings() {
                 {showCredentialForm && walletStatus?.is_connected && (
                   <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg mb-4">
                     <span className="text-sm text-muted-foreground">
-                      Currently connected to {walletStatus.platform === 'kalshi' ? 'Kalshi' : 'Polymarket'}
+                      Currently connected to Kalshi
                     </span>
                     <Button
                       variant="ghost"
@@ -458,140 +452,59 @@ export default function Settings() {
                   </div>
                 )}
 
-                {/* Platform Selector */}
+                {/* Trading Platform Info */}
                 <div className="space-y-2">
                   <Label className="text-muted-foreground">Trading Platform</Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setWallet(prev => ({ ...prev, platform: 'kalshi' }))}
-                      className={`p-3 rounded-lg border text-left transition-all ${wallet.platform === 'kalshi'
-                          ? 'bg-primary/10 border-primary/50'
-                          : 'bg-muted/30 border-border hover:border-primary/30'
-                        }`}
-                    >
-                      <span className={`font-medium ${wallet.platform === 'kalshi' ? 'text-primary' : 'text-foreground'}`}>
-                        Kalshi
-                      </span>
-                      <p className="text-xs text-muted-foreground mt-1">US-regulated prediction market</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWallet(prev => ({ ...prev, platform: 'polymarket' }))}
-                      className={`p-3 rounded-lg border text-left transition-all ${wallet.platform === 'polymarket'
-                          ? 'bg-primary/10 border-primary/50'
-                          : 'bg-muted/30 border-border hover:border-primary/30'
-                        }`}
-                    >
-                      <span className={`font-medium ${wallet.platform === 'polymarket' ? 'text-primary' : 'text-foreground'}`}>
-                        Polymarket
-                      </span>
-                      <p className="text-xs text-muted-foreground mt-1">Crypto-based prediction market</p>
-                    </button>
+                  <div className="p-3 rounded-lg border bg-primary/10 border-primary/50">
+                    <span className="font-medium text-primary">Kalshi</span>
+                    <p className="text-xs text-muted-foreground mt-1">US-regulated prediction market</p>
                   </div>
                 </div>
 
                 <Separator />
 
                 {/* Kalshi Credentials */}
-                {wallet.platform === 'kalshi' ? (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="apiKey" className="text-muted-foreground">Kalshi API Key</Label>
-                      <Input
-                        id="apiKey"
-                        type="text"
-                        placeholder="Your Kalshi API Key"
-                        className="bg-muted border-border font-mono"
-                        value={wallet.api_key}
-                        onChange={(e) => setWallet(prev => ({ ...prev, api_key: e.target.value }))}
-                      />
-                      <p className="text-xs text-muted-foreground">From Kalshi Settings {'>'} API Keys</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="apiSecret" className="text-muted-foreground">Kalshi RSA Private Key</Label>
-                      <div className="relative">
-                        <Textarea
-                          id="apiSecret"
-                          placeholder="-----BEGIN RSA PRIVATE KEY-----
+                <div className="space-y-2">
+                  <Label htmlFor="apiKey" className="text-muted-foreground">Kalshi API Key</Label>
+                  <Input
+                    id="apiKey"
+                    type="text"
+                    placeholder="Your Kalshi API Key"
+                    className="bg-muted border-border font-mono"
+                    value={wallet.api_key}
+                    onChange={(e) => setWallet(prev => ({ ...prev, api_key: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">From Kalshi Settings {'>'} API Keys</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="apiSecret" className="text-muted-foreground">Kalshi RSA Private Key</Label>
+                  <div className="relative">
+                    <Textarea
+                      id="apiSecret"
+                      placeholder="-----BEGIN RSA PRIVATE KEY-----
 MIIEow...
 -----END RSA PRIVATE KEY-----"
-                          className="bg-muted border-border pr-10 font-mono min-h-[120px] text-xs"
-                          value={wallet.api_secret}
-                          onChange={(e) => setWallet(prev => ({ ...prev, api_secret: e.target.value }))}
-                          style={{ whiteSpace: 'pre-wrap' }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          type="button"
-                          className="absolute right-1 top-2 h-7 w-7"
-                          onClick={() => setShowPrivateKey(!showPrivateKey)}
-                        >
-                          {showPrivateKey ? (
-                            <EyeOff className="w-4 h-4 text-muted-foreground" />
-                          ) : (
-                            <Eye className="w-4 h-4 text-muted-foreground" />
-                          )}
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Paste your complete RSA private key including header and footer lines.</p>
-                    </div>
-                  </>
-                ) : (
-                  /* Polymarket Credentials */
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="privateKey" className="text-muted-foreground">Private Key</Label>
-                      <div className="relative">
-                        <Input
-                          id="privateKey"
-                          type={showPrivateKey ? 'text' : 'password'}
-                          placeholder="0x..."
-                          className="bg-muted border-border pr-10 font-mono"
-                          value={wallet.api_key}
-                          onChange={(e) => setWallet(prev => ({ ...prev, api_key: e.target.value }))}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          type="button"
-                          className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                          onClick={() => setShowPrivateKey(!showPrivateKey)}
-                        >
-                          {showPrivateKey ? (
-                            <EyeOff className="w-4 h-4 text-muted-foreground" />
-                          ) : (
-                            <Eye className="w-4 h-4 text-muted-foreground" />
-                          )}
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">Your Polygon wallet private key (64 hex chars)</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="walletAddress" className="text-muted-foreground">Wallet Address</Label>
-                      <Input
-                        id="walletAddress"
-                        placeholder="0x..."
-                        className="bg-muted border-border font-mono"
-                        value={wallet.funder_address}
-                        onChange={(e) => setWallet(prev => ({ ...prev, funder_address: e.target.value }))}
-                      />
-                      <p className="text-xs text-muted-foreground">Your Polygon wallet holding USDC</p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="apiPassphrase" className="text-muted-foreground">API Passphrase (Optional)</Label>
-                      <Input
-                        id="apiPassphrase"
-                        type="password"
-                        placeholder="For L2 authentication"
-                        className="bg-muted border-border font-mono"
-                        value={wallet.api_passphrase}
-                        onChange={(e) => setWallet(prev => ({ ...prev, api_passphrase: e.target.value }))}
-                      />
-                    </div>
-                  </>
-                )}
+                      className="bg-muted border-border pr-10 font-mono min-h-[120px] text-xs"
+                      value={wallet.api_secret}
+                      onChange={(e) => setWallet(prev => ({ ...prev, api_secret: e.target.value }))}
+                      style={{ whiteSpace: 'pre-wrap' }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      type="button"
+                      className="absolute right-1 top-2 h-7 w-7"
+                      onClick={() => setShowPrivateKey(!showPrivateKey)}
+                    >
+                      {showPrivateKey ? (
+                        <EyeOff className="w-4 h-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Paste your complete RSA private key including header and footer lines.</p>
+                </div>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${walletConnected ? 'bg-primary' : 'bg-muted-foreground'}`} />

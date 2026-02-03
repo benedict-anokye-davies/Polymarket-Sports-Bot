@@ -15,8 +15,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.services.polymarket_ws import PolymarketWebSocket, PriceUpdate
-from src.services.polymarket_client import PolymarketClient
 from src.services.kalshi_client import KalshiClient
 from src.services.game_tracker_service import GameTrackerService
 from src.services.trading_client_interface import TradingClient
@@ -73,14 +71,14 @@ class BotRunner:
     
     # Polling intervals
     ESPN_POLL_INTERVAL = 5.0  # Seconds between ESPN polls
-    DISCOVERY_INTERVAL = 300.0  # Seconds between market discovery runs
+    DISCOVERY_INTERVAL = 10.0  # Seconds between market discovery runs
     HEALTH_CHECK_INTERVAL = 60.0  # Seconds between health checks
     CLEANUP_INTERVAL = 120.0  # Seconds between stale game cleanup runs
     MAX_TRACKED_GAMES = 100  # Maximum number of games to track simultaneously
     
     def __init__(
         self,
-        trading_client: Union[PolymarketClient, KalshiClient],
+        trading_client: KalshiClient,
         trading_engine: TradingEngine,
         espn_service: ESPNService
     ):
@@ -89,11 +87,10 @@ class BotRunner:
         self.espn_service = espn_service
         self.game_tracker = GameTrackerService(espn_service)
 
-        # Detect platform from client type
-        self.platform = self._detect_platform(trading_client)
+        self.platform = "kalshi"
 
         self.state = BotState.STOPPED
-        self.websocket: PolymarketWebSocket | None = None
+
 
         # Tracked games keyed by ESPN event ID
         self.tracked_games: dict[str, TrackedGame] = {}
@@ -161,73 +158,41 @@ class BotRunner:
         self._stop_event = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
 
-    def _detect_platform(self, client) -> str:
-        """Detect which trading platform the client is for."""
-        client_class = client.__class__.__name__
-        if "Kalshi" in client_class:
-            return "kalshi"
-        return "polymarket"
-
     async def _place_order(self, game: TrackedGame, side: str, price: float, size: int) -> Any | None:
         """
-        Platform-agnostic order placement.
-        Handles differences between Polymarket and Kalshi order formats.
+        Place order on Kalshi.
         """
-        if self.platform == "kalshi":
-            # Kalshi order format
-            ticker = game.market.ticker
-            if not ticker:
-                logger.error(f"No ticker available for Kalshi market: {game.market.question}")
-                return None
+        # Kalshi order format
+        ticker = game.market.ticker
+        if not ticker:
+            logger.error(f"No ticker available for Kalshi market: {game.market.question}")
+            return None
 
-            # type: ignore
-            return await self.trading_client.place_order(
-                ticker=ticker,
-                side=side.lower(),
-                yes_no="yes",
-                price=price,
-                size=int(size),
-            )
-        else:
-            # Polymarket order format
-            # type: ignore
-            return await self.trading_client.place_order(
-                token_id=game.market.token_id_yes,
-                side=side.upper(),
-                price=price,
-                size=size,
-                order_type="GTC"
-            )
+        # type: ignore
+        return await self.trading_client.place_order(
+            ticker=ticker,
+            side="buy", # Always buying in this simplified runner context
+            yes_no=side.lower(),
+            price=price,
+            size=int(size),
+        )
 
     def _get_order_id(self, order: dict) -> str | None:
-        """Get order ID from order response, handling platform differences."""
-        if self.platform == "kalshi":
-            # Kalshi wraps response in {"order": {...}}
-            order_data = order.get("order", order)
-            return order_data.get("order_id") or order_data.get("id")
-        return order.get("id")
+        """Get order ID from Kalshi order response."""
+        # Kalshi wraps response in {"order": {...}}
+        order_data = order.get("order", order)
+        return order_data.get("order_id") or order_data.get("id")
 
     async def _check_slippage(self, game: TrackedGame, price: float, side: str = "buy") -> bool:
         """
-        Platform-agnostic slippage check.
+        Kalshi slippage check.
         Returns True if slippage is acceptable.
         """
-        if self.platform == "kalshi":
-            ticker = game.market.ticker
-            if not ticker:
-                return True  # Allow trade if no ticker
-            slippage_ok, _ = await self.trading_client.check_slippage(ticker, price, side)
-            return slippage_ok
-        else:
-            # Polymarket check_slippage may return tuple or bool depending on version
-            result = await self.trading_client.check_slippage(
-                game.market.token_id_yes,
-                price,
-                side
-            )
-            if isinstance(result, tuple):
-                return result[0]
-            return result
+        ticker = game.market.ticker
+        if not ticker:
+            return True  # Allow trade if no ticker
+        slippage_ok, _ = await self.trading_client.check_slippage(ticker, price, side)
+        return slippage_ok
     
     async def initialize(
         self,
@@ -314,13 +279,8 @@ class BotRunner:
         # Load user-selected games from bot config
         await self._load_user_selected_games(user_id)
         
-        # Initialize WebSocket only for Polymarket (Kalshi uses polling)
-        if self.platform == "polymarket":
-            self.websocket = PolymarketWebSocket()
-            logger.info("WebSocket initialized for Polymarket real-time price updates")
-        else:
-            self.websocket = None
-            logger.info("Kalshi mode: using polling for price updates (no WebSocket)")
+        # Kalshi mode: using polling for price updates (no WebSocket)
+        logger.info("Kalshi mode: using polling for price updates")
         
         mode_str = "LIVE TRADING - REAL MONEY"
         games_count = len(self.user_selected_games)
@@ -512,10 +472,7 @@ class BotRunner:
             asyncio.create_task(self._cleanup_loop(), name="cleanup"),
         ]
         
-        if self.websocket:
-            self._tasks.append(
-                asyncio.create_task(self._websocket_loop(), name="websocket")
-            )
+
         
         self.state = BotState.RUNNING
         logger.info("Trading bot started successfully")
@@ -544,9 +501,7 @@ class BotRunner:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
         
-        # Close WebSocket
-        if self.websocket:
-            await self.websocket.disconnect()
+
         
         # Send stop notification
         runtime = None
@@ -589,7 +544,7 @@ class BotRunner:
         while not self._stop_event.is_set():
             try:
                 async with async_session_factory() as db:
-                    logger.debug(f"Running market discovery for {self.platform}...")
+                    logger.info(f"Running market discovery for {self.platform}...")
                 
                     # Skip discovery if no games selected by user
                     if not self.user_selected_games:
@@ -597,12 +552,9 @@ class BotRunner:
                         await asyncio.sleep(self.DISCOVERY_INTERVAL)
                         continue
                 
-                    # Use platform-aware market discovery
-                    markets = await discovery_service.discover_markets_for_platform(
-                        platform=self.platform,
+                    # Use Kalshi market discovery
+                    markets = await discovery_service.discover_kalshi_markets(
                         sports=self.enabled_sports,
-                        min_liquidity=2000,
-                        max_spread=0.08,
                         hours_ahead=168,  # Look ahead 7 days
                         include_live=True
                     )
@@ -616,16 +568,8 @@ class BotRunner:
                         for game in games:
                             event_id = game.get("id")
                         
-                            # Skip if not in user's selected games
-                            if event_id not in self.user_selected_games:
-                                continue
-                        
                             if event_id in self.tracked_games:
                                 continue  # Already tracking
-                        
-                            # Get user's game config for selected_side
-                            user_game_config = self.user_selected_games[event_id]
-                            selected_side = user_game_config.get("selected_side", "home")
                         
                             # Try to match to a market
                             competitors = game.get("competitions", [{}])[0].get("competitors", [])
@@ -647,6 +591,17 @@ class BotRunner:
                             )
                         
                             if matched_market:
+                                # Check if this market is user-selected (by ESPN ID or Condition ID)
+                                user_game_config = self.user_selected_games.get(event_id)
+                                if not user_game_config:
+                                    user_game_config = self.user_selected_games.get(matched_market.condition_id)
+                                
+                                # If still not found, skip (unless we want to auto-track everything, but sticking to user selection for now)
+                                if not user_game_config:
+                                    continue
+
+                                selected_side = user_game_config.get("selected_side", "home")
+
                                 await self._start_tracking_game(
                                     db, event_id, sport, home_name, away_name, 
                                     matched_market, game, selected_side=selected_side
@@ -715,60 +670,7 @@ class BotRunner:
             
             await asyncio.sleep(self.ESPN_POLL_INTERVAL)
     
-    async def _websocket_loop(self) -> None:
-        """
-        Manage WebSocket connection and handle price updates.
-        """
-        if not self.websocket:
-            return
-        
-        # Register price callback
-        self.websocket.add_callback(self._handle_price_update)
-        
-        while not self._stop_event.is_set():
-            try:
-                await self.websocket.connect()
-                
-                # Subscribe to tracked markets
-                for game in self.tracked_games.values():
-                    await self.websocket.subscribe(
-                        game.market.condition_id,
-                        game.market.token_id_yes,
-                        game.market.token_id_no
-                    )
-                
-                # Keep connection alive
-                while not self._stop_event.is_set() and self.websocket.is_connected:
-                    await asyncio.sleep(1)
-                
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"WebSocket error: {e}")
-                await asyncio.sleep(5)  # Wait before reconnect
-    
-    def _handle_price_update(self, update: PriceUpdate) -> None:
-        """
-        Handle real-time price update from WebSocket.
-        
-        Args:
-            update: Price update data
-        """
-        event_id = self.token_to_game.get(update.token_id)
-        if not event_id:
-            return
-        
-        game = self.tracked_games.get(event_id)
-        if not game:
-            return
-        
-        game.current_price = update.mid_price
-        game.last_update = datetime.now(timezone.utc)
-        
-        logger.debug(
-            f"Price update for {game.home_team} vs {game.away_team}: "
-            f"${update.mid_price:.4f} (spread: ${update.spread:.4f})"
-        )
+
     
     async def _trading_loop(self) -> None:
         """
@@ -890,6 +792,36 @@ class BotRunner:
             "away_team": game.away_team,
             "selected_side": game.selected_side,
         }
+
+    async def _find_matching_market(
+        self,
+        markets: list[Any],
+        home_name: str,
+        away_name: str,
+        sport: str
+    ) -> Any | None:
+        """
+        Find a market that matches the given game teams.
+        """
+        # Normalize names for matching
+        home_norm = home_name.lower()
+        away_norm = away_name.lower()
+        
+        for m in markets:
+            # Handle both dict and object (DiscoveredMarket)
+            if isinstance(m, dict):
+                 m_home = m.get("home_team", "").lower() 
+                 m_away = m.get("away_team", "").lower()
+            else:
+                 m_home = (m.home_team or "").lower()
+                 m_away = (m.away_team or "").lower()
+            
+            # Simple substring matching
+            if (m_home in home_norm or home_norm in m_home) and \
+               (m_away in away_norm or away_norm in m_away):
+                return m
+                
+        return None
 
     async def _evaluate_entry(self, db: AsyncSession, game: TrackedGame) -> None:
         """
@@ -1027,7 +959,7 @@ class BotRunner:
         sport_key = game.sport.lower()
         
         try:
-            order = await self._place_order(game, "BUY", price, int(position_size))
+            order = await self._place_order(game, side, price, int(position_size))
 
             if order:
                 order_id = self._get_order_id(order)

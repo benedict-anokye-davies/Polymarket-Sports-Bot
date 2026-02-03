@@ -21,7 +21,7 @@ from src.db.crud.position import PositionCRUD
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
 from src.db.crud.market_config import MarketConfigCRUD
-from src.services.polymarket_client import PolymarketClient
+
 from src.services.kalshi_client import KalshiClient
 from src.services.confidence_scorer import ConfidenceScorer, ConfidenceResult
 from src.services.kelly_calculator import KellyCalculator, KellyResult
@@ -147,7 +147,7 @@ class TradingEngine:
         self,
         db: AsyncSession,
         user_id: str,
-        trading_client: Union[PolymarketClient, KalshiClient],
+        trading_client: KalshiClient,
         global_settings: GlobalSettings,
         sport_configs: dict[str, SportConfig],
         market_configs: dict[str, MarketConfig] | None = None,
@@ -159,7 +159,7 @@ class TradingEngine:
         Args:
             db: Database session
             user_id: User identifier (string or UUID)
-            trading_client: Initialized trading client (Polymarket or Kalshi)
+            trading_client: Initialized Kalshi client
             global_settings: User's global settings
             sport_configs: Dictionary of sport -> config mappings
             market_configs: Dictionary of condition_id -> market config overrides
@@ -175,9 +175,6 @@ class TradingEngine:
         
         self.confidence_scorer = ConfidenceScorer()
         self.kelly_calculator = KellyCalculator()
-        
-        # Determine client type for API compatibility
-        self._is_kalshi = isinstance(trading_client, KalshiClient)
     
     @property
     def _user_id_uuid(self) -> UUID:
@@ -188,50 +185,38 @@ class TradingEngine:
     
     async def _place_order(self, token_id: str, side: str, price: float, size: float, yes_no: str = "yes") -> Any:
         """
-        Place order with client-agnostic interface.
-        Handles differences between Polymarket and Kalshi APIs.
+        Place order on Kalshi.
         
         Note: Kalshi API uses cents (1-100) for price, while Polymarket uses 0-1 range.
+        This method converts inputs to Kalshi format.
         """
-        if self._is_kalshi:
-            # Kalshi API: place_order(ticker, side, yes_no, price, size)
-            # Kalshi price is in cents, so we convert from 0-1 range to cents
-            # type: ignore
-            return await self.client.place_order(
-                ticker=token_id,
-                side=side,
-                yes_no=yes_no.lower(),
-                price=price,  # Client expects 0-1, will convert to cents internally
-                size=int(size)
-            )
-        else:
-            # Polymarket API: place_order(token_id, side, price, size)
-            # type: ignore
-            return await self.client.place_order(
-                token_id=token_id,
-                side=side,
-                price=price,
-                size=size
-            )
+        # Kalshi API: place_order(ticker, side, yes_no, price, size)
+        # Kalshi price is in cents, so we convert from 0-1 range to cents
+        return await self.client.place_order(
+            ticker=token_id,
+            side=side,
+            yes_no=yes_no.lower(),
+            price=price,  # Client expects 0-1, will convert to cents internally
+            size=int(size)
+        )
     
     async def _get_exit_price(self, token_id: str) -> float:
         """
-        Get current price for exit with client-agnostic interface.
+        Get current price for exit from Kalshi.
         """
-        if self._is_kalshi:
-            # For Kalshi, try to get market data
-            try:
-                # type: ignore
-                market = await self.client.get_market(token_id)
-                # Return yes_price as default
-                return market.yes_price
-            except:
-                # Fallback: return current market price from tracked data
-                return 0.5
-        else:
-            # Polymarket has get_midpoint_price
-            # type: ignore
-            return await self.client.get_midpoint_price(token_id)
+        # For Kalshi, try to get market data
+        try:
+            data = await self.client.get_market(token_id)
+            market = data.get("market", data)
+            
+            # Get yes_price (cents) and convert to dollars (0-1)
+            # API returns e.g. 45 for 45 cents
+            price_cents = market.get("yes_price", 50)
+            return float(price_cents) / 100.0
+        except Exception as e:
+            logger.warning(f"Failed to get exit price for {token_id}: {e}")
+            # Fallback: return current market price from tracked data
+            return 0.5
     
     def _get_effective_config(self, market: TrackedMarket) -> EffectiveConfig | None:
         """

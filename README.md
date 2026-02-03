@@ -1,10 +1,10 @@
 # Sports Trading Bot
 
-Automated sports betting on Polymarket and Kalshi prediction markets. Monitors live sports events via ESPN API and executes trades when prices hit configured thresholds.
+Automated sports betting on Kalshi prediction markets. Monitors live sports events via ESPN API and executes trades when prices hit configured thresholds.
 
 ## Features
 
-- **Multi-Platform**: Supports both Polymarket and Kalshi markets
+- **Platform**: Exclusive Kalshi market support
 - **Live Game Monitoring**: Real-time ESPN game state tracking
 - **Live Trading**: Execute real-money trades on Kalshi Production
 - **Paper Trading**: Test strategies with simulation mode

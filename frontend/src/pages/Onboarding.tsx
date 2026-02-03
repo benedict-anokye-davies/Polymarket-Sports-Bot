@@ -41,13 +41,11 @@ const PLATFORMS = [
 
 // Shared state interface for all form data
 interface OnboardingData {
-  // Platform selection
-  platform: 'kalshi' | 'polymarket';
+  // Platform selection (defaults to Kalshi)
+  platform: 'kalshi';
   // API credentials
   apiKey: string;
   apiSecret: string;
-  apiPassphrase: string;
-  funderAddress: string;
   // Risk
   maxDailyLoss: number;
   maxExposure: number;
@@ -120,9 +118,8 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
   const { toast } = useToast();
 
   const testConnection = async () => {
-    const isKalshiPlatform = data.platform === 'kalshi';
-
-    if (isKalshiPlatform && (!data.apiKey || !data.apiSecret)) {
+    // Validation already handled by button state, but for safety:
+    if (!data.apiKey || !data.apiSecret) {
       toast({
         title: 'Error',
         description: 'Please enter API Key and API Secret.',
@@ -131,22 +128,11 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
       return;
     }
 
-    if (!isKalshiPlatform && (!data.apiKey || !data.funderAddress)) {
-      toast({
-        title: 'Error',
-        description: 'Please enter Private Key and Wallet Address.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setConnectionStatus('testing');
     try {
-      await apiClient.connectWallet(data.platform, {
-        apiKey: isKalshiPlatform ? data.apiKey : undefined,
-        apiSecret: isKalshiPlatform ? data.apiSecret : undefined,
-        privateKey: !isKalshiPlatform ? data.apiKey : undefined,
-        funderAddress: !isKalshiPlatform ? data.funderAddress : undefined,
+      await apiClient.connectWallet('kalshi', {
+        apiKey: data.apiKey,
+        apiSecret: data.apiSecret,
       });
       setConnectionStatus('success');
       toast({
@@ -165,7 +151,6 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
 
   // Allow proceeding if required credentials are filled (test is optional)
   const canProceed = data.apiKey.trim() && data.apiSecret.trim();
-  const isKalshi = data.platform === 'kalshi';
 
   return (
     <motion.div
@@ -182,30 +167,12 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
         <p className="text-sm text-muted-foreground">Choose your platform and enter credentials</p>
       </div>
 
-      {/* Platform Selection */}
+      {/* Platform Info */}
       <div className="bg-muted/30 rounded-lg p-4 border border-border">
         <Label className="text-sm font-medium text-foreground mb-3 block">Trading Platform</Label>
-        <div className="grid grid-cols-2 gap-3">
-          {PLATFORMS.map((platform) => (
-            <div
-              key={platform.id}
-              onClick={() => setData(prev => ({ ...prev, platform: platform.id as 'kalshi' | 'polymarket' }))}
-              className={cn(
-                'p-4 rounded-md border cursor-pointer transition-all',
-                data.platform === platform.id
-                  ? 'bg-primary/10 border-primary/30'
-                  : 'bg-muted border-border hover:border-primary/20'
-              )}
-            >
-              <span className={cn(
-                'text-sm font-semibold block',
-                data.platform === platform.id ? 'text-primary' : 'text-foreground'
-              )}>
-                {platform.name}
-              </span>
-              <span className="text-xs text-muted-foreground">{platform.desc}</span>
-            </div>
-          ))}
+        <div className="p-4 rounded-md border bg-primary/10 border-primary/30">
+          <span className="text-sm font-semibold text-primary block">Kalshi</span>
+          <span className="text-xs text-muted-foreground">US-regulated prediction market</span>
         </div>
       </div>
 
@@ -221,86 +188,35 @@ function WalletStep({ onNext, onBack, data, setData, loading }: StepProps) {
 
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label className="text-muted-foreground">API Key</Label>
+          <Label className="text-muted-foreground">Kalshi API Key</Label>
           <Input
             type="text"
-            placeholder={isKalshi ? 'Your Kalshi API Key' : 'Your Polymarket API Key'}
+            placeholder="Your Kalshi API Key"
             className="bg-muted border-border font-mono"
             value={data.apiKey}
             onChange={(e) => setData(prev => ({ ...prev, apiKey: e.target.value }))}
           />
           <p className="text-xs text-muted-foreground">
-            {isKalshi ? 'From Kalshi Settings > API Keys' : 'From Polymarket Settings > API Keys'}
+            From Kalshi Settings {'>'} API Keys
           </p>
         </div>
 
         <div className="space-y-2">
           <Label className="text-muted-foreground">
-            {isKalshi ? 'RSA Private Key' : 'API Secret'}
+            RSA Private Key
           </Label>
-          {isKalshi ? (
-            /* Textarea for Kalshi RSA keys to preserve newlines */
-            <div className="relative">
-              <textarea
-                placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
-                className="flex min-h-[120px] w-full rounded-md border border-border bg-muted px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-                value={data.apiSecret}
-                onChange={(e) => setData(prev => ({ ...prev, apiSecret: e.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Paste your full RSA private key from Kalshi including the BEGIN/END markers
-              </p>
-            </div>
-          ) : (
-            /* Regular input for non-Kalshi platforms */
-            <div className="relative">
-              <Input
-                type={showKey ? 'text' : 'password'}
-                placeholder="Your API Secret"
-                className="bg-muted border-border font-mono pr-10"
-                value={data.apiSecret}
-                onChange={(e) => setData(prev => ({ ...prev, apiSecret: e.target.value }))}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                onClick={() => setShowKey(!showKey)}
-              >
-                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </Button>
-            </div>
-          )}
+          <div className="relative">
+            <textarea
+              placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
+              className="flex min-h-[120px] w-full rounded-md border border-border bg-muted px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+              value={data.apiSecret}
+              onChange={(e) => setData(prev => ({ ...prev, apiSecret: e.target.value }))}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Paste your full RSA private key from Kalshi including the BEGIN/END markers
+            </p>
+          </div>
         </div>
-
-        {/* Polymarket-specific fields */}
-        {!isKalshi && (
-          <>
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">API Passphrase</Label>
-              <Input
-                type="password"
-                placeholder="Your API Passphrase"
-                className="bg-muted border-border font-mono"
-                value={data.apiPassphrase}
-                onChange={(e) => setData(prev => ({ ...prev, apiPassphrase: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">Wallet Address</Label>
-              <Input
-                type="text"
-                placeholder="0x..."
-                className="bg-muted border-border font-mono"
-                value={data.funderAddress}
-                onChange={(e) => setData(prev => ({ ...prev, funderAddress: e.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground">Your Polygon wallet holding USDC</p>
-            </div>
-          </>
-        )}
 
         <Button
           variant="outline"
@@ -526,8 +442,6 @@ export default function Onboarding() {
     platform: 'kalshi',
     apiKey: '',
     apiSecret: '',
-    apiPassphrase: '',
-    funderAddress: '',
     maxDailyLoss: 100,
     maxExposure: 500,
     maxConcurrentPositions: 10,
@@ -537,13 +451,10 @@ export default function Onboarding() {
     setLoading(true);
     try {
       // Save wallet credentials if provided
-      const isKalshiPlatform = data.platform === 'kalshi';
       if (data.apiKey && data.apiSecret) {
-        await apiClient.connectWallet(data.platform, {
-          apiKey: isKalshiPlatform ? data.apiKey : undefined,
-          apiSecret: isKalshiPlatform ? data.apiSecret : undefined,
-          privateKey: !isKalshiPlatform ? data.apiKey : undefined,
-          funderAddress: !isKalshiPlatform ? data.funderAddress : undefined,
+        await apiClient.connectWallet('kalshi', {
+          apiKey: data.apiKey,
+          apiSecret: data.apiSecret,
         });
       }
 

@@ -1,6 +1,6 @@
 # Models module
 from src.models.user import User
-from src.models.polymarket_account import PolymarketAccount
+from src.models.trading_account import TradingAccount
 from src.models.sport_config import SportConfig
 from src.models.tracked_market import TrackedMarket
 from src.models.position import Position
@@ -12,7 +12,7 @@ from src.models.refresh_token import RefreshToken
 
 __all__ = [
     "User",
-    "PolymarketAccount",
+    "TradingAccount",
     "SportConfig",
     "TrackedMarket",
     "Position",

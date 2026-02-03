@@ -64,8 +64,8 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc)
     )
     
-    polymarket_account: Mapped["PolymarketAccount"] = relationship(
-        "PolymarketAccount",
+    trading_account: Mapped["TradingAccount"] = relationship(
+        "TradingAccount",
         back_populates="user",
         uselist=False,
         cascade="all, delete-orphan"

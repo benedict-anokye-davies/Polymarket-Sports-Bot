@@ -10,7 +10,7 @@ from src.api.deps import DbSession, OnboardedUser
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.position import PositionCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
-from src.db.crud.polymarket_account import PolymarketAccountCRUD
+from src.db.crud.account import AccountCRUD
 from src.schemas.trading import (
     TrackedMarketResponse,
     PositionResponse,
@@ -130,10 +130,9 @@ async def place_manual_order(
     current_user: OnboardedUser
 ) -> OrderResponse:
     """
-    Places a manual order on Polymarket.
-    Intended for testing or manual intervention.
+    Places a manual order on Kalshi.
     """
-    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    credentials = await AccountCRUD.get_decrypted_credentials(db, current_user.id)
     
     if not credentials:
         raise HTTPException(
@@ -142,29 +141,29 @@ async def place_manual_order(
         )
     
     try:
-        from src.services.polymarket_client import PolymarketClient
+        from src.services.kalshi_client import KalshiClient
         
-        client = PolymarketClient(
-            private_key=credentials["private_key"],
-            funder_address=credentials["funder_address"],
-            api_key=credentials.get("api_key"),
-            api_secret=credentials.get("api_secret"),
-            passphrase=credentials.get("passphrase")
+        # Initialize Kalshi client
+        client = KalshiClient(
+            api_key=credentials["api_key"],
+            private_key_pem=credentials.get("private_key") or credentials.get("api_secret")
         )
-        
+
         result = await client.place_order(
-            token_id=order_data.token_id,
-            side=order_data.side,
-            price=float(order_data.price),
-            size=float(order_data.size)
+            ticker=order_data.token_id, # token_id maps to ticker for Kalshi
+            side=order_data.side.lower(),
+            price=int(order_data.price * 100) if order_data.price < 2 else int(order_data.price), # Handle cents vs raw
+            count=int(order_data.size),
+            client_order_id=str(uuid.uuid4())
         )
+        await client.close()
         
         await ActivityLogCRUD.info(
             db,
             current_user.id,
             "TRADE",
             f"Manual order placed: {order_data.side} {order_data.size} @ {order_data.price}",
-            details={"token_id": order_data.token_id, "order_id": result.get("id")}
+            details={"ticker": order_data.token_id, "order_id": result.get("order_id")}
         )
         
         return OrderResponse(
@@ -213,7 +212,7 @@ async def close_position_manually(
             detail="Position is not open"
         )
     
-    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    credentials = await AccountCRUD.get_decrypted_credentials(db, current_user.id)
     
     if not credentials:
         raise HTTPException(
@@ -222,15 +221,19 @@ async def close_position_manually(
         )
     
     try:
-        from src.services.polymarket_client import PolymarketClient
+        from src.services.kalshi_client import KalshiClient
         
-        client = PolymarketClient(
-            private_key=credentials["private_key"],
-            funder_address=credentials["funder_address"],
-            api_key=credentials.get("api_key"),
-            api_secret=credentials.get("api_secret"),
-            passphrase=credentials.get("passphrase")
+        client = KalshiClient(
+            api_key=credentials["api_key"],
+            private_key_pem=credentials.get("private_key") or credentials.get("api_secret")
         )
+        
+        # Get current price logic... simplified for now as Kalshi manual close
+        # For now, just logging not implemented or basic implementation
+        # Kalshi closing involves opposite order. 
+        raise NotImplementedError("Manual close not fully implemented for Kalshi yet")
+        # Placeholder to avoid removing entire logic block without replacement strategy
+        # Ideally we'd use TradingEngine logic here but that's complex to instantiate.
         
         exit_price = await client.get_midpoint_price(position.token_id)
         
@@ -573,12 +576,12 @@ async def get_open_orders(
     """
     Returns all open (resting) orders from the exchange.
     """
-    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    credentials = await AccountCRUD.get_decrypted_credentials(db, current_user.id)
     
     if not credentials:
         return []
     
-    platform = credentials.get("platform", "polymarket")
+    platform = "kalshi"
     
     try:
         if platform == "kalshi":
@@ -587,7 +590,7 @@ async def get_open_orders(
             # Kalshi credentials might be stored as 'api_secret' (legacy) or 'private_key'
             private_key = credentials.get("private_key") or credentials.get("api_secret")
             if not private_key:
-                logger.error(f"Missing private key for Kalshi user {current_user.id}")
+                # logger.error(f"Missing private key for Kalshi user {current_user.id}")
                 return []
                 
             client = KalshiClient(
@@ -597,27 +600,11 @@ async def get_open_orders(
             
             # Kalshi REST API returns orders
             orders = await client.get_orders()
+            await client.close()
             # Normalize to common format if needed, for now return raw
             return orders
-            
         else:
-            from src.services.polymarket_client import PolymarketClient
-            
-            # Ensure required Polymarket keys exist
-            if not credentials.get("private_key"):
-                logger.error(f"Missing private key for Polymarket user {current_user.id}")
-                return []
-            
-            client = PolymarketClient(
-                private_key=credentials["private_key"],
-                funder_address=credentials["funder_address"],
-                api_key=credentials.get("api_key"),
-                api_secret=credentials.get("api_secret"),
-                passphrase=credentials.get("passphrase")
-            )
-            
-            orders = await client.get_open_orders()
-            return orders
+            return []
         
     except Exception as e:
         # Log error but return empty list to avoid breaking UI
@@ -639,7 +626,7 @@ async def cancel_order(
     """
     Cancels a specific open order.
     """
-    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    credentials = await AccountCRUD.get_decrypted_credentials(db, current_user.id)
     
     if not credentials:
         raise HTTPException(
@@ -647,7 +634,7 @@ async def cancel_order(
             detail="Wallet not connected"
         )
     
-    platform = credentials.get("platform", "polymarket")
+    platform = "kalshi"
 
     try:
         if platform == "kalshi":
@@ -659,6 +646,7 @@ async def cancel_order(
             )
             
             result = await client.cancel_order(order_id)
+            await client.close()
             
             await ActivityLogCRUD.info(
                 db,
@@ -671,27 +659,7 @@ async def cancel_order(
             return {"success": True, "message": "Order cancelled", "id": order_id}
 
         else:
-            from src.services.polymarket_client import PolymarketClient
-            
-            client = PolymarketClient(
-                private_key=credentials["private_key"],
-                funder_address=credentials["funder_address"],
-                api_key=credentials.get("api_key"),
-                api_secret=credentials.get("api_secret"),
-                passphrase=credentials.get("passphrase")
-            )
-            
-            result = await client.cancel_order(order_id)
-            
-            await ActivityLogCRUD.info(
-                db,
-                current_user.id,
-                "TRADING",
-                f"Cancelled order {order_id}",
-                details={"order_id": order_id}
-            )
-            
-            return {"success": True, "message": "Order cancelled", "id": order_id}
+             raise HTTPException(status_code=400, detail="Unsupported platform")
         
     except Exception as e:
         await ActivityLogCRUD.error(

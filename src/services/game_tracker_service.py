@@ -48,7 +48,7 @@ class GameTrackerService:
         
         for event_id, game in list(self.tracked_games.items()):
             try:
-                game_data = await self.espn_service.get_game_details(
+                game_data = await self.espn_service.get_game_summary(
                     game.sport, event_id
                 )
                 

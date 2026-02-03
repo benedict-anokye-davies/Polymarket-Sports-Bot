@@ -21,9 +21,9 @@ import asyncio
 from src.config import get_settings
 from src.db.database import init_db, engine
 # Import all models so they register with Base.metadata before init_db() creates tables
+from src.models.trading_account import TradingAccount
 from src.models import (
     User,
-    PolymarketAccount,
     SportConfig,
     TrackedMarket,
     Position,
@@ -103,7 +103,7 @@ async def lifespan(app: FastAPI):
     global health_scheduler, db_health_monitor
     
     startup_time = datetime.now(timezone.utc)
-    logger.info("Starting Polymarket Sports Trading Bot")
+    logger.info("Starting Kalshi Sports Trading Bot")
     
     # Initialize database (non-blocking - app starts even if DB fails)
     try:
@@ -172,7 +172,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Graceful shutdown
-    logger.info("Shutting down Polymarket Sports Trading Bot")
+    logger.info("Shutting down Kalshi Sports Trading Bot")
     
     # Stop health scheduler
     if health_scheduler:
@@ -192,8 +192,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Polymarket Sports Trading Bot",
-    description="Automated sports betting on Polymarket prediction markets",
+    title="Kalshi Sports Trading Bot",
+    description="Automated sports betting on Kalshi prediction markets",
     version="1.0.0",
     lifespan=lifespan,
     # Disable trailing slash redirects - they cause CORS preflight failures

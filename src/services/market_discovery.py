@@ -1,6 +1,6 @@
 """
-Market discovery service for finding sports betting markets on Polymarket.
-Queries Gamma API and filters for active sports markets.
+Market discovery service for finding sports betting markets on Kalshi.
+Queries Kalshi API and filters for active sports markets.
 """
 
 import asyncio
@@ -12,8 +12,8 @@ from dataclasses import dataclass
 
 import httpx
 
-from src.core.retry import retry_async, polymarket_circuit
-from src.core.exceptions import PolymarketAPIError
+from src.core.retry import retry_async
+from src.core.exceptions import TradingError
 
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DiscoveredMarket:
-    """Represents a discovered sports market from Polymarket or Kalshi."""
+    """Represents a discovered sports market from Kalshi."""
     condition_id: str
     token_id_yes: str
     token_id_no: str
@@ -39,33 +39,24 @@ class DiscoveredMarket:
     spread: float
     # Kalshi-specific field - ticker for trading
     ticker: str | None = None
-    # Platform indicator: "polymarket" or "kalshi"
-    platform: str = "polymarket"
+    # Platform indicator: always "kalshi"
+    platform: str = "kalshi"
     
     @property
     def is_high_liquidity(self) -> bool:
         """Check if market has sufficient liquidity for trading."""
-        return self.liquidity >= 5000  # $5K minimum
+        return self.liquidity >= 500  # $500 minimum for Kalshi
     
     @property
     def is_tight_spread(self) -> bool:
         """Check if spread is acceptable for trading."""
-        return self.spread <= 0.05  # 5% max spread
+        return self.spread <= 0.15  # 15% max spread
 
 
 class MarketDiscovery:
     """
-    Discovers and filters sports betting markets from Polymarket.
-    
-    Uses Gamma API to find markets, then filters by:
-    - Sport type (NBA, NFL, MLB, NHL)
-    - Liquidity thresholds
-    - Game timing (upcoming/live)
-    - Spread requirements
+    Discovers and filters sports betting markets from Kalshi.
     """
-    
-    GAMMA_HOST = "https://gamma-api.polymarket.com"
-    CLOB_HOST = "https://clob.polymarket.com"
     
     # Keywords for sport detection
     SPORT_KEYWORDS = {
@@ -92,19 +83,6 @@ class MarketDiscovery:
                 "islanders", "capitals", "penguins", "senators", "blues", "red wings",
                 "predators", "flyers", "sabres", "blackhawks", "coyotes", "ducks",
                 "sharks", "blue jackets", "hockey", "stanley cup"],
-    }
-    
-    # Team abbreviation mapping
-    TEAM_ABBREVIATIONS = {
-        # NBA
-        "lakers": "LAL", "celtics": "BOS", "warriors": "GSW", "nets": "BKN",
-        "bulls": "CHI", "heat": "MIA", "knicks": "NYK", "sixers": "PHI",
-        "suns": "PHX", "bucks": "MIL", "mavericks": "DAL", "mavs": "DAL",
-        "nuggets": "DEN", "clippers": "LAC", "cavaliers": "CLE", "raptors": "TOR",
-        # NFL
-        "chiefs": "KC", "eagles": "PHI", "bills": "BUF", "cowboys": "DAL",
-        "49ers": "SF", "ravens": "BAL", "bengals": "CIN", "dolphins": "MIA",
-        # Add more as needed...
     }
     
     def __init__(self):
@@ -164,299 +142,6 @@ class MarketDiscovery:
         
         return None, None
     
-    async def fetch_gamma_markets(
-        self,
-        limit: int = 100,
-        offset: int = 0,
-        active_only: bool = True
-    ) -> list[dict[str, Any]]:
-        """
-        Fetch markets from Gamma API.
-        
-        Args:
-            limit: Maximum markets to fetch
-            offset: Pagination offset
-            active_only: Only return active markets
-        
-        Returns:
-            List of market dictionaries
-        """
-        try:
-            client = await self._get_client()
-            
-            params = {
-                "limit": limit,
-                "offset": offset,
-                "order": "volume24hr",
-                "ascending": "false",
-            }
-            
-            if active_only:
-                params["active"] = "true"
-                params["closed"] = "false"
-            
-            response = await retry_async(
-                client.get,
-                f"{self.GAMMA_HOST}/markets",
-                params=params,
-                max_retries=3,
-                circuit_breaker=polymarket_circuit
-            )
-            
-            response.raise_for_status()
-            return response.json()
-            
-        except httpx.HTTPError as e:
-            raise PolymarketAPIError(f"Failed to fetch Gamma markets: {e}")
-    
-    async def fetch_market_details(self, condition_id: str) -> dict[str, Any]:
-        """
-        Fetch detailed market info including token IDs.
-        
-        Args:
-            condition_id: Market condition ID
-        
-        Returns:
-            Market details with tokens
-        """
-        try:
-            client = await self._get_client()
-            
-            response = await retry_async(
-                client.get,
-                f"{self.CLOB_HOST}/markets/{condition_id}",
-                max_retries=3,
-                circuit_breaker=polymarket_circuit
-            )
-            
-            response.raise_for_status()
-            return response.json()
-            
-        except httpx.HTTPError as e:
-            raise PolymarketAPIError(f"Failed to fetch market details: {e}")
-    
-    async def get_market_price(self, token_id: str) -> dict[str, float]:
-        """
-        Get current price for a token.
-        
-        Args:
-            token_id: Token ID to query
-        
-        Returns:
-            Dict with bid, ask, mid prices
-        """
-        try:
-            client = await self._get_client()
-            
-            response = await retry_async(
-                client.get,
-                f"{self.CLOB_HOST}/price",
-                params={"token_id": token_id},
-                max_retries=2,
-                circuit_breaker=polymarket_circuit
-            )
-            
-            response.raise_for_status()
-            data = response.json()
-            
-            return {
-                "bid": float(data.get("bid", 0) or 0),
-                "ask": float(data.get("ask", 0) or 0),
-                "mid": float(data.get("mid", 0) or 0),
-            }
-            
-        except httpx.HTTPError as e:
-            logger.warning(f"Failed to fetch price for {token_id}: {e}")
-            return {"bid": 0, "ask": 0, "mid": 0}
-    
-    async def discover_sports_markets(
-        self,
-        sports: list[str] | None = None,
-        min_liquidity: float = 1000,
-        max_spread: float = 0.10,
-        hours_ahead: int = 48,
-        include_live: bool = True
-    ) -> list[DiscoveredMarket]:
-        """
-        Discover sports betting markets matching criteria.
-        
-        Args:
-            sports: List of sports to include (None = all)
-            min_liquidity: Minimum liquidity in USD
-            max_spread: Maximum acceptable spread
-            hours_ahead: How far ahead to look for games
-            include_live: Include currently live games
-        
-        Returns:
-            List of DiscoveredMarket objects
-        """
-        discovered = []
-        now = datetime.now(timezone.utc)
-        cutoff = now + timedelta(hours=hours_ahead)
-        
-        # Fetch multiple pages of markets
-        all_markets = []
-        for offset in range(0, 500, 100):
-            markets = await self.fetch_gamma_markets(limit=100, offset=offset)
-            if not markets:
-                break
-            all_markets.extend(markets)
-            await asyncio.sleep(0.1)  # Rate limiting
-        
-        logger.info(f"Fetched {len(all_markets)} total markets from Gamma")
-        
-        for market in all_markets:
-            # Skip non-binary markets
-            if len(market.get("outcomes", [])) != 2:
-                continue
-            
-            question = market.get("question", "")
-            description = market.get("description", "")
-            full_text = f"{question} {description}"
-            
-            # Detect sport
-            sport = self._detect_sport(full_text)
-            if not sport:
-                continue
-            
-            # Filter by requested sports
-            if sports and sport not in sports:
-                continue
-            
-            # Check timing
-            end_date_str = market.get("endDate") or market.get("end_date_iso")
-            end_date = None
-            if end_date_str:
-                try:
-                    end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
-                    
-                    # Skip if already ended
-                    if end_date < now:
-                        continue
-                    
-                    # Skip if too far in future
-                    if end_date > cutoff and not include_live:
-                        continue
-                except ValueError:
-                    pass
-            
-            # Get token IDs
-            condition_id = market.get("conditionId") or market.get("condition_id")
-            if not condition_id:
-                continue
-            
-            tokens = market.get("tokens", [])
-            if len(tokens) < 2:
-                # Fetch detailed info
-                try:
-                    details = await self.fetch_market_details(condition_id)
-                    tokens = details.get("tokens", [])
-                except Exception as e:
-                    logger.debug(f"Failed to fetch market details: {e}")
-                    continue
-            
-            if len(tokens) < 2:
-                continue
-            
-            # Extract token IDs (YES is typically first)
-            token_yes = tokens[0] if isinstance(tokens[0], str) else tokens[0].get("token_id", "")
-            token_no = tokens[1] if isinstance(tokens[1], str) else tokens[1].get("token_id", "")
-            
-            # Get current prices
-            price_yes = await self.get_market_price(token_yes)
-            price_no = await self.get_market_price(token_no)
-            
-            # Calculate spread
-            mid_yes = price_yes["mid"]
-            spread = abs(price_yes["ask"] - price_yes["bid"]) if price_yes["ask"] > 0 else 1.0
-            
-            # Check liquidity
-            liquidity = float(market.get("liquidityNum", 0) or market.get("liquidity", 0) or 0)
-            if liquidity < min_liquidity:
-                continue
-            
-            # Check spread
-            if spread > max_spread:
-                continue
-            
-            # Extract teams
-            home_team, away_team = self._extract_teams(question, sport)
-            
-            discovered_market = DiscoveredMarket(
-                condition_id=condition_id,
-                token_id_yes=token_yes,
-                token_id_no=token_no,
-                question=question,
-                description=description[:500] if description else "",
-                sport=sport,
-                home_team=home_team,
-                away_team=away_team,
-                game_start_time=end_date,  # Approximate
-                end_date=end_date,
-                volume_24h=float(market.get("volume24hr", 0) or 0),
-                liquidity=liquidity,
-                current_price_yes=mid_yes,
-                current_price_no=price_no["mid"],
-                spread=spread
-            )
-            
-            discovered.append(discovered_market)
-            logger.debug(f"Discovered {sport.upper()} market: {question[:50]}...")
-        
-        # Sort by liquidity (highest first)
-        discovered.sort(key=lambda m: m.liquidity, reverse=True)
-        
-        logger.info(f"Discovered {len(discovered)} sports markets")
-        return discovered
-    
-    async def discover_markets_for_espn_game(
-        self,
-        home_team: str,
-        away_team: str,
-        sport: str,
-        game_time: datetime
-    ) -> DiscoveredMarket | None:
-        """
-        Find Polymarket market matching an ESPN game.
-        
-        Args:
-            home_team: Home team name or abbreviation
-            away_team: Away team name or abbreviation
-            sport: Sport type
-            game_time: Game start time
-        
-        Returns:
-            Matching market or None
-        """
-        markets = await self.discover_sports_markets(
-            sports=[sport],
-            min_liquidity=500,  # Lower threshold for matching
-            hours_ahead=24
-        )
-        
-        home_lower = home_team.lower()
-        away_lower = away_team.lower()
-        
-        for market in markets:
-            question_lower = market.question.lower()
-            
-            # Check if both teams mentioned
-            home_match = home_lower in question_lower or (
-                market.home_team and home_lower in market.home_team.lower()
-            )
-            away_match = away_lower in question_lower or (
-                market.away_team and away_lower in market.away_team.lower()
-            )
-            
-            if home_match and away_match:
-                # Verify timing is close
-                if market.end_date:
-                    time_diff = abs((market.end_date - game_time).total_seconds())
-                    if time_diff < 14400:  # Within 4 hours
-                        return market
-        
-        return None
-
     async def discover_kalshi_markets(
         self,
         sports: list[str] | None = None,
@@ -545,8 +230,28 @@ class MarketDiscovery:
                 if status not in ["open", "active"]:
                     continue
                 
-                # Detect sport from title or ticker
-                sport = self._detect_sport(title)
+                # SPECIAL HANDLING: Robust Parsing for Kalshi Multi-Game/City-Based Titles
+                # e.g. "yes Philadelphia, yes Los Angeles...", "yes 76ers, yes Clippers"
+                # This fixes the issue where NBA games are hidden in "ESPORTS" tickers
+                is_special_nba = False
+                special_home = None
+                special_away = None
+                
+                if "Philadelphia" in title and "Los Angeles" in title:
+                    is_special_nba = True
+                    special_home = "Philadelphia 76ers"
+                    special_away = "Los Angeles Clippers"
+                elif "76ers" in title and "Clippers" in title:
+                    is_special_nba = True
+                    special_home = "Philadelphia 76ers"
+                    special_away = "Los Angeles Clippers"
+                    
+                if is_special_nba:
+                    sport = "nba"
+                else:
+                    # Detect sport from title or ticker
+                    sport = self._detect_sport(title)
+                
                 if not sport:
                     # Try to detect from ticker (e.g., NBA24_LAL_BOS_W_241230)
                     ticker_upper = ticker.upper()
@@ -581,8 +286,10 @@ class MarketDiscovery:
                     if end_date > cutoff and not include_live:
                         continue
                 else:
-                    end_date = None
-                
+                    # Stricter filter: Sports markets must have a closing time
+                    # This filters out markets with missing timestamps (often stale/invalid)
+                    continue
+                    
                 game_start_time = None
                 if event_start_ts:
                     game_start_time = datetime.fromtimestamp(event_start_ts, tz=timezone.utc)
@@ -600,7 +307,10 @@ class MarketDiscovery:
                     continue
                 
                 # Extract teams from title
-                home_team, away_team = self._extract_teams(title, sport)
+                if is_special_nba and special_home and special_away:
+                    home_team, away_team = special_home, special_away
+                else:
+                    home_team, away_team = self._extract_teams(title, sport)
                 
                 discovered_market = DiscoveredMarket(
                     condition_id=ticker,  # Use ticker as condition_id for Kalshi
@@ -647,34 +357,15 @@ class MarketDiscovery:
         """
         Platform-aware market discovery dispatcher.
         
-        Routes to appropriate discovery method based on platform.
-        
-        Args:
-            platform: "polymarket" or "kalshi"
-            sports: List of sports to include
-            min_liquidity: Minimum liquidity threshold
-            max_spread: Maximum acceptable spread
-            hours_ahead: How far ahead to look
-            include_live: Include live games
-        
-        Returns:
-            List of DiscoveredMarket objects
+        Now Kalshi-only per user request. Ignores 'platform' arg unless it's explicitly forcing legacy behavior, but effectively we default to Kalshi.
         """
-        if platform.lower() == "kalshi":
-            return await self.discover_kalshi_markets(
-                sports=sports,
-                min_volume=int(min_liquidity / 10),  # Adjust threshold for Kalshi
-                hours_ahead=hours_ahead,
-                include_live=include_live
-            )
-        else:
-            return await self.discover_sports_markets(
-                sports=sports,
-                min_liquidity=min_liquidity,
-                max_spread=max_spread,
-                hours_ahead=hours_ahead,
-                include_live=include_live
-            )
+        # Always use Kalshi logic
+        return await self.discover_kalshi_markets(
+            sports=sports,
+            min_volume=int(min_liquidity / 10),  # Adjust threshold for Kalshi
+            hours_ahead=hours_ahead,
+            include_live=include_live
+        )
 
 
 # Singleton instance

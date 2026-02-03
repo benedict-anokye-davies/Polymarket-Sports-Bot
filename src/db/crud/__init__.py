@@ -3,7 +3,8 @@ CRUD module exports.
 """
 
 from src.db.crud.user import UserCRUD
-from src.db.crud.polymarket_account import PolymarketAccountCRUD
+from src.db.crud.account import AccountCRUD
+PolymarketAccountCRUD = AccountCRUD # Alias for backward compatibility during refactor
 from src.db.crud.sport_config import SportConfigCRUD
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.position import PositionCRUD
@@ -13,6 +14,7 @@ from src.db.crud.market_config import MarketConfigCRUD
 
 __all__ = [
     "UserCRUD",
+    "AccountCRUD",
     "PolymarketAccountCRUD",
     "SportConfigCRUD",
     "TrackedMarketCRUD",

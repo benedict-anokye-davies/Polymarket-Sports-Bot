@@ -873,7 +873,7 @@ class ESPNService:
         for event in events:
             state = self.parse_game_state(event, sport)
             if state["is_live"]:
-                live_games.append(state)
+                live_games.append(event)
         
         return live_games
     

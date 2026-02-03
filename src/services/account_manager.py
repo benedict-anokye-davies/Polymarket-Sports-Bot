@@ -23,7 +23,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
-    from src.services.polymarket_client import PolymarketClient
     from src.services.kalshi_client import KalshiClient
 
 logger = logging.getLogger(__name__)
@@ -116,13 +115,13 @@ class AccountManager:
         Returns:
             List of PolymarketAccount models
         """
-        from src.models import PolymarketAccount
+        from src.models import TradingAccount
         
         stmt = (
-            select(PolymarketAccount)
-            .where(PolymarketAccount.user_id == self.user_id)
-            .where(PolymarketAccount.is_active == True)
-            .order_by(PolymarketAccount.is_primary.desc())
+            select(TradingAccount)
+            .where(TradingAccount.user_id == self.user_id)
+            .where(TradingAccount.is_active == True)
+            .order_by(TradingAccount.is_primary.desc())
         )
         
         result = await self.db.execute(stmt)
@@ -133,13 +132,13 @@ class AccountManager:
     
     async def get_primary_account(self):
         """Get the primary trading account."""
-        from src.models import PolymarketAccount
+        from src.models import TradingAccount
         
         stmt = (
-            select(PolymarketAccount)
-            .where(PolymarketAccount.user_id == self.user_id)
-            .where(PolymarketAccount.is_primary == True)
-            .where(PolymarketAccount.is_active == True)
+            select(TradingAccount)
+            .where(TradingAccount.user_id == self.user_id)
+            .where(TradingAccount.is_primary == True)
+            .where(TradingAccount.is_active == True)
         )
         
         result = await self.db.execute(stmt)
@@ -217,30 +216,24 @@ class AccountManager:
             primary_account_id=primary_id,
         )
     
-    async def get_client_for_account(
-        self,
-        account_id: UUID,
-    ) -> Optional["PolymarketClient"]:
         """
         Get or create a trading client for specific account.
-        Supports both Polymarket and Kalshi platforms.
+        Supports Kalshi platform.
         
         Args:
             account_id: UUID of the account
         
         Returns:
-            Configured trading client (PolymarketClient or KalshiClient) or None
+            Configured KalshiClient or None
         """
-        from src.models import PolymarketAccount
-        from src.services.polymarket_client import PolymarketClient
+        from src.models import TradingAccount
         from src.services.kalshi_client import KalshiClient
         from src.core.encryption import decrypt_credential
-        from src.config import settings
         
         if account_id in self._clients_cache:
             return self._clients_cache[account_id]
         
-        stmt = select(PolymarketAccount).where(PolymarketAccount.id == account_id)
+        stmt = select(TradingAccount).where(TradingAccount.id == account_id)
         result = await self.db.execute(stmt)
         account = result.scalar_one_or_none()
         
@@ -249,54 +242,26 @@ class AccountManager:
             return None
         
         try:
-            platform = account.platform or "polymarket"
+            platform = account.platform or "kalshi"
             environment = getattr(account, 'environment', 'production')
             
-            if platform == "kalshi":
-                # Create Kalshi client
-                api_key = decrypt_credential(account.api_key_encrypted) if account.api_key_encrypted else None
-                api_secret = decrypt_credential(account.api_secret_encrypted) if account.api_secret_encrypted else None
-                
-                if not api_key or not api_secret:
-                    logger.error(f"No API credentials found for Kalshi account {account_id}")
-                    return None
-                
-                client = KalshiClient(
-                    api_key=api_key,
-                    private_key_pem=api_secret,
-                )
-                logger.debug(f"Created KalshiClient for account {account_id} ({environment})")
-            else:
-                # Create Polymarket client
-                private_key = decrypt_credential(account.private_key_encrypted) if account.private_key_encrypted else None
-                
-                if not private_key:
-                    logger.error(f"No private key found for account {account_id}")
-                    return None
-                
-                if not account.funder_address:
-                    logger.error(f"No funder address found for account {account_id}")
-                    return None
-                
-                api_key = None
-                api_secret = None
-                api_passphrase = None
-                
-                if account.api_key_encrypted:
-                    api_key = decrypt_credential(account.api_key_encrypted)
-                if account.api_secret_encrypted:
-                    api_secret = decrypt_credential(account.api_secret_encrypted)
-                if account.api_passphrase_encrypted:
-                    api_passphrase = decrypt_credential(account.api_passphrase_encrypted)
-                
-                client = PolymarketClient(
-                    private_key=private_key,
-                    funder_address=account.funder_address,
-                    api_key=api_key,
-                    api_secret=api_secret,
-                    passphrase=api_passphrase,
-                )
-                logger.debug(f"Created PolymarketClient for account {account_id}")
+            if platform != "kalshi":
+                 logger.error(f"Platform {platform} is not supported.")
+                 return None
+
+            # Create Kalshi client
+            api_key = decrypt_credential(account.api_key_encrypted) if account.api_key_encrypted else None
+            api_secret = decrypt_credential(account.api_secret_encrypted) if account.api_secret_encrypted else None
+            
+            if not api_key or not api_secret:
+                logger.error(f"No API credentials found for Kalshi account {account_id}")
+                return None
+            
+            client = KalshiClient(
+                api_key=api_key,
+                private_key_pem=api_secret,
+            )
+            logger.debug(f"Created KalshiClient for account {account_id} ({environment})")
             
             self._clients_cache[account_id] = client
             return client
@@ -359,14 +324,14 @@ class AccountManager:
         Returns:
             True if successful
         """
-        from src.models import PolymarketAccount
+        from src.models import TradingAccount
         
         if allocation_pct < 0 or allocation_pct > 100:
             raise ValueError("Allocation must be between 0 and 100")
         
         stmt = (
-            update(PolymarketAccount)
-            .where(PolymarketAccount.id == account_id)
+            update(TradingAccount)
+            .where(TradingAccount.id == account_id)
             .values(allocation_pct=Decimal(str(allocation_pct)))
         )
         
@@ -391,23 +356,23 @@ class AccountManager:
         Returns:
             True if successful
         """
-        from src.models import PolymarketAccount
+        from src.models import TradingAccount
         
         # Use savepoint for atomic primary account switch
         async with self.db.begin_nested():
             # Clear all primary flags
             clear_stmt = (
-                update(PolymarketAccount)
-                .where(PolymarketAccount.user_id == self.user_id)
+                update(TradingAccount)
+                .where(TradingAccount.user_id == self.user_id)
                 .values(is_primary=False)
             )
             await self.db.execute(clear_stmt)
             
             # Set new primary
             set_stmt = (
-                update(PolymarketAccount)
-                .where(PolymarketAccount.id == account_id)
-                .where(PolymarketAccount.user_id == self.user_id)
+                update(TradingAccount)
+                .where(TradingAccount.id == account_id)
+                .where(TradingAccount.user_id == self.user_id)
                 .values(is_primary=True)
             )
             await self.db.execute(set_stmt)
@@ -429,11 +394,11 @@ class AccountManager:
         Returns:
             True if successful
         """
-        from src.models import PolymarketAccount
+        from src.models import TradingAccount
         
         stmt = (
-            update(PolymarketAccount)
-            .where(PolymarketAccount.id == account_id)
+            update(TradingAccount)
+            .where(TradingAccount.id == account_id)
             .values(is_active=active)
         )
         

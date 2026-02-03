@@ -19,7 +19,7 @@ from src.db.crud.position import PositionCRUD
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.global_settings import GlobalSettingsCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
-from src.db.crud.polymarket_account import PolymarketAccountCRUD
+from src.db.crud.account import AccountCRUD
 from src.schemas.dashboard import DashboardStats, PositionSummary, RecentActivity
 from src.services.bot_runner import get_bot_status
 
@@ -40,38 +40,25 @@ async def get_dashboard_stats(db: DbSession, current_user: OnboardedUser) -> Das
     recent_logs = await ActivityLogCRUD.get_recent(db, current_user.id, limit=10)
     
     balance_usdc = Decimal("0")
-    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    credentials = await AccountCRUD.get_decrypted_credentials(db, current_user.id)
     
     if credentials:
         try:
-            platform = credentials.get("platform", "polymarket")
-            
-            if platform == "kalshi":
-                from src.services.kalshi_client import KalshiClient
-                api_key = credentials.get("api_key")
-                api_secret = credentials.get("api_secret")
-                
-                if api_key and api_secret:
-                    client = KalshiClient(
-                        api_key=api_key,
-                        private_key_pem=api_secret,
-                    )
-                    balance_data = await client.get_balance()
-                    await client.close()
-                    # Kalshi returns balance in cents, convert to dollars
-                    balance_cents = balance_data.get("balance", 0) or balance_data.get("available_balance", 0)
-                    balance_usdc = Decimal(str(balance_cents)) / Decimal("100")
-            else:
-                from src.services.polymarket_client import PolymarketClient
-                private_key = credentials.get("private_key")
-                funder_address = credentials.get("funder_address")
-                
-                if private_key and funder_address:
-                    client = PolymarketClient(
-                        private_key=private_key,
-                        funder_address=funder_address
-                    )
-                    balance_usdc = await client.get_balance()
+             # Only Kalshi supported
+             from src.services.kalshi_client import KalshiClient
+             api_key = credentials.get("api_key")
+             api_secret = credentials.get("api_secret")
+             
+             if api_key and api_secret:
+                 client = KalshiClient(
+                     api_key=api_key,
+                     private_key_pem=api_secret,
+                 )
+                 balance_data = await client.get_balance()
+                 await client.close()
+                 # Kalshi returns balance in cents, convert to dollars
+                 balance_cents = balance_data.get("balance", 0) or balance_data.get("available_balance", 0)
+                 balance_usdc = Decimal(str(balance_cents)) / Decimal("100")
         except Exception as e:
             logger.warning(f"Failed to fetch balance for user {current_user.id}: {e}")
     

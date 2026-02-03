@@ -1,0 +1,53 @@
+
+=== LIVE TEST STATUS CHECK ===
+
+2026-02-03 04:28:35,435 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-02-03 04:28:35,458 INFO sqlalchemy.engine.Engine SELECT users.id, users.username, users.email, users.password_hash, users.is_active, users.onboarding_completed, users.onboarding_step, users.created_at, users.updated_at 
+FROM users 
+WHERE users.username = ?
+2026-02-03 04:28:35,459 INFO sqlalchemy.engine.Engine [generated in 0.00022s] ('live_tester',)
+User: live_tester (ID: 61d3ead5-80da-4322-baa5-50a90a286513)
+2026-02-03 04:28:35,463 INFO sqlalchemy.engine.Engine SELECT sport_configs.id, sport_configs.user_id, sport_configs.sport, sport_configs.enabled, sport_configs.min_pregame_price, sport_configs.entry_threshold_drop, sport_configs.entry_threshold_absolute, sport_configs.max_entry_segment, sport_configs.min_time_remaining_seconds, sport_configs.min_time_remaining_minutes, sport_configs.max_elapsed_minutes, sport_configs.max_entry_inning, sport_configs.min_outs_remaining, sport_configs.max_entry_set, sport_configs.min_sets_remaining, sport_configs.max_entry_round, sport_configs.max_entry_hole, sport_configs.min_holes_remaining, sport_configs.exit_time_remaining_seconds, sport_configs.min_volume_threshold, sport_configs.take_profit_pct, sport_configs.stop_loss_pct, sport_configs.exit_before_segment, sport_configs.position_size_usdc, sport_configs.max_positions_per_game, sport_configs.max_total_positions, sport_configs.max_daily_loss_usdc, sport_configs.max_exposure_usdc, sport_configs.priority, sport_configs.trading_hours_start, sport_configs.trading_hours_end, sport_configs.use_kelly_sizing, sport_configs.kelly_fraction, sport_configs.min_kelly_sample_size, sport_configs.min_entry_confidence_score, sport_configs.created_at, sport_configs.updated_at 
+FROM sport_configs 
+WHERE sport_configs.user_id = ?
+2026-02-03 04:28:35,463 INFO sqlalchemy.engine.Engine [generated in 0.00016s] ('61d3ead580da4322baa550a90a286513',)
+
+--- Sport Configurations ---
+Sport: golf       Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+Sport: mlb        Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+Sport: mma        Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+Sport: nba        Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+Sport: ncaab      Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+Sport: nfl        Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+Sport: nhl        Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+Sport: soccer     Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+Sport: tennis     Enabled: True  EntryDrop: 0.2500 AbsPrice: 0.5000 Size: $1.00
+2026-02-03 04:28:35,466 INFO sqlalchemy.engine.Engine SELECT tracked_markets.id, tracked_markets.user_id, tracked_markets.condition_id, tracked_markets.token_id_yes, tracked_markets.token_id_no, tracked_markets.question, tracked_markets.espn_event_id, tracked_markets.sport, tracked_markets.home_team, tracked_markets.away_team, tracked_markets.home_abbrev, tracked_markets.away_abbrev, tracked_markets.is_user_selected, tracked_markets.auto_discovered, tracked_markets.game_start_time, tracked_markets.baseline_price_yes, tracked_markets.baseline_price_no, tracked_markets.baseline_captured_at, tracked_markets.current_price_yes, tracked_markets.current_price_no, tracked_markets.is_live, tracked_markets.is_finished, tracked_markets.current_period, tracked_markets.time_remaining_seconds, tracked_markets.home_score, tracked_markets.away_score, tracked_markets.match_confidence, tracked_markets.last_updated_at, tracked_markets.created_at 
+FROM tracked_markets 
+WHERE tracked_markets.user_id = ? AND tracked_markets.is_user_selected = 1
+2026-02-03 04:28:35,466 INFO sqlalchemy.engine.Engine [generated in 0.00014s] ('61d3ead580da4322baa550a90a286513',)
+
+--- Tracked Markets: 207 ---
+
+--- Recent Logs (Last 25) ---
+2026-02-03 04:28:35,471 INFO sqlalchemy.engine.Engine SELECT activity_logs.id, activity_logs.user_id, activity_logs.level, activity_logs.category, activity_logs.message, activity_logs.details, activity_logs.created_at 
+FROM activity_logs 
+WHERE activity_logs.user_id = ? ORDER BY activity_logs.created_at DESC
+ LIMIT ? OFFSET ?
+2026-02-03 04:28:14,174 INFO sqlalchemy.engine.Engine [generated in 0.00028s] ('61d3ead580da4322baa550a90a286513', 25, 0)
+[02:48:59] [INFO ] BOT: Bot started for sports: nba, ncaab
+[02:52:46] [INFO ] BOT: Bot started for sports: nba, ncaab
+[02:53:21] [INFO ] BOT: Bot started for sports: nba, ncaab
+[02:54:25] [INFO ] BOT: Bot started for sports: nba, ncaab
+[02:59:34] [INFO ] BOT: Bot started for sports: nba, ncaab
+[03:03:28] [INFO ] BOT: Bot started for sports: nba, ncaab
+[03:05:40] [INFO ] BOT: Bot started for sports: nba, ncaab
+[03:06:07] [INFO ] BOT: Bot started for sports: nba, ncaab
+[03:07:45] [INFO ] BOT: Bot started for sports: nba, ncaab
+[03:23:38] [INFO ] BOT: Bot started for sports: mlb, nba, ncaab, nfl, nhl
+[03:25:22] [INFO ] BOT: Bot started for sports: mlb, nba, ncaab, nfl, nhl
+[03:25:43] [INFO ] BOT: Bot started for sports: golf, mlb, mma, nba, ncaab, nfl, nhl, soccer, tennis
+[03:50:19] [INFO ] BOT: Bot started for sports: golf, mlb, mma, nba, ncaab, nfl, nhl, soccer, tennis
+[03:51:19] [INFO ] BOT: Bot started for sports: golf, mlb, mma, nba, ncaab, nfl, nhl, soccer, tennis
+[03:51:46] [INFO ] BOT: Bot started for sports: golf, mlb, mma, nba, ncaab, nfl, nhl, soccer, tennis
+2026-02-03 04:28:14,177 INFO sqlalchemy.engine.Engine ROLLBACK

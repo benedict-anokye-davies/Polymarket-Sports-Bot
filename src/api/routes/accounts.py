@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import get_db, get_current_user
-from src.models import User, PolymarketAccount
+from src.models import User, TradingAccount
 from src.services.account_manager import AccountManager
 from src.services.kalshi_client import KalshiClient
 from src.core.encryption import encrypt_credential, decrypt_credential
@@ -25,7 +25,7 @@ class AccountResponse(BaseModel):
     """Account response schema."""
     id: str
     account_name: str
-    platform: str = "polymarket"
+    platform: str = "kalshi"
     environment: str = "production"  # 'production' or 'demo' for Kalshi
     is_primary: bool
     is_active: bool
@@ -47,13 +47,10 @@ class AccountSummaryResponse(BaseModel):
 class CreateAccountRequest(BaseModel):
     """Request to create a new trading account."""
     account_name: str = Field(..., min_length=1, max_length=50)
-    platform: Literal["polymarket", "kalshi"] = "polymarket"
-    environment: Literal["production", "demo"] = "production"  # For Kalshi demo/production
-    private_key: Optional[str] = Field(None, min_length=64)
-    funder_address: Optional[str] = Field(None, min_length=42, max_length=42)
+    platform: Literal["kalshi"] = "kalshi"
+    environment: Literal["production", "demo"] = "production"
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
-    api_passphrase: Optional[str] = None
     allocation_pct: float = Field(100.0, ge=0, le=100)
     is_primary: bool = False
 
@@ -95,7 +92,7 @@ async def get_account_summary(
             AccountResponse(
                 id=acc["id"],
                 account_name=acc["name"],
-                platform=acc.get("platform", "polymarket"),
+                platform=acc.get("platform", "kalshi"),
                 environment=acc.get("environment", "production"),
                 is_primary=acc["is_primary"],
                 is_active=acc["is_active"],
@@ -120,9 +117,9 @@ async def list_accounts(
     List all trading accounts for the current user.
     """
     stmt = (
-        select(PolymarketAccount)
-        .where(PolymarketAccount.user_id == current_user.id)
-        .order_by(PolymarketAccount.is_primary.desc())
+        select(TradingAccount)
+        .where(TradingAccount.user_id == current_user.id)
+        .order_by(TradingAccount.is_primary.desc())
     )
     
     result = await db.execute(stmt)
@@ -132,7 +129,7 @@ async def list_accounts(
         AccountResponse(
             id=str(acc.id),
             account_name=acc.account_name or "Primary",
-            platform=acc.platform or "polymarket",
+            platform=acc.platform or "kalshi",
             environment=getattr(acc, 'environment', 'production'),
             is_primary=acc.is_primary or False,
             is_active=acc.is_active if acc.is_active is not None else True,
@@ -153,30 +150,27 @@ async def create_account(
     Create a new trading account.
     
     Encrypts private key and API credentials before storage.
-    Supports both Polymarket (requires private_key/funder_address)
-    and Kalshi (requires api_key/api_secret) platforms.
+    Supports only Kalshi (requires api_key/api_secret) platform.
     """
-    # Validate platform-specific required fields
-    if request.platform == "polymarket":
-        if not request.private_key or not request.funder_address:
-            raise HTTPException(
+    if request.platform != "kalshi":
+         raise HTTPException(
                 status_code=400,
-                detail="Polymarket accounts require private_key and funder_address"
+                detail="Only Kalshi platform is supported"
             )
-    elif request.platform == "kalshi":
-        if not request.api_key or not request.api_secret:
-            raise HTTPException(
-                status_code=400,
-                detail="Kalshi accounts require api_key and api_secret"
-            )
-        
-        # Validate RSA key format using KalshiClient
-        is_valid, error_msg = KalshiClient.validate_rsa_key(request.api_secret)
-        if not is_valid:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid RSA private key: {error_msg}"
-            )
+
+    if not request.api_key or not request.api_secret:
+        raise HTTPException(
+            status_code=400,
+            detail="Kalshi accounts require api_key and api_secret"
+        )
+    
+    # Validate RSA key format using KalshiClient
+    is_valid, error_msg = KalshiClient.validate_rsa_key(request.api_secret)
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid RSA private key: {error_msg}"
+        )
     
     encrypted_key = None
     if request.private_key:
@@ -199,22 +193,19 @@ async def create_account(
             # Clear primary flag on existing accounts
             from sqlalchemy import update
             clear_stmt = (
-                update(PolymarketAccount)
-                .where(PolymarketAccount.user_id == current_user.id)
+                update(TradingAccount)
+                .where(TradingAccount.user_id == current_user.id)
                 .values(is_primary=False)
             )
             await db.execute(clear_stmt)
         
-        account = PolymarketAccount(
+        account = TradingAccount(
             user_id=current_user.id,
             account_name=request.account_name,
             platform=request.platform,
-            environment=request.environment,  # 'production' or 'demo' for Kalshi
-            private_key_encrypted=encrypted_key,
-            funder_address=request.funder_address,
+            environment=request.environment,
             api_key_encrypted=encrypted_api_key,
             api_secret_encrypted=encrypted_api_secret,
-            api_passphrase_encrypted=encrypted_api_passphrase,
             allocation_pct=Decimal(str(request.allocation_pct)),
             is_primary=request.is_primary,
             is_active=True,
@@ -228,12 +219,12 @@ async def create_account(
     return AccountResponse(
         id=str(account.id),
         account_name=account.account_name,
-        platform=account.platform or "polymarket",
+        platform=account.platform or "kalshi",
         environment=getattr(account, 'environment', 'production'),
         is_primary=account.is_primary or False,
         is_active=account.is_active if account.is_active is not None else True,
         allocation_pct=float(account.allocation_pct or 100),
-        funder_address=account.funder_address,
+        funder_address=None,
     )
 
 
@@ -248,9 +239,9 @@ async def update_account(
     Update account settings (name, allocation, active status).
     """
     stmt = (
-        select(PolymarketAccount)
-        .where(PolymarketAccount.id == account_id)
-        .where(PolymarketAccount.user_id == current_user.id)
+        select(TradingAccount)
+        .where(TradingAccount.id == account_id)
+        .where(TradingAccount.user_id == current_user.id)
     )
     
     result = await db.execute(stmt)
@@ -272,12 +263,12 @@ async def update_account(
     return AccountResponse(
         id=str(account.id),
         account_name=account.account_name or "Primary",
-        platform=account.platform or "polymarket",
+        platform=account.platform or "kalshi",
         environment=getattr(account, 'environment', 'production'),
         is_primary=account.is_primary or False,
         is_active=account.is_active if account.is_active is not None else True,
         allocation_pct=float(account.allocation_pct or 100),
-        funder_address=account.funder_address,
+        funder_address=None,
     )
 
 
@@ -335,9 +326,9 @@ async def update_allocations(
                 )
             
             stmt = (
-                update(PolymarketAccount)
-                .where(PolymarketAccount.id == account_id)
-                .where(PolymarketAccount.user_id == current_user.id)
+                update(TradingAccount)
+                .where(TradingAccount.id == account_id)
+                .where(TradingAccount.user_id == current_user.id)
                 .values(allocation_pct=Decimal(str(pct)))
             )
             await db.execute(stmt)
@@ -359,9 +350,9 @@ async def delete_account(
     Cannot delete the primary account if it's the only one.
     """
     stmt = (
-        select(PolymarketAccount)
-        .where(PolymarketAccount.id == account_id)
-        .where(PolymarketAccount.user_id == current_user.id)
+        select(TradingAccount)
+        .where(TradingAccount.id == account_id)
+        .where(TradingAccount.user_id == current_user.id)
     )
     
     result = await db.execute(stmt)
@@ -371,8 +362,8 @@ async def delete_account(
         raise HTTPException(status_code=404, detail="Account not found")
     
     count_stmt = (
-        select(PolymarketAccount)
-        .where(PolymarketAccount.user_id == current_user.id)
+        select(TradingAccount)
+        .where(TradingAccount.user_id == current_user.id)
     )
     count_result = await db.execute(count_stmt)
     total_accounts = len(count_result.scalars().all())
@@ -429,9 +420,9 @@ async def test_account_connection(
     
     # Get the account
     result = await db.execute(
-        select(PolymarketAccount).where(
-            PolymarketAccount.id == account_id,
-            PolymarketAccount.user_id == current_user.id
+        select(TradingAccount).where(
+            TradingAccount.id == account_id,
+            TradingAccount.user_id == current_user.id
         )
     )
     account = result.scalar_one_or_none()
@@ -441,12 +432,12 @@ async def test_account_connection(
     
     diagnostics = {
         "account_id": str(account_id),
-        "platform": account.platform or "polymarket",
+        "platform": account.platform or "kalshi",
         "environment": getattr(account, 'environment', 'production'),
         "has_api_key": bool(account.api_key_encrypted),
         "has_api_secret": bool(account.api_secret_encrypted),
-        "has_private_key": bool(account.private_key_encrypted),
-        "has_funder_address": bool(account.funder_address),
+        "has_private_key": False,
+        "has_funder_address": False,
     }
     
     if account.platform == "kalshi":
