@@ -29,11 +29,13 @@ from src.services.balance_guardian import BalanceGuardian
 from src.db.database import async_session_factory
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.position import PositionCRUD
-from src.services.market_discovery import DiscoveredMarket
+from src.services.market_discovery import DiscoveredMarket, market_discovery as discovery_service
+
 from src.db.crud.global_settings import GlobalSettingsCRUD
 from src.db.crud.sport_config import SportConfigCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
 from src.core.exceptions import TradingError
+from src.services.discord_notifier import discord_notifier
 
 
 logger = logging.getLogger(__name__)
@@ -354,8 +356,8 @@ class BotRunner:
         # SOURCE 1: Load from TrackedMarket database (Markets page selections)
         try:
             # Need a fresh db session for this query
-            from src.db.database import async_session_maker
-            async with async_session_maker() as db:
+            from src.db.database import async_session_factory
+            async with async_session_factory() as db:
                 db_selected = await TrackedMarketCRUD.get_selected_for_user(db, user_id)
                 
                 for market in db_selected:
@@ -366,7 +368,7 @@ class BotRunner:
                         self.user_selected_games[game_id] = {
                             "game_id": game_id,
                             "condition_id": market.condition_id,
-                            "token_id": market.token_id,
+                            "token_id": market.token_id_yes,
                             "sport": market.sport or "unknown",
                             "home_team": market.home_team,
                             "away_team": market.away_team,
@@ -596,12 +598,12 @@ class BotRunner:
                         continue
                 
                     # Use platform-aware market discovery
-                    markets = await market_discovery.discover_markets_for_platform(
+                    markets = await discovery_service.discover_markets_for_platform(
                         platform=self.platform,
                         sports=self.enabled_sports,
                         min_liquidity=2000,
                         max_spread=0.08,
-                        hours_ahead=24,
+                        hours_ahead=168,  # Look ahead 7 days
                         include_live=True
                     )
                 
@@ -1442,7 +1444,7 @@ class BotRunner:
         
         try:
             # Get all open positions for user
-            open_positions = await PositionCRUD.get_open_positions(db, self.user_id)
+            open_positions = await PositionCRUD.get_open_for_user(db, self.user_id)
             
             if not open_positions:
                 logger.info("No open positions to recover")

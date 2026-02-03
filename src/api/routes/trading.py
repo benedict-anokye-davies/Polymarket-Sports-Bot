@@ -14,11 +14,8 @@ from src.db.crud.polymarket_account import PolymarketAccountCRUD
 from src.schemas.trading import (
     TrackedMarketResponse,
     PositionResponse,
-    TrackedMarketResponse,
-    PositionResponse,
     OrderRequest,
     OrderResponse,
-    OpenOrder,  # New schema
     GameSelectionRequest,
     BulkGameSelectionRequest,
     SportGameSelectionRequest,

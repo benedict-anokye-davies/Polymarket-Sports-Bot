@@ -47,7 +47,7 @@ async def _create_bot_dependencies(db, user_id, credentials: dict):
         from src.services.kalshi_client import KalshiClient
         trading_client = KalshiClient(
             api_key=credentials["api_key"],
-            private_key_pem=credentials["api_secret"]  # Kalshi uses api_secret as private key for signing
+            private_key_pem=credentials["private_key"]  # Use mapped private_key
         )
         logger.info(f"Created KalshiClient for user {user_id} - REAL MONEY TRADING")
     else:

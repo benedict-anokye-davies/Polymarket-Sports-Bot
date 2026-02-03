@@ -493,25 +493,47 @@ class MarketDiscovery:
             # Kalshi sports endpoint
             kalshi_api_base = "https://api.elections.kalshi.com/trade-api/v2"
             
-            params = {
-                "category": "Sports",
-                "status": "open",
-                "limit": 200
-            }
+            all_markets = []
+            cursor = None
             
-            response = await client.get(
-                f"{kalshi_api_base}/markets",
-                params=params,
-                timeout=30.0
-            )
+            while True:
+                params = {
+                    "category": "Sports",
+                    "status": "open",
+                    "limit": 200
+                }
+                if cursor:
+                    params["cursor"] = cursor
+                
+                response = await client.get(
+                    f"{kalshi_api_base}/markets",
+                    params=params,
+                    timeout=30.0
+                )
+                
+                if response.status_code != 200:
+                    logger.warning(f"Kalshi API returned status {response.status_code}")
+                    break
+                
+                data = response.json()
+                page_markets = data.get("markets", [])
+                if not page_markets:
+                    break
+                    
+                all_markets.extend(page_markets)
+                
+                cursor = data.get("cursor")
+                if not cursor:
+                    break
+                    
+                # Safety break to prevent infinite loops if too many pages
+                if len(all_markets) > 5000:
+                    logger.warning("Reached 5000 market limit in discovery, stopping pagination")
+                    break
+                    
+                await asyncio.sleep(0.1)  # Rate limiting
             
-            if response.status_code != 200:
-                logger.warning(f"Kalshi API returned status {response.status_code}")
-                return []
-            
-            data = response.json()
-            markets = data.get("markets", [])
-            
+            markets = all_markets
             logger.info(f"Fetched {len(markets)} markets from Kalshi Sports category")
             
             for market in markets:
