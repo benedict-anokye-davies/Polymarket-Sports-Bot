@@ -193,11 +193,17 @@ class KalshiClient:
     # Market Data Endpoints
     # =========================================================================
 
-    async def get_markets(self, status: str = "open", limit: int = 200, cursor: Optional[str] = None) -> Dict:
+    async def get_markets(self, status: str = "open", limit: int = 200, cursor: Optional[str] = None, **kwargs) -> Dict:
         """Get markets with given status."""
         params = f"?status={status}&limit={limit}"
         if cursor:
             params += f"&cursor={cursor}"
+        
+        # Add any additional filters (e.g. series_ticker, tickers, event_ticker)
+        for k, v in kwargs.items():
+            params += f"&{k}={v}"
+            
+        return await self._authenticated_request("GET", f"/markets{params}")
         return await self._authenticated_request("GET", f"/markets{params}")
 
     async def get_market(self, ticker: str) -> Dict:
@@ -221,12 +227,36 @@ class KalshiClient:
     # =========================================================================
 
     async def get_balance(self) -> Dict:
-        """Get current account balance."""
-        return await self._authenticated_request("GET", "/portfolio/balance")
+        """
+        Get current account balance.
+        Normalizes Kalshi's cent-based values to USD dollars (float).
+        """
+        data = await self._authenticated_request("GET", "/portfolio/balance")
+        
+        # Convert cents to dollars
+        if "balance" in data:
+            data["balance"] = float(data["balance"]) / 100.0
+        if "available_balance" in data:
+            data["available_balance"] = float(data["available_balance"]) / 100.0
+            
+        return data
 
     async def get_positions(self, status: str = "open") -> Dict:
-        """Get current positions."""
-        return await self._authenticated_request("GET", f"/portfolio/positions?status={status}")
+        """
+        Get current positions.
+        Normalizes cost basis and PnL values from cents to dollars.
+        """
+        data = await self._authenticated_request("GET", f"/portfolio/positions?status={status}")
+        
+        # Normalize positions if present
+        positions = data.get("positions", [])
+        for pos in positions:
+            # Convert known cent fields to dollars
+            for field in ["fees", "cost_basis", "realized_pnl", "market_exposure"]:
+                if field in pos and pos[field] is not None:
+                    pos[field] = float(pos[field]) / 100.0
+        
+        return data
 
     async def get_settlements(self, limit: int = 100, cursor: Optional[str] = None) -> Dict:
         """Get settled positions."""
