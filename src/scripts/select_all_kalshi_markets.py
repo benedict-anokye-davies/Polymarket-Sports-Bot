@@ -89,15 +89,28 @@ async def select_all_markets():
                         continue
                         
                     token_id = m.get("id") or ticker
+
+                    # Parse teams from title (e.g. "Lakers vs Celtics" or "Lakers @ Celtics")
+                    title = m.get("title", "")
+                    home, away = "Unknown", "Unknown"
+                    if " vs " in title:
+                        parts = title.split(" vs ")
+                        if len(parts) >= 2:
+                            away, home = parts[0].strip(), parts[1].strip() # Kalshi often does Away vs Home
+                    elif " @ " in title:
+                        parts = title.split(" @ ")
+                        if len(parts) >= 2:
+                            away, home = parts[0].strip(), parts[1].strip()
+
                     tm = TrackedMarket(
                         user_id=user.id,
                         condition_id=ticker,
                         token_id_yes=token_id,
                         token_id_no=f"{token_id}_NO",
                         sport="nba" if "NBA" in ticker else "ncaab",
-                        question=m.get("title"),
-                        home_team="Unknown",
-                        away_team="Unknown",
+                        question=title,
+                        home_team=home,
+                        away_team=away,
                         is_user_selected=True
                     )
                     db.add(tm)

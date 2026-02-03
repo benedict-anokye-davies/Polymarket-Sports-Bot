@@ -1,55 +1,51 @@
-
+import os
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_local.db"
 import asyncio
-import logging
-from sqlalchemy import select, func
+from sqlalchemy import select, desc
 from src.db.database import async_session_factory
-from src.models.user import User
-
-# from src.models.order import Order <- Removed
-
-from src.models.tracked_market import TrackedMarket
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from src.models import ActivityLog, SportConfig, User, TrackedMarket
 
 async def check_status():
     async with async_session_factory() as db:
-        # Check ALL Users
-        result = await db.execute(select(User))
-        users = result.scalars().all()
+        print("\n=== LIVE TEST STATUS CHECK ===\n")
         
-        from src.db.crud.polymarket_account import PolymarketAccountCRUD
-        from src.models.position import Position
-        from src.models.activity_log import ActivityLog
+        # 1. User & Config
+        user = (await db.execute(select(User).where(User.username == "live_tester"))).scalar_one_or_none()
+        if not user:
+            print("ERROR: User 'live_tester' not found")
+            return
+
+        print(f"User: {user.username} (ID: {user.id})")
         
-        logger.info(f"Found {len(users)} users:")
-        for user in users:
-            creds = await PolymarketAccountCRUD.get_decrypted_credentials(db, user.id)
-            has_creds = bool(creds and (creds.get("api_key") or creds.get("private_key")))
-            
-            # Check Tracked Games
-            market_count = await db.scalar(
-                select(func.count(TrackedMarket.id)).where(TrackedMarket.user_id == user.id)
-            )
-            
-            # Check Positions (Bets Placed)
-            position_count = await db.scalar(
-                select(func.count(Position.id)).where(Position.user_id == user.id)
-            )
-            
-            # Check Recent Logs
-            recent_logs = await db.execute(
-                select(ActivityLog.category, ActivityLog.message)
-                .where(ActivityLog.user_id == user.id)
-                .order_by(ActivityLog.created_at.desc())
-                .limit(3)
-            )
-            logs = [f"{row.category}: {row.message[:50]}..." for row in recent_logs]
-            
-            logger.info(f"  - {user.username} ({user.id}): Creds={has_creds}, Markets={market_count}, Pos={position_count}")
-            if logs:
-                for log in logs:
-                    logger.info(f"    Last Log: {log}")
+        # 2. Sport Configs
+        configs = (await db.execute(select(SportConfig).where(SportConfig.user_id == user.id))).scalars().all()
+        print("\n--- Sport Configurations ---")
+        for c in configs:
+            print(f"Sport: {c.sport:<10} Enabled: {str(c.enabled):<5} "
+                  f"EntryDrop: {c.entry_threshold_drop} "
+                  f"AbsPrice: {c.entry_threshold_absolute} "
+                  f"Size: ${c.position_size_usdc}")
+
+        # 3. Tracked Markets
+        markets = (await db.execute(select(TrackedMarket).where(
+            TrackedMarket.user_id == user.id,
+            TrackedMarket.is_user_selected == True
+        ))).scalars().all()
+        print(f"\n--- Tracked Markets: {len(markets)} ---")
+        
+        # 4. Recent Logs (Trade/Evaluation related)
+        print("\n--- Recent Logs (Last 25) ---")
+        logs = (await db.execute(
+            select(ActivityLog)
+            .where(ActivityLog.user_id == user.id)
+            .order_by(desc(ActivityLog.created_at))
+            .limit(25)
+        )).scalars().all()
+        
+        for l in reversed(logs):
+            print(f"[{l.created_at.strftime('%H:%M:%S')}] [{l.level:<5}] {l.category}: {l.message}")
+            if l.details and l.level in ['WARNING', 'ERROR']:
+                print(f"   Details: {l.details}")
 
 if __name__ == "__main__":
     asyncio.run(check_status())
