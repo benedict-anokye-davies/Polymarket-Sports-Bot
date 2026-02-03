@@ -245,7 +245,6 @@ app.include_router(market_config_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
 app.include_router(websocket_router, prefix="/api/v1")
-app.include_router(swarm_router, prefix="/api/v1")
 app.include_router(advanced_router)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

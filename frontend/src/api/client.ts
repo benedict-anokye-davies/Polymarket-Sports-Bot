@@ -51,6 +51,13 @@ class ApiClient {
   }
 
   /**
+   * Get detailed system health status
+   */
+  async getDetailedHealth(): Promise<any> {
+    return this.request('/health/detailed');
+  }
+
+  /**
    * Check if the backend server is reachable.
    * Uses the /health endpoint which should be available without auth.
    */

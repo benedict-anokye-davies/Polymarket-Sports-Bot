@@ -12,8 +12,7 @@ import {
   ChevronRight,
   Bot,
   BarChart3,
-  Users,
-  Hexagon
+  Users
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/useAppStore';
@@ -22,7 +21,6 @@ import { Button } from '@/components/ui/button';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { path: '/swarm', label: 'Strategy Swarm', icon: Hexagon },
   { path: '/bot', label: 'Bot Config', icon: Bot },
   { path: '/markets', label: 'Markets', icon: Layers },
   { path: '/positions', label: 'Positions', icon: Briefcase },
