@@ -20,19 +20,20 @@ async def run_test():
     kalshi_secret = os.environ.get("KALSHI_API_SECRET")
     
     if not kalshi_key or not kalshi_secret:
-        logger.error("KALSHI_API_KEY or KALSHI_API_SECRET not found in environment!")
-        # We might be running in a shell that doesn't have them, but the container should.
-        # If running inside container, they should be there.
-        # returning failure but let's try to proceed if maybe they are hardcoded or something (unlikely)
-        return
+        logger.warning("⚠️  KALSHI_API_KEY or KALSHI_API_SECRET not found in environment.")
+        logger.warning("⚠️  Skipping Onboarding and Bot Start tests.")
+        logger.warning("⚠️  Please add KALSHI_API_KEY and KALSHI_API_SECRET to .env file on VPS to fully test.")
+        should_skip_trading = True
+    else:
+        should_skip_trading = False
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=30.0) as client:
         # 1. Health Check
         try:
             resp = await client.get("/health")
-            logger.info(f"Health Check: {resp.status_code} - {resp.json()}")
+            logger.info(f"✅ Health Check: {resp.status_code} - {resp.json()}")
         except Exception as e:
-            logger.error(f"Cannot connect to API: {e}")
+            logger.error(f"❌ Cannot connect to API: {e}")
             return
 
         # 2. Register/Login Test User
@@ -47,7 +48,7 @@ async def run_test():
         })
         
         if resp.status_code != 201:
-            logger.error(f"Registration failed: {resp.text}")
+            logger.error(f"❌ Registration failed: {resp.text}")
             return
             
         logger.info("Login...")
@@ -57,12 +58,16 @@ async def run_test():
         })
         
         if resp.status_code != 200:
-            logger.error(f"Login failed: {resp.text}")
+            logger.error(f"❌ Login failed: {resp.text}")
             return
             
         token = resp.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
-        logger.info("Logged in successfully.")
+        logger.info("✅ Logged in successfully.")
+
+        if should_skip_trading:
+            logger.info("🏁 Test finished (Partial Success). Bot is reachable and DB is working.")
+            return
 
         # 3. Onboard (Save Credentials)
         logger.info("Saving Kalshi credentials...")
@@ -70,23 +75,26 @@ async def run_test():
             "platform": "kalshi",
             "api_key": kalshi_key,
             "api_secret": kalshi_secret,
-            "environment": "production" # Assuming live test
+            "environment": "production"
         })
         
         if resp.status_code not in [200, 201]:
-             logger.error(f"Onboarding failed: {resp.text}")
+             logger.error(f"❌ Onboarding failed: {resp.text}")
              return
              
-        logger.info("Credentials saved.")
+        logger.info("✅ Credentials saved.")
 
         # 4. Start Bot
         logger.info("Starting Bot...")
         resp = await client.post("/bot/start", headers=headers)
         if resp.status_code != 200:
-             logger.error(f"Bot start failed: {resp.text}")
-             # It might say "already running" if we re-used a user, but this is a new user
+             # It might say "already running"
+             if "already running" in resp.text:
+                 logger.info("ℹ️  Bot already running.")
+             else:
+                 logger.error(f"❌ Bot start failed: {resp.text}")
         else:
-             logger.info(f"Bot start response: {resp.json()}")
+             logger.info(f"✅ Bot start response: {resp.json()}")
 
         # 5. Check Status loop
         logger.info("Checking status for 30 seconds...")
