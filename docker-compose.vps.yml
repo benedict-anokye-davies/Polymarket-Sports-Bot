@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: sports-bot-app
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      # Use the service name 'db' as the hostname
+      - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD:-postgres}@db:5432/sportsbot_db
+      - SECRET_KEY=${SECRET_KEY}
+      - KALSHI_API_KEY=${KALSHI_API_KEY}
+      - KALSHI_API_SECRET=${KALSHI_API_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - VITE_API_URL=${VITE_API_URL}
+      - PORT=8000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - sports-bot-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: sports-bot-db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=sportsbot_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Only expose 5432 if you need external access (e.g. debugging)
+      # Otherwise, you can remove this ports section for better security
+      - "5432:5432"
+    networks:
+      - sports-bot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  sports-bot-network:
+    driver: bridge
