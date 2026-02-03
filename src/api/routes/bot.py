@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.deps import DbSession, OnboardedUser
 from src.db.crud.global_settings import GlobalSettingsCRUD
-from src.db.crud.polymarket_account import PolymarketAccountCRUD
+from src.db.crud.account import AccountCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
 from src.db.crud.sport_config import SportConfigCRUD
 from src.db.crud.market_config import MarketConfigCRUD
@@ -166,7 +166,7 @@ async def start_bot(
     Validates credentials and initializes bot runner.
     Supports both Kalshi and Polymarket platforms.
     """
-    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    credentials = await AccountCRUD.get_decrypted_credentials(db, current_user.id)
 
     if not credentials:
         raise HTTPException(
@@ -289,7 +289,7 @@ async def get_bot_status_endpoint(db: DbSession, current_user: OnboardedUser) ->
     - Today's trading stats
     """
     settings = await GlobalSettingsCRUD.get_by_user_id(db, current_user.id)
-    account = await PolymarketAccountCRUD.get_by_user_id(db, current_user.id)
+    account = await AccountCRUD.get_by_user_id(db, current_user.id)
     
     # Get live bot status if running
     bot_status = get_bot_status(current_user.id)
@@ -666,7 +666,7 @@ async def place_manual_order(
     Place a manual order on Kalshi or Polymarket.
     Requires wallet to be connected.
     """
-    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    credentials = await AccountCRUD.get_decrypted_credentials(db, current_user.id)
     
     if not credentials:
         raise HTTPException(
