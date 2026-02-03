@@ -14,8 +14,11 @@ from src.db.crud.polymarket_account import PolymarketAccountCRUD
 from src.schemas.trading import (
     TrackedMarketResponse,
     PositionResponse,
+    TrackedMarketResponse,
+    PositionResponse,
     OrderRequest,
     OrderResponse,
+    OpenOrder,  # New schema
     GameSelectionRequest,
     BulkGameSelectionRequest,
     SportGameSelectionRequest,
@@ -564,10 +567,95 @@ async def untrack_market_by_condition(
             detail="Market not found"
         )
     
-    return GameSelectionResponse(
-        success=True,
-        message="Market tracking disabled",
-        market_id=market.id,
-        condition_id=market.condition_id,
-        is_user_selected=False
-    )
+
+@router.get("/orders", response_model=list[dict])
+async def get_open_orders(
+    db: DbSession,
+    current_user: OnboardedUser
+) -> list[dict]:
+    """
+    Returns all open (resting) orders from the exchange.
+    """
+    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    
+    if not credentials:
+        return []
+    
+    try:
+        from src.services.polymarket_client import PolymarketClient
+        
+        client = PolymarketClient(
+            private_key=credentials["private_key"],
+            funder_address=credentials["funder_address"],
+            api_key=credentials.get("api_key"),
+            api_secret=credentials.get("api_secret"),
+            passphrase=credentials.get("passphrase")
+        )
+        
+        orders = await client.get_open_orders()
+        return orders
+        
+    except Exception as e:
+        # Log error but return empty list to avoid breaking UI
+        await ActivityLogCRUD.error(
+            db,
+            current_user.id,
+            "TRADING",
+            f"Failed to fetch open orders: {str(e)}"
+        )
+        return []
+
+
+@router.delete("/orders/{order_id}", response_model=dict)
+async def cancel_order(
+    order_id: str,
+    db: DbSession,
+    current_user: OnboardedUser
+) -> dict:
+    """
+    Cancels a specific open order.
+    """
+    credentials = await PolymarketAccountCRUD.get_decrypted_credentials(db, current_user.id)
+    
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Wallet not connected"
+        )
+    
+    try:
+        from src.services.polymarket_client import PolymarketClient
+        
+        client = PolymarketClient(
+            private_key=credentials["private_key"],
+            funder_address=credentials["funder_address"],
+            api_key=credentials.get("api_key"),
+            api_secret=credentials.get("api_secret"),
+            passphrase=credentials.get("passphrase")
+        )
+        
+        result = await client.cancel_order(order_id)
+        
+        await ActivityLogCRUD.info(
+            db,
+            current_user.id,
+            "TRADING",
+            f"Cancelled order {order_id}",
+            details={"order_id": order_id}
+        )
+        
+        return {"success": True, "message": "Order cancelled", "id": order_id}
+        
+    except Exception as e:
+        await ActivityLogCRUD.error(
+            db,
+            current_user.id,
+            "TRADING",
+            f"Failed to cancel order: {str(e)}",
+            details={"order_id": order_id}
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cancel order: {str(e)}"
+        )

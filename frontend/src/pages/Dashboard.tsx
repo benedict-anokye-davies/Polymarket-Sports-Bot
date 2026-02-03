@@ -8,6 +8,7 @@ import { OrderBook } from '@/components/dashboard/OrderBook';
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton';
 import { apiClient, DashboardStats, ActivityLog } from '@/api/client';
 import { SystemHealth } from '@/components/dashboard/SystemHealth';
+import { OpenOrders } from '@/components/dashboard/OpenOrders';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/stores/useAppStore';
@@ -168,40 +169,45 @@ export default function Dashboard() {
             </div>
 
             {/* Order Book & Recent Activity */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <OrderBook />
-              <div className="bg-card border border-border rounded-lg p-6">
-                <h3 className="text-base font-medium text-foreground mb-4">Recent Activity</h3>
-                <div className="space-y-3">
-                  {stats?.recent_activity && stats.recent_activity.length > 0 ? (
-                    stats.recent_activity.slice(0, 5).map((activity: ActivityLog) => (
-                      <div key={activity.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                        <div className="flex items-center gap-3">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${activity.level === 'INFO' ? 'bg-primary/10 text-primary' :
+            <div className="space-y-6">
+              {/* Open Orders Section - High Priority */}
+              <OpenOrders />
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <OrderBook />
+                <div className="bg-card border border-border rounded-lg p-6">
+                  <h3 className="text-base font-medium text-foreground mb-4">Recent Activity</h3>
+                  <div className="space-y-3">
+                    {stats?.recent_activity && stats.recent_activity.length > 0 ? (
+                      stats.recent_activity.slice(0, 5).map((activity: ActivityLog) => (
+                        <div key={activity.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                          <div className="flex items-center gap-3">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded ${activity.level === 'INFO' ? 'bg-primary/10 text-primary' :
                               activity.level === 'WARNING' ? 'bg-warning/10 text-warning' :
                                 'bg-destructive/10 text-destructive'
-                            }`}>
-                            {activity.level}
-                          </span>
-                          <div>
-                            <p className="text-sm font-medium text-foreground">{activity.category}</p>
-                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {activity.message}
+                              }`}>
+                              {activity.level}
+                            </span>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{activity.category}</p>
+                              <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                {activity.message}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(activity.created_at).toLocaleTimeString()}
                             </p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(activity.created_at).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-8">
-                      No recent activity. Start the bot to see trading activity here.
-                    </p>
-                  )}
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-8">
+                        No recent activity. Start the bot to see trading activity here.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

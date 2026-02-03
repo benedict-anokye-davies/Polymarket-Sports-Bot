@@ -380,6 +380,15 @@ class ApiClient {
     return this.request(`/trading/positions/${positionId}/close`, { method: 'POST' });
   }
 
+  // Order management
+  async getOpenOrders(): Promise<any[]> {
+    return this.request('/trading/orders');
+  }
+
+  async cancelOrder(orderId: string): Promise<{ message: string }> {
+    return this.request(`/trading/orders/${orderId}`, { method: 'DELETE' });
+  }
+
   // ==========================================================================
   // Game Selection Endpoints
   // ==========================================================================
