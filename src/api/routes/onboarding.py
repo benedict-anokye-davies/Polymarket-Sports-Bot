@@ -154,13 +154,16 @@ async def connect_wallet(
         
         # Validate RSA key format before saving
         from src.services.kalshi_client import KalshiClient
-        is_valid, error_msg = KalshiClient.validate_rsa_key(wallet_data.api_secret)
+        is_valid, error_msg, formatted_key = KalshiClient.validate_rsa_key(wallet_data.api_secret)
         if not is_valid:
             logger.error(f"Invalid RSA key format for user {current_user.id}: {error_msg}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid RSA private key: {error_msg}"
             )
+            
+        # Use formatted key
+        wallet_data.api_secret = formatted_key
         
         logger.info(f"Saving Kalshi credentials for user {current_user.id} (key_id: {wallet_data.api_key[:8]}...)")
         

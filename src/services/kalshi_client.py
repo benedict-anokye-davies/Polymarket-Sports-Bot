@@ -41,42 +41,79 @@ class KalshiClient:
             private_key_pem: RSA private key in PEM format
         """
         self.api_key = api_key
+        # Auto-format/clean the key before loading
+        valid, _, formatted_key = self.validate_rsa_key(private_key_pem)
+        key_to_load = formatted_key if valid and formatted_key else private_key_pem
+        
         self.private_key = load_pem_private_key(
-            private_key_pem.encode(),
+            key_to_load.encode(),
             password=None,
             backend=default_backend()
         )
         self.client = httpx.AsyncClient(timeout=30.0)
 
     @staticmethod
-    def validate_rsa_key(pem_string: str) -> Tuple[bool, Optional[str]]:
+    def format_private_key(key_str: str) -> str:
         """
-        Validate that a string is a valid RSA private key in PEM format.
+        Attempts to format a RSA private key adding proper newlines if missing.
+        Handles cases where the key is pasted as a single line.
+        """
+        if not key_str:
+            return ""
+            
+        key_str = key_str.strip()
+        
+        # If it already looks formatted (has internal newlines), return as is
+        if "\n" in key_str and "-----BEGIN" in key_str:
+            return key_str
+            
+        # Try to fix single-line keys
+        # Remove headers/footers to get the payload
+        payload = key_str.replace("-----BEGIN RSA PRIVATE KEY-----", "").replace("-----END RSA PRIVATE KEY-----", "")
+        payload = payload.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
+        payload = payload.strip().replace(" ", "")
+        
+        # Chunk payload into 64 chars
+        chunks = [payload[i:i+64] for i in range(0, len(payload), 64)]
+        formatted_payload = "\n".join(chunks)
+        
+        # Re-add headers (detect if it was RSA or generic, default to RSA if unsure but Kalshi usually uses RSA)
+        # However, cryptography lib is flexible. Let's stick to standard RSA header.
+        return f"-----BEGIN RSA PRIVATE KEY-----\n{formatted_payload}\n-----END RSA PRIVATE KEY-----"
 
-        Args:
-            pem_string: The PEM-encoded RSA private key string.
-
+    @staticmethod
+    def validate_rsa_key(pem_string: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Validate and optionally format an RSA private key.
+        
         Returns:
-            Tuple of (is_valid, error_message). error_message is None if valid.
+            Tuple of (is_valid, error_message, formatted_key)
         """
         try:
             if not pem_string or not pem_string.strip():
-                return False, "RSA private key is empty"
-            stripped = pem_string.strip()
-            if "BEGIN RSA PRIVATE KEY" not in stripped and "BEGIN PRIVATE KEY" not in stripped:
-                return False, "Key must contain PEM header (BEGIN RSA PRIVATE KEY or BEGIN PRIVATE KEY)"
-            if "END RSA PRIVATE KEY" not in stripped and "END PRIVATE KEY" not in stripped:
-                return False, "Key must contain PEM footer (END RSA PRIVATE KEY or END PRIVATE KEY)"
+                return False, "RSA private key is empty", None
+                
+            # Try to format it first
+            formatted_key = KalshiClient.format_private_key(pem_string)
+            
+            # Verify it loads
             load_pem_private_key(
-                stripped.encode(),
+                formatted_key.encode(),
                 password=None,
                 backend=default_backend()
             )
-            return True, None
-        except ValueError as e:
-            return False, f"Invalid PEM format: {str(e)}"
+            return True, None, formatted_key
         except Exception as e:
-            return False, f"Failed to load RSA key: {str(e)}"
+            # Fallback: try original string just in case our formatter broke it (unlikely but safe)
+            try:
+                load_pem_private_key(
+                    pem_string.encode(),
+                    password=None,
+                    backend=default_backend()
+                )
+                return True, None, pem_string
+            except Exception:
+                return False, f"Invalid PEM format: {str(e)}", None
 
     def _sign_request(self, method: str, path: str) -> Dict[str, str]:
         """

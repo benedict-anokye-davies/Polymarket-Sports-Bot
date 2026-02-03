@@ -697,7 +697,16 @@ async def update_wallet_credentials(
         if wallet_data.api_key:
             update_data["api_key_encrypted"] = encrypt_credential(wallet_data.api_key)
         if wallet_data.api_secret:
-            update_data["api_secret_encrypted"] = encrypt_credential(wallet_data.api_secret)
+            from src.services.kalshi_client import KalshiClient
+            is_valid, error_msg, formatted_key = KalshiClient.validate_rsa_key(wallet_data.api_secret)
+            
+            if not is_valid:
+                # Early return or raise? Better to raise to inform user
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail=f"Invalid RSA Key: {error_msg}")
+            
+            # Use the clean, formatted key
+            update_data["api_secret_encrypted"] = encrypt_credential(formatted_key)
         # Clear polymarket fields
         update_data["private_key_encrypted"] = None
         update_data["funder_address"] = None
