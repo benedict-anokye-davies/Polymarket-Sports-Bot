@@ -1,0 +1,23 @@
+INFO:VERIFY:Initializing services...
+INFO:VERIFY:Creating BotRunner...
+ERROR:VERIFY:Test failed with exception: name 'KellyCalculator' is not defined
+Traceback (most recent call last):
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\verify_refactor.py", line 143, in <module>
+    success = asyncio.run(test_bot_refactor())
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\verify_refactor.py", line 84, in test_bot_refactor
+    bot = BotRunner(trading_client, trading_engine, espn_service)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\..\src\services\bot_runner.py", line 146, in __init__
+    self.kelly_calculator = KellyCalculator()
+                            ^^^^^^^^^^^^^^^
+NameError: name 'KellyCalculator' is not defined

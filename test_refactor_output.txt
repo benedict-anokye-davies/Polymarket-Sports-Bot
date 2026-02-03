@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\verify_refactor.py", line 10, in <module>
+    from src.services.bot_runner import BotRunner
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\..\src\services\bot_runner.py", line 20, in <module>
+    from src.services.game_tracker_service import GameTrackerService
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\..\src\services\game_tracker_service.py", line 11, in <module>
+    from src.services.bot_runner import TrackedGame  # We'll need to move this dataclass eventually
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ImportError: cannot import name 'TrackedGame' from partially initialized module 'src.services.bot_runner' (most likely due to a circular import) (C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\..\src\services\bot_runner.py)

@@ -6,9 +6,9 @@ Records entry and exit details with P&L calculations.
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, DateTime, Numeric, Text, ForeignKey, Integer, func
+from sqlalchemy import String, DateTime, Numeric, Text, ForeignKey, Integer, func, Index, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 
 from src.db.database import Base
 
@@ -20,6 +20,11 @@ class Position(Base):
     """
     
     __tablename__ = "positions"
+    __table_args__ = (
+        Index("ix_positions_status", "status"),
+        Index("ix_positions_user_id", "user_id"),
+        Index("ix_positions_tracked_market", "tracked_market_id"),
+    )
     
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -127,7 +132,7 @@ class Position(Base):
         nullable=True
     )
     entry_confidence_breakdown: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True
     )
     

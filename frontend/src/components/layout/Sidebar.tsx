@@ -1,10 +1,10 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  LayoutGrid, 
-  Layers, 
-  Briefcase, 
-  Clock, 
-  Settings, 
+import {
+  LayoutGrid,
+  Layers,
+  Briefcase,
+  Clock,
+  Settings,
   Terminal,
   TrendingUp,
   LogOut,
@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Bot,
   BarChart3,
-  Users
+  Users,
+  Hexagon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/useAppStore';
@@ -21,6 +22,7 @@ import { Button } from '@/components/ui/button';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { path: '/swarm', label: 'Strategy Swarm', icon: Hexagon },
   { path: '/bot', label: 'Bot Config', icon: Bot },
   { path: '/markets', label: 'Markets', icon: Layers },
   { path: '/positions', label: 'Positions', icon: Briefcase },
@@ -138,9 +140,9 @@ export function Sidebar() {
             </div>
           )}
           {!sidebarCollapsed && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="ghost"
+              size="icon"
               className="text-muted-foreground hover:text-foreground"
               onClick={handleLogout}
             >

@@ -6,7 +6,7 @@ Links ESPN game data to Polymarket market identifiers.
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, Boolean, Integer, DateTime, Numeric, Text, ForeignKey, UniqueConstraint, func
+from sqlalchemy import String, Boolean, Integer, DateTime, Numeric, Text, ForeignKey, UniqueConstraint, func, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -22,6 +22,9 @@ class TrackedMarket(Base):
     __tablename__ = "tracked_markets"
     __table_args__ = (
         UniqueConstraint("user_id", "condition_id", name="uq_user_condition"),
+        Index("ix_tracked_markets_condition_id", "condition_id"),
+        Index("ix_tracked_markets_game_start_time", "game_start_time"),
+        Index("ix_tracked_markets_sport", "sport"),
     )
     
     id: Mapped[uuid.UUID] = mapped_column(

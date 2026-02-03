@@ -24,6 +24,7 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isCheckingAuth: boolean;
   error: string | null;
 
   // Actions
@@ -43,11 +44,12 @@ const removeRefreshToken = () => sessionStorage.removeItem('refresh_token');
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
       isAuthenticated: false,
       isLoading: false,
+      isCheckingAuth: false,
       error: null,
 
       login: async (email: string, password: string) => {
@@ -125,6 +127,9 @@ export const useAuthStore = create<AuthState>()(
       },
 
       checkAuth: async () => {
+        // Prevent race conditions
+        if (get().isCheckingAuth) return;
+
         const token = localStorage.getItem('auth_token');
         if (!token) {
           removeRefreshToken();
@@ -132,12 +137,14 @@ export const useAuthStore = create<AuthState>()(
           return;
         }
 
+        set({ isCheckingAuth: true });
         try {
           const user = await apiClient.getCurrentUser();
           set({
             token,
             user,
             isAuthenticated: true,
+            isCheckingAuth: false,
           });
         } catch {
           localStorage.removeItem('auth_token');
@@ -146,6 +153,7 @@ export const useAuthStore = create<AuthState>()(
             user: null,
             token: null,
             isAuthenticated: false,
+            isCheckingAuth: false,
           });
         }
       },
@@ -169,7 +177,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
-      partialize: (state) => ({ 
+      partialize: (state) => ({
         token: state.token,
         user: state.user,
         isAuthenticated: state.isAuthenticated,

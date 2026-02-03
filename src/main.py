@@ -44,7 +44,9 @@ from src.api.routes.market_config import router as market_config_router
 from src.api.routes.analytics import router as analytics_router
 from src.api.routes.accounts import router as accounts_router
 from src.api.routes.websocket import router as websocket_router
+from src.api.routes.websocket import router as websocket_router
 from src.api.routes.advanced import router as advanced_router
+from src.api.routes.swarm import router as swarm_router
 
 # Production infrastructure imports
 from src.core.rate_limiter import RateLimitMiddleware, RateLimitConfig
@@ -243,6 +245,7 @@ app.include_router(market_config_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
 app.include_router(websocket_router, prefix="/api/v1")
+app.include_router(swarm_router, prefix="/api/v1")
 app.include_router(advanced_router)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

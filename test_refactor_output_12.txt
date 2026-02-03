@@ -1,0 +1,19 @@
+INFO:VERIFY:Initializing services...
+ERROR:VERIFY:Test failed with exception: TradingEngine.__init__() missing 5 required positional arguments: 'db', 'user_id', 'trading_client', 'global_settings', and 'sport_configs'
+Traceback (most recent call last):
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\verify_refactor.py", line 115, in <module>
+    success = asyncio.run(test_bot_refactor())
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\verify_refactor.py", line 25, in test_bot_refactor
+    trading_engine = TradingEngine()
+                     ^^^^^^^^^^^^^^^
+TypeError: TradingEngine.__init__() missing 5 required positional arguments: 'db', 'user_id', 'trading_client', 'global_settings', and 'sport_configs'

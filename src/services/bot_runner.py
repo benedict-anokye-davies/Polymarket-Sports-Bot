@@ -18,14 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.polymarket_ws import PolymarketWebSocket, PriceUpdate
 from src.services.polymarket_client import PolymarketClient
 from src.services.kalshi_client import KalshiClient
+from src.services.game_tracker_service import GameTrackerService
+from src.services.trading_client_interface import TradingClient
 from src.services.espn_service import ESPNService
 from src.services.trading_engine import TradingEngine
-from src.services.market_discovery import market_discovery, DiscoveredMarket
-from src.services.discord_notifier import discord_notifier
-from src.services.kelly_calculator import KellyCalculator, KellyResult
 from src.services.confidence_scorer import ConfidenceScorer, ConfidenceResult
+from src.services.kelly_calculator import KellyCalculator
+from src.services.advanced_orders import AdvancedOrderManager
+from src.services.balance_guardian import BalanceGuardian
+from src.db.database import async_session_factory
 from src.db.crud.tracked_market import TrackedMarketCRUD
 from src.db.crud.position import PositionCRUD
+from src.services.market_discovery import DiscoveredMarket
 from src.db.crud.global_settings import GlobalSettingsCRUD
 from src.db.crud.sport_config import SportConfigCRUD
 from src.db.crud.activity_log import ActivityLogCRUD
@@ -45,40 +49,7 @@ class BotState(Enum):
     ERROR = "error"
 
 
-@dataclass
-class TrackedGame:
-    """A game being actively tracked by the bot."""
-    espn_event_id: str
-    sport: str
-    home_team: str
-    away_team: str
-    market: DiscoveredMarket
-    baseline_price: float | None = None
-    current_price: float | None = None
-    game_status: str = "pre"
-    period: int = 0
-    clock: str = ""
-    home_score: int = 0
-    away_score: int = 0
-    last_update: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    has_position: bool = False
-    position_id: UUID | None = None
-    # Which team to bet on: "home", "away", or "both"
-    selected_side: str = "home"
-
-
-@dataclass
-class SportStats:
-    """Per-sport statistics tracking."""
-    sport: str
-    trades_today: int = 0
-    daily_pnl: float = 0.0
-    open_positions: int = 0
-    tracked_games: int = 0
-    enabled: bool = True
-    priority: int = 1
-    max_daily_loss: float = 50.0
-    max_exposure: float = 200.0
+from src.services.types import TrackedGame, SportStats
 
 
 class BotRunner:
@@ -114,6 +85,7 @@ class BotRunner:
         self.trading_client = trading_client
         self.trading_engine = trading_engine
         self.espn_service = espn_service
+        self.game_tracker = GameTrackerService(espn_service)
 
         # Detect platform from client type
         self.platform = self._detect_platform(trading_client)
@@ -130,6 +102,11 @@ class BotRunner:
         # User-selected games from bot config (game_id -> game_config dict)
         # This filters which games the bot will actually track and trade
         self.user_selected_games: dict[str, dict] = {}
+
+        # Clients - typed as TradingClient protocol where possible, but concrete classes have more methods
+        self.polymarket_client: TradingClient | None = None
+        self.kalshi_client: TradingClient | None = None
+        self.db: AsyncSession | None = None
 
         # Configuration
         self.user_id: UUID | None = None
@@ -526,11 +503,11 @@ class BotRunner:
         
         # Start background tasks
         self._tasks = [
-            asyncio.create_task(self._discovery_loop(db), name="discovery"),
-            asyncio.create_task(self._espn_poll_loop(db), name="espn_poll"),
-            asyncio.create_task(self._trading_loop(db), name="trading"),
-            asyncio.create_task(self._health_check_loop(db), name="health"),
-            asyncio.create_task(self._cleanup_loop(db), name="cleanup"),
+            asyncio.create_task(self._discovery_loop(), name="discovery"),
+            asyncio.create_task(self._espn_poll_loop(), name="espn_poll"),
+            asyncio.create_task(self._trading_loop(), name="trading"),
+            asyncio.create_task(self._health_check_loop(), name="health"),
+            asyncio.create_task(self._cleanup_loop(), name="cleanup"),
         ]
         
         if self.websocket:
@@ -599,7 +576,7 @@ class BotRunner:
         self.token_to_game.clear()
         logger.info("Trading bot stopped")
     
-    async def _discovery_loop(self, db: AsyncSession) -> None:
+    async def _discovery_loop(self) -> None:
         """
         Periodically discover new sports markets.
         
@@ -609,68 +586,69 @@ class BotRunner:
         """
         while not self._stop_event.is_set():
             try:
-                logger.debug(f"Running market discovery for {self.platform}...")
+                async with async_session_factory() as db:
+                    logger.debug(f"Running market discovery for {self.platform}...")
                 
-                # Skip discovery if no games selected by user
-                if not self.user_selected_games:
-                    logger.debug("No user-selected games to track")
-                    await asyncio.sleep(self.DISCOVERY_INTERVAL)
-                    continue
+                    # Skip discovery if no games selected by user
+                    if not self.user_selected_games:
+                        logger.debug("No user-selected games to track")
+                        await asyncio.sleep(self.DISCOVERY_INTERVAL)
+                        continue
                 
-                # Use platform-aware market discovery
-                markets = await market_discovery.discover_markets_for_platform(
-                    platform=self.platform,
-                    sports=self.enabled_sports,
-                    min_liquidity=2000,
-                    max_spread=0.08,
-                    hours_ahead=24,
-                    include_live=True
-                )
+                    # Use platform-aware market discovery
+                    markets = await market_discovery.discover_markets_for_platform(
+                        platform=self.platform,
+                        sports=self.enabled_sports,
+                        min_liquidity=2000,
+                        max_spread=0.08,
+                        hours_ahead=24,
+                        include_live=True
+                    )
                 
-                logger.info(f"Discovered {len(markets)} sports markets")
+                    logger.info(f"Discovered {len(markets)} sports markets")
                 
-                # Match markets to ESPN games - ONLY for user-selected games
-                for sport in self.enabled_sports:
-                    games = await self.espn_service.get_live_games(sport)
+                    # Match markets to ESPN games - ONLY for user-selected games
+                    for sport in self.enabled_sports:
+                        games = await self.espn_service.get_live_games(sport)
                     
-                    for game in games:
-                        event_id = game.get("id")
+                        for game in games:
+                            event_id = game.get("id")
                         
-                        # Skip if not in user's selected games
-                        if event_id not in self.user_selected_games:
-                            continue
+                            # Skip if not in user's selected games
+                            if event_id not in self.user_selected_games:
+                                continue
                         
-                        if event_id in self.tracked_games:
-                            continue  # Already tracking
+                            if event_id in self.tracked_games:
+                                continue  # Already tracking
                         
-                        # Get user's game config for selected_side
-                        user_game_config = self.user_selected_games[event_id]
-                        selected_side = user_game_config.get("selected_side", "home")
+                            # Get user's game config for selected_side
+                            user_game_config = self.user_selected_games[event_id]
+                            selected_side = user_game_config.get("selected_side", "home")
                         
-                        # Try to match to a market
-                        competitors = game.get("competitions", [{}])[0].get("competitors", [])
-                        if len(competitors) < 2:
-                            continue
+                            # Try to match to a market
+                            competitors = game.get("competitions", [{}])[0].get("competitors", [])
+                            if len(competitors) < 2:
+                                continue
                         
-                        home = next((c for c in competitors if c.get("homeAway") == "home"), None)
-                        away = next((c for c in competitors if c.get("homeAway") == "away"), None)
+                            home = next((c for c in competitors if c.get("homeAway") == "home"), None)
+                            away = next((c for c in competitors if c.get("homeAway") == "away"), None)
                         
-                        if not home or not away:
-                            continue
+                            if not home or not away:
+                                continue
                         
-                        home_name = home.get("team", {}).get("displayName", "")
-                        away_name = away.get("team", {}).get("displayName", "")
+                            home_name = home.get("team", {}).get("displayName", "")
+                            away_name = away.get("team", {}).get("displayName", "")
                         
-                        # Find matching market
-                        matched_market = await self._find_matching_market(
-                            markets, home_name, away_name, sport
-                        )
-                        
-                        if matched_market:
-                            await self._start_tracking_game(
-                                db, event_id, sport, home_name, away_name, 
-                                matched_market, game, selected_side=selected_side
+                            # Find matching market
+                            matched_market = await self._find_matching_market(
+                                markets, home_name, away_name, sport
                             )
+                        
+                            if matched_market:
+                                await self._start_tracking_game(
+                                    db, event_id, sport, home_name, away_name, 
+                                    matched_market, game, selected_side=selected_side
+                                )
                 
             except asyncio.CancelledError:
                 break
@@ -696,7 +674,7 @@ class BotRunner:
             
             await asyncio.sleep(self.DISCOVERY_INTERVAL)
     
-    async def _espn_poll_loop(self, db: AsyncSession) -> None:
+    async def _espn_poll_loop(self) -> None:
         """
         Poll ESPN for game state updates.
         
@@ -704,33 +682,15 @@ class BotRunner:
         """
         while not self._stop_event.is_set():
             try:
-                for event_id, game in list(self.tracked_games.items()):
-                    # Get updated game state
-                    game_data = await self.espn_service.get_game_details(
-                        game.sport, event_id
-                    )
-                    
-                    if not game_data:
-                        continue
-                    
-                    # Update game state
-                    status = game_data.get("status", {})
-                    game.game_status = status.get("type", {}).get("state", "pre")
-                    game.period = status.get("period", 0)
-                    game.clock = status.get("displayClock", "")
-                    
-                    # Update scores
-                    competitors = game_data.get("competitions", [{}])[0].get("competitors", [])
-                    for comp in competitors:
-                        if comp.get("homeAway") == "home":
-                            game.home_score = int(comp.get("score", 0) or 0)
-                        else:
-                            game.away_score = int(comp.get("score", 0) or 0)
-                    
-                    game.last_update = datetime.now(timezone.utc)
-                    
-                    # Check if game finished
-                    if game.game_status == "post":
+                async with async_session_factory() as db:
+                    # Use GameTrackerService to update all games
+                    finished_games = await self.game_tracker.update_all_games()
+                
+                    # Update local tracked games map in case the service modified it (unlikely but safe)
+                    self.tracked_games = self.game_tracker.tracked_games
+                
+                    for game in finished_games:
+                        # Log finished game
                         logger.info(f"Game finished: {game.home_team} vs {game.away_team}")
                         await self._handle_game_finished(db, game)
                 
@@ -808,7 +768,7 @@ class BotRunner:
             f"${update.mid_price:.4f} (spread: ${update.spread:.4f})"
         )
     
-    async def _trading_loop(self, db: AsyncSession) -> None:
+    async def _trading_loop(self) -> None:
         """
         Main trading decision loop.
         
@@ -816,32 +776,33 @@ class BotRunner:
         """
         while not self._stop_event.is_set():
             try:
-                # Check daily loss limit
-                if self.daily_pnl <= -self.max_daily_loss:
-                    logger.warning("Daily loss limit reached. Pausing trading.")
-                    await discord_notifier.notify_risk_limit_reached(
-                        "Daily Loss Limit",
-                        self.max_daily_loss,
-                        self.daily_pnl
-                    )
-                    self.state = BotState.PAUSED
-                    await asyncio.sleep(60)
-                    continue
+                async with async_session_factory() as db:
+                    # Check daily loss limit
+                    if self.daily_pnl <= -self.max_daily_loss:
+                        logger.warning("Daily loss limit reached. Pausing trading.")
+                        await discord_notifier.notify_risk_limit_reached(
+                            "Daily Loss Limit",
+                            self.max_daily_loss,
+                            self.daily_pnl
+                        )
+                        self.state = BotState.PAUSED
+                        await asyncio.sleep(60)
+                        continue
                 
-                for event_id, game in list(self.tracked_games.items()):
-                    # Skip if game not live
-                    if game.game_status != "in":
-                        continue
+                    for event_id, game in list(self.tracked_games.items()):
+                        # Skip if game not live
+                        if game.game_status != "in":
+                            continue
                     
-                    # Skip if no price data
-                    if game.current_price is None or game.baseline_price is None:
-                        continue
+                        # Skip if no price data
+                        if game.current_price is None or game.baseline_price is None:
+                            continue
                     
-                    # Evaluate conditions
-                    if game.has_position:
-                        await self._evaluate_exit(db, game)
-                    else:
-                        await self._evaluate_entry(db, game)
+                        # Evaluate conditions
+                        if game.has_position:
+                            await self._evaluate_exit(db, game)
+                        else:
+                            await self._evaluate_entry(db, game)
                 
             except asyncio.CancelledError:
                 break
@@ -1372,21 +1333,23 @@ class BotRunner:
                 except Exception as log_err:
                     logger.debug(f"Suppressed logging error: {log_err}")
 
-    async def _health_check_loop(self, db: AsyncSession) -> None:
+    async def _health_check_loop(self) -> None:
         """
         Periodic health checks and stats logging.
         """
         while not self._stop_event.is_set():
             try:
-                ws_status = "connected" if self.websocket and self.websocket.is_connected else "disconnected"
+                # No DB access needed for basic health check stats logging
+                # If DB access added later, use: async with async_session_factory() as db:
+                    ws_status = "connected" if self.websocket and self.websocket.is_connected else "disconnected"
                 
-                logger.info(
-                    f"Health check: state={self.state.value}, "
-                    f"tracked_games={len(self.tracked_games)}, "
-                    f"ws={ws_status}, "
-                    f"trades_today={self.trades_today}, "
-                    f"daily_pnl=${self.daily_pnl:.2f}"
-                )
+                    logger.info(
+                        f"Health check: state={self.state.value}, "
+                        f"tracked_games={len(self.tracked_games)}, "
+                        f"ws={ws_status}, "
+                        f"trades_today={self.trades_today}, "
+                        f"daily_pnl=${self.daily_pnl:.2f}"
+                    )
                 
             except asyncio.CancelledError:
                 break
@@ -1395,7 +1358,7 @@ class BotRunner:
             
             await asyncio.sleep(self.HEALTH_CHECK_INTERVAL)
     
-    async def _cleanup_loop(self, db: AsyncSession) -> None:
+    async def _cleanup_loop(self) -> None:
         """
         Periodically clean up stale or finished games from tracked_games.
         
@@ -1406,57 +1369,58 @@ class BotRunner:
         """
         while not self._stop_event.is_set():
             try:
-                now = datetime.now(timezone.utc)
-                stale_threshold = timedelta(hours=6)
-                games_to_remove = []
+                async with async_session_factory() as db:
+                    now = datetime.now(timezone.utc)
+                    stale_threshold = timedelta(hours=6)
+                    games_to_remove = []
                 
-                for event_id, game in list(self.tracked_games.items()):
-                    # Remove finished games without positions
-                    if game.game_status == "post" and not game.has_position:
-                        games_to_remove.append((event_id, "finished"))
-                        continue
-                    
-                    # Remove stale games that haven't updated
-                    if game.last_update:
-                        time_since_update = now - game.last_update
-                        if time_since_update > stale_threshold and not game.has_position:
-                            games_to_remove.append((event_id, "stale"))
+                    for event_id, game in list(self.tracked_games.items()):
+                        # Remove finished games without positions
+                        if game.game_status == "post" and not game.has_position:
+                            games_to_remove.append((event_id, "finished"))
                             continue
-                
-                # Clean up identified games
-                for event_id, reason in games_to_remove:
-                    game = self.tracked_games.get(event_id)
-                    if game:
-                        logger.info(
-                            f"Cleanup: removing {reason} game {game.home_team} vs "
-                            f"{game.away_team} (event_id={event_id})"
-                        )
-                        await self._handle_game_finished(db, game)
-                
-                # Enforce maximum tracked games limit if exceeded
-                if len(self.tracked_games) > self.MAX_TRACKED_GAMES:
-                    excess = len(self.tracked_games) - self.MAX_TRACKED_GAMES
-                    logger.warning(
-                        f"Tracked games ({len(self.tracked_games)}) exceeds limit "
-                        f"({self.MAX_TRACKED_GAMES}). Removing {excess} oldest games."
-                    )
                     
-                    # Sort by last_update and remove oldest without positions
-                    sorted_games = sorted(
-                        self.tracked_games.items(),
-                        key=lambda x: x[1].last_update or datetime.min.replace(tzinfo=timezone.utc)
-                    )
-                    
-                    removed = 0
-                    for event_id, game in sorted_games:
-                        if removed >= excess:
-                            break
-                        if not game.has_position:
+                        # Remove stale games that haven't updated
+                        if game.last_update:
+                            time_since_update = now - game.last_update
+                            if time_since_update > stale_threshold and not game.has_position:
+                                games_to_remove.append((event_id, "stale"))
+                                continue
+                
+                    # Clean up identified games
+                    for event_id, reason in games_to_remove:
+                        game = self.tracked_games.get(event_id)
+                        if game:
+                            logger.info(
+                                f"Cleanup: removing {reason} game {game.home_team} vs "
+                                f"{game.away_team} (event_id={event_id})"
+                            )
                             await self._handle_game_finished(db, game)
-                            removed += 1
                 
-                if games_to_remove:
-                    logger.info(f"Cleanup complete: removed {len(games_to_remove)} games")
+                    # Enforce maximum tracked games limit if exceeded
+                    if len(self.tracked_games) > self.MAX_TRACKED_GAMES:
+                        excess = len(self.tracked_games) - self.MAX_TRACKED_GAMES
+                        logger.warning(
+                            f"Tracked games ({len(self.tracked_games)}) exceeds limit "
+                            f"({self.MAX_TRACKED_GAMES}). Removing {excess} oldest games."
+                        )
+                    
+                        # Sort by last_update and remove oldest without positions
+                        sorted_games = sorted(
+                            self.tracked_games.items(),
+                            key=lambda x: x[1].last_update or datetime.min.replace(tzinfo=timezone.utc)
+                        )
+                    
+                        removed = 0
+                        for event_id, game in sorted_games:
+                            if removed >= excess:
+                                break
+                            if not game.has_position:
+                                await self._handle_game_finished(db, game)
+                                removed += 1
+                
+                    if games_to_remove:
+                        logger.info(f"Cleanup complete: removed {len(games_to_remove)} games")
                     
             except asyncio.CancelledError:
                 break
@@ -1528,6 +1492,7 @@ class BotRunner:
                 )
                 
                 self.tracked_games[event_id] = tracked
+                self.game_tracker.add_game(tracked)
                 self.token_to_game[market.token_id_yes] = event_id
                 
                 # Update per-sport stats
@@ -2265,16 +2230,18 @@ class BotRunner:
             selected_side=selected_side
         )
         
-        self.tracked_games[event_id] = tracked
-        self.token_to_game[market.token_id_yes] = event_id
-        
-        # Subscribe to WebSocket updates
-        if self.websocket and self.websocket.is_connected:
-            await self.websocket.subscribe(
-                market.condition_id,
-                market.token_id_yes,
-                market.token_id_no
-            )
+        if event_id not in self.tracked_games:
+            self.tracked_games[event_id] = tracked
+            self.game_tracker.add_game(tracked)
+            self.token_to_game[market.token_id_yes] = event_id
+            
+            # Subscribe to WebSocket updates
+            if self.websocket and self.websocket.is_connected:
+                await self.websocket.subscribe(
+                    market.condition_id,
+                    market.token_id_yes,
+                    market.token_id_no
+                )
         
         # Save to database
         await TrackedMarketCRUD.create(
@@ -2312,7 +2279,10 @@ class BotRunner:
             await self._evaluate_exit(db, game)
         
         # Remove from tracking
-        del self.tracked_games[game.espn_event_id]
+        if game.espn_event_id in self.tracked_games:
+            del self.tracked_games[game.espn_event_id]
+            self.game_tracker.remove_game(game.espn_event_id)
+            
         if game.market.token_id_yes in self.token_to_game:
             del self.token_to_game[game.market.token_id_yes]
         

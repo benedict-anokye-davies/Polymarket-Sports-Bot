@@ -9,6 +9,8 @@ from typing import Any, Optional, Union
 from datetime import datetime
 from uuid import UUID
 
+from src.services.types import TradeSignal
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.sport_config import SportConfig

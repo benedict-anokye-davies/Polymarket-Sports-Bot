@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.deps import get_db, get_current_user
 from src.models import User, PolymarketAccount
 from src.services.account_manager import AccountManager
+from src.services.kalshi_client import KalshiClient
 from src.core.encryption import encrypt_credential, decrypt_credential
 from src.config import settings
 
@@ -167,6 +168,14 @@ async def create_account(
             raise HTTPException(
                 status_code=400,
                 detail="Kalshi accounts require api_key and api_secret"
+            )
+        
+        # Validate RSA key format using KalshiClient
+        is_valid, error_msg = KalshiClient.validate_rsa_key(request.api_secret)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid RSA private key: {error_msg}"
             )
     
     encrypted_key = None

@@ -19,6 +19,7 @@ import Logs from "./pages/Logs";
 import BotConfig from "./pages/BotConfig";
 import Analytics from "./pages/Analytics";
 import Accounts from "./pages/Accounts";
+import Swarm from "./pages/Swarm";
 import NotFound from "./pages/NotFound";
 import { Loader2 } from "lucide-react";
 
@@ -135,6 +136,7 @@ const App = () => (
               <Route path="/accounts" element={<ProtectedRoute><Accounts /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
+              <Route path="/swarm" element={<ProtectedRoute><Swarm /></ProtectedRoute>} />
 
               <Route path="*" element={<NotFound />} />
             </Routes>

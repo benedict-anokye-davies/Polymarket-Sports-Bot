@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\verify_refactor.py", line 10, in <module>
+    from src.services.bot_runner import BotRunner
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\..\src\services\bot_runner.py", line 586
+    logger.debug(f"Running market discovery for {self.platform}...")
+    ^
+IndentationError: expected an indented block after 'with' statement on line 585

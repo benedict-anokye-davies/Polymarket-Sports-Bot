@@ -6,9 +6,9 @@ Controls bot state, risk limits, and alert preferences.
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, Boolean, Integer, DateTime, Numeric, Text, ForeignKey, func
+from sqlalchemy import String, Boolean, Integer, DateTime, Numeric, Text, ForeignKey, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 
 from src.db.database import Base
 
@@ -133,7 +133,7 @@ class GlobalSettings(Base):
     # Persistent bot configuration (selected games, parameters)
     # Stored as JSON to survive server restarts
     bot_config_json: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSON,
         nullable=True,
         default=None
     )

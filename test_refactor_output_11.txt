@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\verify_refactor.py", line 10, in <module>
+    from src.services.bot_runner import BotRunner
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\..\src\services\bot_runner.py", line 53, in <module>
+    class BotRunner:
+  File "C:\Users\Nxiss\OneDrive\Desktop\Polymarket-Kalshi-Bot\src\..\src\services\bot_runner.py", line 2150, in BotRunner
+    markets: list[DiscoveredMarket],
+                  ^^^^^^^^^^^^^^^^
+NameError: name 'DiscoveredMarket' is not defined
