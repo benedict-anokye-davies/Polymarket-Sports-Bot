@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sports-bot-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+    networks:
+      - sports-bot-network
+
   app:
     build: .
     container_name: sports-bot-app
@@ -14,7 +27,9 @@ services:
       - KALSHI_API_KEY=${KALSHI_API_KEY}
       - KALSHI_API_SECRET=${KALSHI_API_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - VITE_API_URL=${VITE_API_URL}
+      # Update VITE_API_URL to point to internal container if SSR, or keep as public IP for client-side
+      # But since we have nginx proxy /api to app:8000, client can just hit /api
+      - VITE_API_URL=/api/v1
       - PORT=8000
     depends_on:
       db:
@@ -41,13 +56,14 @@ services:
     networks:
       - sports-bot-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
 volumes:
   postgres_data:
+
 
 networks:
   sports-bot-network:
