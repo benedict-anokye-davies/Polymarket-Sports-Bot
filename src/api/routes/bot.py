@@ -16,7 +16,7 @@ from src.db.crud.sport_config import SportConfigCRUD
 from src.db.crud.market_config import MarketConfigCRUD
 from src.schemas.common import MessageResponse
 from src.services.bot_runner import get_bot_runner, get_bot_status, BotState
-from src.services.polymarket_client import PolymarketClient
+
 from src.services.trading_engine import TradingEngine
 from src.services.espn_service import ESPNService
 from src.config import settings as app_settings
@@ -52,14 +52,11 @@ async def _create_bot_dependencies(db, user_id, credentials: dict):
         )
         logger.info(f"Created KalshiClient for user {user_id} - REAL MONEY TRADING")
     else:
-        trading_client = PolymarketClient(
-            private_key=credentials["private_key"],
-            funder_address=credentials["funder_address"],
-            api_key=credentials.get("api_key"),
-            api_secret=credentials.get("api_secret"),
-            passphrase=credentials.get("passphrase")
+        # Polymarket support removed
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Polymarket is no longer supported. Please use Kalshi."
         )
-        logger.info(f"Created PolymarketClient for user {user_id}")
 
     espn_service = ESPNService()
 
@@ -716,44 +713,9 @@ async def place_manual_order(
             )
         
         elif request.platform.lower() == "polymarket":
-            # Use Polymarket client
-            private_key = credentials.get("private_key")
-            funder_address = credentials.get("funder_address")
-            
-            if not private_key or not funder_address:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Polymarket wallet not configured. Please complete onboarding."
-                )
-            
-            client = PolymarketClient(
-                private_key=private_key,
-                funder_address=funder_address,
-                api_key=credentials.get("api_key"),
-                api_secret=credentials.get("api_secret"),
-                passphrase=credentials.get("passphrase")
-            )
-            
-            result = await client.place_order(
-                token_id=request.ticker,
-                side=request.side.upper(),
-                price=request.price,
-                size=request.size
-            )
-            
-            await ActivityLogCRUD.info(
-                db,
-                current_user.id,
-                "POLYMARKET_ORDER",
-                f"Placed {request.side} order: {request.ticker} @ {request.price}"
-            )
-            
-            return PlaceOrderResponse(
-                success=True,
-                order_id=result.get("orderID", result.get("order_id")),
-                status=result.get("status", "pending"),
-                filled_size=result.get("filled_size", 0),
-                message="Order placed on Polymarket"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Polymarket is no longer supported."
             )
         
         else:
