@@ -578,19 +578,35 @@ async def get_open_orders(
     if not credentials:
         return []
     
+    platform = credentials.get("platform", "polymarket")
+    
     try:
-        from src.services.polymarket_client import PolymarketClient
-        
-        client = PolymarketClient(
-            private_key=credentials["private_key"],
-            funder_address=credentials["funder_address"],
-            api_key=credentials.get("api_key"),
-            api_secret=credentials.get("api_secret"),
-            passphrase=credentials.get("passphrase")
-        )
-        
-        orders = await client.get_open_orders()
-        return orders
+        if platform == "kalshi":
+            from src.services.kalshi_client import KalshiClient
+            
+            client = KalshiClient(
+                api_key=credentials["api_key"],
+                private_key_pem=credentials.get("private_key") or credentials.get("api_secret")
+            )
+            
+            # Kalshi REST API returns orders
+            orders = await client.get_orders()
+            # Normalize to common format if needed, for now return raw
+            return orders
+            
+        else:
+            from src.services.polymarket_client import PolymarketClient
+            
+            client = PolymarketClient(
+                private_key=credentials["private_key"],
+                funder_address=credentials["funder_address"],
+                api_key=credentials.get("api_key"),
+                api_secret=credentials.get("api_secret"),
+                passphrase=credentials.get("passphrase")
+            )
+            
+            orders = await client.get_open_orders()
+            return orders
         
     except Exception as e:
         # Log error but return empty list to avoid breaking UI
@@ -620,28 +636,51 @@ async def cancel_order(
             detail="Wallet not connected"
         )
     
+    platform = credentials.get("platform", "polymarket")
+
     try:
-        from src.services.polymarket_client import PolymarketClient
-        
-        client = PolymarketClient(
-            private_key=credentials["private_key"],
-            funder_address=credentials["funder_address"],
-            api_key=credentials.get("api_key"),
-            api_secret=credentials.get("api_secret"),
-            passphrase=credentials.get("passphrase")
-        )
-        
-        result = await client.cancel_order(order_id)
-        
-        await ActivityLogCRUD.info(
-            db,
-            current_user.id,
-            "TRADING",
-            f"Cancelled order {order_id}",
-            details={"order_id": order_id}
-        )
-        
-        return {"success": True, "message": "Order cancelled", "id": order_id}
+        if platform == "kalshi":
+            from src.services.kalshi_client import KalshiClient
+            
+            client = KalshiClient(
+                api_key=credentials["api_key"],
+                private_key_pem=credentials.get("private_key") or credentials.get("api_secret")
+            )
+            
+            result = await client.cancel_order(order_id)
+            
+            await ActivityLogCRUD.info(
+                db,
+                current_user.id,
+                "TRADING",
+                f"Cancelled Kalshi order {order_id}",
+                details={"order_id": order_id}
+            )
+            
+            return {"success": True, "message": "Order cancelled", "id": order_id}
+
+        else:
+            from src.services.polymarket_client import PolymarketClient
+            
+            client = PolymarketClient(
+                private_key=credentials["private_key"],
+                funder_address=credentials["funder_address"],
+                api_key=credentials.get("api_key"),
+                api_secret=credentials.get("api_secret"),
+                passphrase=credentials.get("passphrase")
+            )
+            
+            result = await client.cancel_order(order_id)
+            
+            await ActivityLogCRUD.info(
+                db,
+                current_user.id,
+                "TRADING",
+                f"Cancelled order {order_id}",
+                details={"order_id": order_id}
+            )
+            
+            return {"success": True, "message": "Order cancelled", "id": order_id}
         
     except Exception as e:
         await ActivityLogCRUD.error(
