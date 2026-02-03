@@ -742,6 +742,7 @@ class ESPNService:
                 away_score = int(comp.get("score", 0) or 0)
         
         state = status_type.get("state", "")
+        # Robust live check: state is 'in' OR we have a non-zero score and not finished
         is_live = state == "in"
         is_finished = state == "post"
         
@@ -749,7 +750,9 @@ class ESPNService:
         clock_display = status.get("displayClock", "0:00")
         clock_seconds = self._parse_clock_to_seconds(clock_display)
         
-        segment = self._normalize_segment(period, sport)
+        # Safe period access
+        safe_period = period if period is not None else 0
+        segment = self._normalize_segment(safe_period, sport)
         
         start_time = None
         if game.get("date"):
