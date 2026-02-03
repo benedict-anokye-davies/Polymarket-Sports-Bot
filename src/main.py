@@ -46,7 +46,6 @@ from src.api.routes.accounts import router as accounts_router
 from src.api.routes.websocket import router as websocket_router
 from src.api.routes.websocket import router as websocket_router
 from src.api.routes.advanced import router as advanced_router
-from src.api.routes.swarm import router as swarm_router
 
 # Production infrastructure imports
 from src.core.rate_limiter import RateLimitMiddleware, RateLimitConfig
