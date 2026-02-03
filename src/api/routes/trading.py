@@ -584,9 +584,15 @@ async def get_open_orders(
         if platform == "kalshi":
             from src.services.kalshi_client import KalshiClient
             
+            # Kalshi credentials might be stored as 'api_secret' (legacy) or 'private_key'
+            private_key = credentials.get("private_key") or credentials.get("api_secret")
+            if not private_key:
+                logger.error(f"Missing private key for Kalshi user {current_user.id}")
+                return []
+                
             client = KalshiClient(
                 api_key=credentials["api_key"],
-                private_key_pem=credentials.get("private_key") or credentials.get("api_secret")
+                private_key_pem=private_key
             )
             
             # Kalshi REST API returns orders
@@ -596,6 +602,11 @@ async def get_open_orders(
             
         else:
             from src.services.polymarket_client import PolymarketClient
+            
+            # Ensure required Polymarket keys exist
+            if not credentials.get("private_key"):
+                logger.error(f"Missing private key for Polymarket user {current_user.id}")
+                return []
             
             client = PolymarketClient(
                 private_key=credentials["private_key"],
