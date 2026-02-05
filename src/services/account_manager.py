@@ -310,7 +310,7 @@ class AccountManager:
                 return {
                     "account_id": str(account.id),
                     "account_name": account.account_name or "Primary",
-                    "balance": None,
+                    "balance": 0.0,
                     "error": "Failed to create client",
                 }
             except Exception as e:
@@ -318,7 +318,7 @@ class AccountManager:
                 return {
                     "account_id": str(account.id),
                     "account_name": account.account_name or "Primary",
-                    "balance": None,
+                    "balance": 0.0,
                     "error": str(e),
                 }
 
@@ -333,7 +333,7 @@ class AccountManager:
                 balances.append({
                     "account_id": str(accounts[i].id),
                     "account_name": accounts[i].account_name or "Primary",
-                    "balance": None,
+                    "balance": 0.0,
                     "error": str(result),
                 })
             else:
