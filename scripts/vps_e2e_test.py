@@ -30,21 +30,24 @@ async def run_test():
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=30.0) as client:
         # 1. Health Check
         try:
-            resp = await client.get("/health")
+            # Overriding base_url for health check as it is at root, not /api/v1
+            resp = await client.get("http://localhost:8000/health")
             logger.info(f"✅ Health Check: {resp.status_code} - {resp.json()}")
         except Exception as e:
             logger.error(f"❌ Cannot connect to API: {e}")
             return
 
         # 2. Register/Login Test User
-        email = f"test_vps_{int(datetime.now().timestamp())}@example.com"
+        timestamp = int(datetime.now().timestamp())
+        email = f"test_vps_{timestamp}@example.com"
+        username = f"testUser{timestamp}"
         password = "TestPassword123!"
         
         logger.info(f"Registering user: {email}")
         resp = await client.post("/auth/register", json={
+            "username": username,
             "email": email,
-            "password": password,
-            "full_name": "VPS Test User"
+            "password": password
         })
         
         if resp.status_code != 201:
@@ -52,7 +55,7 @@ async def run_test():
             return
             
         logger.info("Login...")
-        resp = await client.post("/auth/token", data={
+        resp = await client.post("/auth/login", data={
             "username": email,
             "password": password
         })
@@ -71,7 +74,7 @@ async def run_test():
 
         # 3. Onboard (Save Credentials)
         logger.info("Saving Kalshi credentials...")
-        resp = await client.post("/auth/onboard", headers=headers, json={
+        resp = await client.post("/onboarding/wallet/connect", headers=headers, json={
             "platform": "kalshi",
             "api_key": kalshi_key,
             "api_secret": kalshi_secret,
@@ -83,6 +86,14 @@ async def run_test():
              return
              
         logger.info("✅ Credentials saved.")
+
+        # 3b. Complete Onboarding
+        logger.info("Completing Onboarding...")
+        resp = await client.post("/onboarding/complete", headers=headers)
+        if resp.status_code != 200:
+             logger.error(f"❌ Completing onboarding failed: {resp.text}")
+             return
+        logger.info("✅ Onboarding completed.")
 
         # 4. Start Bot
         logger.info("Starting Bot...")

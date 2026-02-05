@@ -6,7 +6,7 @@
 import { logger } from '@/lib/logger';
 
 // Get base URL and ensure HTTPS is used (prevent mixed content errors)
-const rawApiUrl = import.meta.env.VITE_API_URL?.trim() || 'https://polymarket-sports-bot-production.up.railway.app/api/v1';
+const rawApiUrl = import.meta.env.VITE_API_URL?.trim() || '/api/v1';
 const API_BASE_URL = rawApiUrl.replace(/^http:\/\//i, 'https://');
 
 // Debug log the API URL on startup

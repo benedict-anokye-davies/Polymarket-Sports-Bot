@@ -704,11 +704,14 @@ async def place_manual_order(
                 f"Placed {request.side} order: {request.ticker} @ {request.price}"
             )
             
+            # Extract data from dict response
+            order_data = order.get("order", order)
+            
             return PlaceOrderResponse(
                 success=True,
-                order_id=order.order_id,
-                status=order.status,
-                filled_size=order.filled_size,
+                order_id=order_data.get("order_id"),
+                status=order_data.get("status", "submitted"),
+                filled_size=float(order_data.get("filled_count", 0)),
                 message=f"Order placed on Kalshi"
             )
         

@@ -19,6 +19,18 @@ services:
     networks:
       - polymarket-network
 
+  web:
+    build:
+      context: ./frontend
+    container_name: polymarket-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+    networks:
+      - polymarket-network
+
   db:
     image: postgres:15-alpine
     container_name: polymarket-db
@@ -34,13 +46,14 @@ services:
     networks:
       - polymarket-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
 volumes:
   postgres_data:
+
 
 networks:
   polymarket-network:

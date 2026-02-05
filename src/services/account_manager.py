@@ -108,6 +108,45 @@ class AccountManager:
         self._health_status: dict[str, AccountHealth] = {}
         self._round_robin_index: int = 0
     
+    async def get_client_for_account(self, account_id: UUID):
+        """
+        Get or create a KalshiClient for the specified account.
+        
+        Args:
+            account_id: Account ID to get client for
+            
+        Returns:
+            KalshiClient instance
+        """
+        # Check cache first
+        if account_id in self._clients_cache:
+            return self._clients_cache[account_id]
+            
+        # Get credentials from DB
+        from src.db.crud.account import AccountCRUD
+        credentials = await AccountCRUD.get_decrypted_credentials(self.db, account_id)
+        
+        if not credentials:
+            return None
+            
+        # Create client
+        from src.services.kalshi_client import KalshiClient
+        
+        # Check for API key (Kalshi)
+        if "api_key" in credentials:
+             # Kalshi
+             client = KalshiClient(
+                api_key=credentials["api_key"],
+                private_key_pem=credentials.get("private_key") or credentials.get("api_secret")
+             )
+        else:
+            # Fallback or Polymarket (not supported but safe to return None)
+            return None
+        
+        # Cache it
+        self._clients_cache[account_id] = client
+        return client
+
     async def get_active_accounts(self) -> list:
         """
         Get all active trading accounts for user.

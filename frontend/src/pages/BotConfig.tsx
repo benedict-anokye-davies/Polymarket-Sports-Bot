@@ -29,6 +29,7 @@ import {
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
@@ -59,10 +60,12 @@ interface GameData {
 }
 
 // Selected game with side preference
+// Selected game with side preference
 interface SelectedGame {
   game: GameData;
   sport: string;
   side: 'home' | 'away';  // Which team to bet on
+  marketTicker?: string; // Optional direct ticker
 }
 
 // Trading parameters interface (matches API TradingParameters)
@@ -134,6 +137,43 @@ export default function BotConfig() {
   const [selectedCategory, setSelectedCategory] = useState<string>('basketball');
   const [selectedLeague, setSelectedLeague] = useState<string>('nba');
   const [loadingCategories, setLoadingCategories] = useState(true);
+
+  // Direct Ticker State
+  const [directTickerInput, setDirectTickerInput] = useState('');
+
+  // Function to add direct ticker
+  const addDirectTicker = () => {
+    if (!directTickerInput.trim()) return;
+
+    const ticker = directTickerInput.trim();
+    const fakeId = `custom-${ticker}`;
+
+    // Create a pseudo-game object
+    const fakeGame: GameData = {
+      id: fakeId,
+      homeTeam: 'Direct Market',
+      awayTeam: ticker,
+      startTime: new Date().toISOString(),
+      status: 'live',
+      homeOdds: 50,
+      awayOdds: 50,
+      volume: 0
+    };
+
+    setSelectedGames(prev => ({
+      ...prev,
+      [fakeId]: {
+        game: fakeGame,
+        sport: selectedLeague,
+        side: 'home',
+        marketTicker: ticker
+      }
+    }));
+
+    setDirectTickerInput('');
+    setSuccessMessage(`Added direct ticker: ${ticker}`);
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
 
   // Check if games were passed from Markets page
   useEffect(() => {
@@ -439,7 +479,6 @@ export default function BotConfig() {
       const firstSelection = allSelectedGames[0];
 
       if (firstSelection) {
-        // Build additional games list for multi-sport support
         const additionalGames = allSelectedGames.slice(1).map(sel => ({
           game_id: sel.game.id,
           sport: sel.sport,
@@ -447,6 +486,7 @@ export default function BotConfig() {
           away_team: sel.game.awayTeam,
           start_time: sel.game.startTime,
           selected_side: sel.side,  // Include which team to bet on
+          market_ticker: sel.marketTicker // Include direct ticker if present
         }));
 
         await apiClient.saveBotConfig({
@@ -458,6 +498,7 @@ export default function BotConfig() {
             away_team: firstSelection.game.awayTeam,
             start_time: firstSelection.game.startTime,
             selected_side: firstSelection.side,  // Include which team to bet on
+            market_ticker: firstSelection.marketTicker // Include direct ticker
           },
           additional_games: additionalGames.length > 0 ? additionalGames : undefined,
           parameters: toApiParams(tradingParams),
@@ -832,6 +873,29 @@ export default function BotConfig() {
                       );
                     })
                   )}
+                </div>
+
+                {/* Advanced: Direct Market Ticker */}
+                <div className="pt-2 border-t border-muted">
+                  <Label className="text-xs mb-2 block">Advanced: Enter Specific Market Ticker</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={directTickerInput}
+                      onChange={(e) => setDirectTickerInput(e.target.value)}
+                      placeholder="e.g. KXNBA..."
+                      className="h-8 text-sm"
+                    />
+                    <Button
+                      onClick={addDirectTicker}
+                      disabled={!directTickerInput}
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                    >
+                      <Target className="w-3 h-3 mr-1" />
+                      Track
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Selection Summary */}

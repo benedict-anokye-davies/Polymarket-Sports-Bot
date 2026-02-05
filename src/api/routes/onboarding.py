@@ -226,9 +226,9 @@ async def test_wallet_connection(
         balance_data = await client.get_balance()
         await client.close()
         
-        # Kalshi returns balance in cents, convert to dollars
-        balance_cents = balance_data.get("balance", 0) or balance_data.get("available_balance", 0)
-        balance = balance_cents / 100
+        # Kalshi returns balance in cents, but Client already converts to dollars.
+        # So we just use the value directly.
+        balance = balance_data.get("balance", 0) or balance_data.get("available_balance", 0)
         
         await AccountCRUD.update_connection_status(db, current_user.id, True)
         

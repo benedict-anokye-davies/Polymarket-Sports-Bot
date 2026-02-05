@@ -397,6 +397,10 @@ class KalshiClient:
             f"/portfolio/orders{params}"
         )
 
+    # Alias for compatibility
+    get_orders = get_open_orders
+
+
     async def batch_orders(
         self,
         orders: List[Dict[str, Any]]

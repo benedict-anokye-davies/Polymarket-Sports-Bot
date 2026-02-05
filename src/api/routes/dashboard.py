@@ -56,9 +56,9 @@ async def get_dashboard_stats(db: DbSession, current_user: OnboardedUser) -> Das
                  )
                  balance_data = await client.get_balance()
                  await client.close()
-                 # Kalshi returns balance in cents, convert to dollars
-                 balance_cents = balance_data.get("balance", 0) or balance_data.get("available_balance", 0)
-                 balance_usdc = Decimal(str(balance_cents)) / Decimal("100")
+                 # Kalshi returns balance in cents, but client normalizes to dollars
+                 balance_val = balance_data.get("balance", 0) or balance_data.get("available_balance", 0)
+                 balance_usdc = Decimal(str(balance_val))
         except Exception as e:
             logger.warning(f"Failed to fetch balance for user {current_user.id}: {e}")
     

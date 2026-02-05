@@ -105,6 +105,7 @@ class BotRunner:
         # Clients - typed as TradingClient protocol where possible, but concrete classes have more methods
         self.polymarket_client: TradingClient | None = None
         self.kalshi_client: TradingClient | None = None
+        self.websocket: Any | None = None  # WebSocket connection (if used)
         self.db: AsyncSession | None = None
 
         # Configuration
@@ -467,6 +468,7 @@ class BotRunner:
         self._tasks = [
             asyncio.create_task(self._discovery_loop(), name="discovery"),
             asyncio.create_task(self._espn_poll_loop(), name="espn_poll"),
+            asyncio.create_task(self._price_poll_loop(), name="price_poll"),
             asyncio.create_task(self._trading_loop(), name="trading"),
             asyncio.create_task(self._health_check_loop(), name="health"),
             asyncio.create_task(self._cleanup_loop(), name="cleanup"),
@@ -560,8 +562,43 @@ class BotRunner:
                     )
                 
                     logger.info(f"Discovered {len(markets)} sports markets")
-                
-                    # Match markets to ESPN games - ONLY for user-selected games
+                    
+                    # 1. Direct Ticker Matching (Bypass ESPN Search)
+                    for game_id, config in list(self.user_selected_games.items()):
+                        if game_id in self.tracked_games:
+                            continue
+                            
+                        target_ticker = config.get("market_ticker")
+                        if target_ticker:
+                            matched = next((m for m in markets if m.ticker == target_ticker), None)
+                            if matched:
+                                logger.info(f"Direct Match Found for Ticker {target_ticker}")
+                                # Create Synthetic Game Object
+                                fake_game = {
+                                    "id": game_id, 
+                                    "name": f"{matched.away_team} at {matched.home_team}",
+                                    "shortName": f"{matched.away_team} @ {matched.home_team}",
+                                    "competitions": [{
+                                        "competitors": [
+                                            {"homeAway": "home", "team": {"displayName": matched.home_team, "name": matched.home_team}},
+                                            {"homeAway": "away", "team": {"displayName": matched.away_team, "name": matched.away_team}}
+                                        ],
+                                        "status": {"type": {"state": "pre", "name": "STATUS_SCHEDULED"}}, 
+                                        "date": matched.game_start_time.isoformat() if matched.game_start_time else datetime.now().isoformat()
+                                    }]
+                                }
+                                await self._start_tracking_game(
+                                    db, # Use existing session from context manager
+                                    event_id=game_id,
+                                    sport=matched.sport,
+                                    home_team=matched.home_team or "Home",
+                                    away_team=matched.away_team or "Away",
+                                    market=matched,
+                                    game_data=fake_game,
+                                    selected_side=config.get("selected_side", "home")
+                                )
+
+                    # 2. Match markets to ESPN games - ONLY for user-selected games
                     for sport in self.enabled_sports:
                         games = await self.espn_service.get_live_games(sport)
                     
@@ -669,6 +706,60 @@ class BotRunner:
                         logger.debug(f"Suppressed logging error: {log_err}")
             
             await asyncio.sleep(self.ESPN_POLL_INTERVAL)
+
+    async def _price_poll_loop(self) -> None:
+        """
+        Poll Kalshi for price updates on tracked markets.
+        
+        Runs every DISCOVERY_INTERVAL seconds (reusing interval or usually ~5-10s).
+        Crucial for Kalshi since we don't have WebSocket price feeds.
+        """
+        PRICE_POLL_INTERVAL = 10.0
+        
+        while not self._stop_event.is_set():
+            try:
+                # Iterate over tracked games and update prices
+                # Use list() to create a copy of items to avoid modification during iteration issues
+                for event_id, game in list(self.tracked_games.items()):
+                    # Skip if no market associated
+                    if not game.market or not game.market.ticker:
+                        continue
+                        
+                    try:
+                        # Fetch latest market data
+                        # Type ignore because we know self.trading_client is KalshiClient in this flow
+                        # but typed as TradingClient protocol which might not expose get_market
+                        market_data = await self.trading_client.get_market(game.market.ticker) # type: ignore
+                        
+                        if not market_data:
+                            continue
+                            
+                        # Extract market info (Kalshi wraps in "market" key usually)
+                        data = market_data.get("market", market_data)
+                        
+                        # Update price fields
+                        # Kalshi returns prices in cents (1-99). Normalize to 0-1.
+                        yes_ask = data.get("yes_ask", 0)
+                        yes_bid = data.get("yes_bid", 0)
+                        
+                        # Update TrackedGame state
+                        game.current_price = float(yes_ask) / 100.0 if yes_ask > 0 else None
+                        
+                        # Update DB model-like market object attached to game
+                        if game.market:
+                            game.market.current_price_yes = Decimal(str(game.current_price)) if game.current_price is not None else None
+                            # Assuming single-outcome or binary, NO price is inverse or from no_ask
+                            game.market.current_price_no = Decimal(str(1.0 - game.current_price)) if game.current_price is not None else None
+                        
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch price for {game.market.ticker}: {e}")
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in price poll loop: {e}")
+                
+            await asyncio.sleep(PRICE_POLL_INTERVAL)
     
 
     
@@ -872,27 +963,34 @@ class BotRunner:
         tracked_market = self._build_tracked_market_from_game(game)
         game_state = self._build_game_state_from_game(game)
         
+        # Build overrides from frontend config
+        overrides = {}
+        if hasattr(self, 'position_size') and self.position_size:
+            # Note: frontend sends position_size, engine expects position_size_usdc
+            overrides['position_size_usdc'] = float(self.position_size)
+            logger.debug(f"Passing override position_size: ${self.position_size}")
+            
+        if hasattr(self, 'entry_threshold') and self.entry_threshold:
+            # Convert percentage 5.5 -> 0.055
+            overrides['entry_threshold_drop'] = float(self.entry_threshold) / 100.0
+            
         # Update TradingEngine's db session with current loop session
         # This is necessary because TradingEngine was initialized with a request-scoped
         # session that may be stale by the time the trading loop runs
         self.trading_engine.db = db
         
-        # Delegate entry evaluation to TradingEngine
-        entry_signal = await self.trading_engine.evaluate_entry(tracked_market, game_state)
+        # Delegate entry evaluation to TradingEngine with overrides
+        entry_signal = await self.trading_engine.evaluate_entry(
+            tracked_market, 
+            game_state,
+            overrides=overrides
+        )
         
         if not entry_signal:
             return
         
         # Extract signal details
         position_size = entry_signal["position_size"]
-        
-        # OVERRIDE with frontend config position_size if set
-        # This ensures user's configured position size is used, not database defaults
-        if hasattr(self, 'position_size') and self.position_size:
-            position_size = self.position_size
-            entry_signal["position_size"] = position_size
-            logger.debug(f"Using frontend config position_size: ${position_size:.0f}")
-        
         price = entry_signal["price"]
         side = entry_signal["side"]
         token_id = entry_signal["token_id"]
@@ -1117,8 +1215,20 @@ class BotRunner:
             exit_reason = "emergency_stop"
             exit_message = "Emergency stop activated"
         else:
+            # Build overrides from frontend config
+            overrides = {}
+            if hasattr(self, 'take_profit') and self.take_profit:
+                overrides['take_profit_pct'] = float(self.take_profit) / 100.0
+            if hasattr(self, 'stop_loss') and self.stop_loss:
+                overrides['stop_loss_pct'] = float(self.stop_loss) / 100.0
+
             # Delegate to TradingEngine for standard exit conditions
-            exit_signal = await self.trading_engine.evaluate_exit(position, tracked_market, game_state)
+            exit_signal = await self.trading_engine.evaluate_exit(
+                position, 
+                tracked_market, 
+                game_state,
+                overrides=overrides
+            )
             
             if exit_signal:
                 exit_reason = exit_signal["reason"]
@@ -1330,6 +1440,12 @@ class BotRunner:
                                 f"{game.away_team} (event_id={event_id})"
                             )
                             await self._handle_game_finished(db, game)
+                    
+                    # ALSO Clean up stale unselected markets from DB to clear "Available Games"
+                    # Default 12 hours cutoff for unselected games
+                    deleted = await TrackedMarketCRUD.cleanup_stale_unselected(db, stale_threshold_hours=12)
+                    if deleted > 0:
+                        logger.info(f"Cleanup: removed {deleted} stale unselected markets from DB")
                 
                     # Enforce maximum tracked games limit if exceeded
                     if len(self.tracked_games) > self.MAX_TRACKED_GAMES:
@@ -2100,29 +2216,61 @@ class BotRunner:
         Returns:
             Matching market or None
         """
+        import string
         home_lower = home_team.lower()
         away_lower = away_team.lower()
         
+        # Helper to clean text
+        def clean_text(text):
+            return text.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation)))
+
         for market in markets:
             if market.sport != sport:
+                continue
+            if getattr(market, "is_parlay", False):
                 continue
             
             question_lower = market.question.lower()
             
-            # Check if both teams appear in market question
-            if home_lower in question_lower and away_lower in question_lower:
-                return market
+            # Use set matching on cleaned words
             
-            # Check individual words
-            home_words = set(home_lower.split())
-            away_words = set(away_lower.split())
-            question_words = set(question_lower.split())
+            # Check if both teams appear in market question (strict phrase match)
+            # We check parts of the name (e.g. "Pistons" in "Detroit Pistons")
+            # But "Detroit Pistons" might not be in "Detroit vs Denver"
+            
+            # Use set matching on cleaned words
+            home_words = set(clean_text(home_lower).split())
+            away_words = set(clean_text(away_lower).split())
+            question_words = set(clean_text(question_lower).split())
+            
+            # We need at least one significant word from home team and one from away team
+            # Filter out common stop words if necessary, but team names usually distinctive
             
             home_match = len(home_words & question_words) >= 1
             away_match = len(away_words & question_words) >= 1
             
             if home_match and away_match:
                 return market
+            
+            # Fallback: Check checking against home_team/away_team fields in DiscoveredMarket
+            # (which we populated in market_discovery via extraction)
+            if market.home_team and market.away_team:
+                m_home = market.home_team.lower()
+                m_away = market.away_team.lower()
+                
+                # Check for cross-match
+                h_match = (m_home in home_lower or home_lower in m_home)
+                a_match = (m_away in away_lower or away_lower in m_away)
+                
+                if h_match and a_match:
+                    return market
+                    
+                # Check swapped
+                h_swap = (m_home in away_lower or away_lower in m_home)
+                a_swap = (m_away in home_lower or home_lower in m_away)
+                
+                if h_swap and a_swap:
+                    return market
         
         return None
     

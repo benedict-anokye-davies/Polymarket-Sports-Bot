@@ -4,9 +4,9 @@ Includes game selection functionality.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from sqlalchemy import select, and_, update
+from sqlalchemy import select, and_, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -557,6 +557,41 @@ class TrackedMarketCRUD:
         await db.commit()
         return result.rowcount
 
+
+    @staticmethod
+    async def cleanup_stale_unselected(
+        db: AsyncSession,
+        stale_threshold_hours: int = 24
+    ) -> int:
+        """
+        Deletes unselected markets that haven't been updated for a while.
+        This cleans up "Available Games" list.
+        
+        Args:
+            db: Database session
+            stale_threshold_hours: Hours of inactivity before deletion
+            
+        Returns:
+            Number of deleted markets
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=stale_threshold_hours)
+        
+        # Delete unselected, non-live (or stale live) markets
+        # We delete if:
+        # 1. Not selected by user
+        # 2. No open positions (handled by cascade usually, but safe to check)
+        # 3. Last updated before cutoff OR game start time (plus buffer) before cutoff
+        
+        # Simple approach: delete any unselected market updated before cutoff
+        result = await db.execute(
+            delete(TrackedMarket)
+            .where(
+                TrackedMarket.is_user_selected == False,
+                TrackedMarket.last_updated_at < cutoff
+            )
+        )
+        await db.commit()
+        return result.rowcount
 
 # Singleton instance for simplified imports
 tracked_market = TrackedMarketCRUD()

@@ -40,10 +40,12 @@ class EffectiveConfig:
     def __init__(
         self,
         sport_config: SportConfig,
-        market_config: MarketConfig | None = None
+        market_config: MarketConfig | None = None,
+        overrides: dict[str, Any] | None = None
     ):
         self.sport_config = sport_config
         self.market_config = market_config
+        self.overrides = overrides or {}
     
     @property
     def is_enabled(self) -> bool:
@@ -62,6 +64,8 @@ class EffectiveConfig:
     @property
     def entry_threshold_pct(self) -> Decimal:
         """Get entry threshold percentage (market override or sport default)."""
+        if self.overrides.get("entry_threshold_drop") is not None:
+             return Decimal(str(self.overrides["entry_threshold_drop"]))
         if self.market_config and self.market_config.entry_threshold_drop is not None:
             return self.market_config.entry_threshold_drop
         return self.sport_config.entry_threshold_pct
@@ -83,6 +87,8 @@ class EffectiveConfig:
     @property
     def take_profit_pct(self) -> Decimal:
         """Get take profit percentage."""
+        if self.overrides.get("take_profit_pct") is not None:
+             return Decimal(str(self.overrides["take_profit_pct"]))
         if self.market_config and self.market_config.take_profit_pct is not None:
             return self.market_config.take_profit_pct
         return self.sport_config.take_profit_pct
@@ -90,6 +96,8 @@ class EffectiveConfig:
     @property
     def stop_loss_pct(self) -> Decimal:
         """Get stop loss percentage."""
+        if self.overrides.get("stop_loss_pct") is not None:
+             return Decimal(str(self.overrides["stop_loss_pct"]))
         if self.market_config and self.market_config.stop_loss_pct is not None:
             return self.market_config.stop_loss_pct
         return self.sport_config.stop_loss_pct
@@ -97,6 +105,8 @@ class EffectiveConfig:
     @property
     def default_position_size_usdc(self) -> Decimal:
         """Get position size in USDC."""
+        if self.overrides.get("position_size_usdc") is not None:
+            return Decimal(str(self.overrides["position_size_usdc"]))
         if self.market_config and self.market_config.position_size_usdc is not None:
             return self.market_config.position_size_usdc
         return self.sport_config.default_position_size_usdc
@@ -211,20 +221,28 @@ class TradingEngine:
             
             # Get yes_price (cents) and convert to dollars (0-1)
             # API returns e.g. 45 for 45 cents
-            price_cents = market.get("yes_price", 50)
-            return float(price_cents) / 100.0
+            # Get yes_price (cents or dollars)
+            price_raw = market.get("yes_price", 50)
+            
+            # Normalize to 0-1 range
+            # If > 1, assume cents (e.g. 45 -> 0.45)
+            # If <= 1, assume dollars (e.g. 0.45 -> 0.45)
+            if float(price_raw) > 1:
+                return float(price_raw) / 100.0
+            return float(price_raw)
         except Exception as e:
             logger.warning(f"Failed to get exit price for {token_id}: {e}")
             # Fallback: return current market price from tracked data
             return 0.5
     
-    def _get_effective_config(self, market: TrackedMarket) -> EffectiveConfig | None:
+    def _get_effective_config(self, market: TrackedMarket, overrides: dict[str, Any] | None = None) -> EffectiveConfig | None:
         """
         Gets effective configuration for a market.
         Combines sport config with any market-specific overrides.
         
         Args:
             market: The tracked market to get config for
+            overrides: Optional runtime overrides
         
         Returns:
             EffectiveConfig combining sport and market configs, or None if no sport config
@@ -234,12 +252,13 @@ class TradingEngine:
             return None
         
         market_config = self.market_configs.get(market.condition_id)
-        return EffectiveConfig(sport_config, market_config)
+        return EffectiveConfig(sport_config, market_config, overrides)
     
     async def evaluate_entry(
         self,
         market: TrackedMarket,
-        game_state: dict[str, Any]
+        game_state: dict[str, Any],
+        overrides: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         """
         Evaluates whether entry conditions are met for a market.
@@ -254,7 +273,7 @@ class TradingEngine:
         Returns:
             Entry signal dictionary if conditions met, None otherwise
         """
-        config = self._get_effective_config(market)
+        config = self._get_effective_config(market, overrides)
         if not config or not config.is_enabled:
             return None
         
@@ -473,21 +492,22 @@ class TradingEngine:
         self,
         position: Any,
         market: TrackedMarket,
-        game_state: dict[str, Any]
+        game_state: dict[str, Any],
+        overrides: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         """
         Evaluates whether exit conditions are met for a position.
-        Uses market-specific config if available, otherwise sport defaults.
         
         Args:
-            position: Position to evaluate
-            market: Associated tracked market
-            game_state: Current game state from ESPN
+            position: The open position to evaluate
+            market: Tracked market details
+            game_state: Current game state
+            overrides: Optional runtime overrides
         
         Returns:
             Exit signal dictionary if conditions met, None otherwise
         """
-        config = self._get_effective_config(market)
+        config = self._get_effective_config(market, overrides)
         if not config:
             return None
         

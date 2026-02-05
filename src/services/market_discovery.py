@@ -26,21 +26,24 @@ class DiscoveredMarket:
     token_id_yes: str
     token_id_no: str
     question: str
-    description: str
     sport: str
-    home_team: str | None
-    away_team: str | None
-    game_start_time: datetime | None
-    end_date: datetime | None
     volume_24h: float
     liquidity: float
     current_price_yes: float
     current_price_no: float
     spread: float
+    description: str = ""
+    home_team: str | None = None
+    away_team: str | None = None
+    game_start_time: datetime | None = None
+    end_date: datetime | None = None
     # Kalshi-specific field - ticker for trading
     ticker: str | None = None
     # Platform indicator: always "kalshi"
     platform: str = "kalshi"
+    # Multi-leg (parlay) indicator for MVE markets
+    is_parlay: bool = False
+    parlay_legs: list[dict[str, Any]] | None = None
     
     @property
     def is_high_liquidity(self) -> bool:
@@ -64,13 +67,23 @@ class MarketDiscovery:
                 "knicks", "sixers", "suns", "bucks", "mavs", "nuggets", "clippers",
                 "basketball", "cavaliers", "raptors", "pacers", "hawks", "hornets",
                 "pistons", "magic", "wizards", "thunder", "blazers", "jazz", "kings",
-                "spurs", "grizzlies", "pelicans", "timberwolves", "rockets"],
+                "spurs", "grizzlies", "pelicans", "timberwolves", "rockets",
+                # Cities
+                "boston", "brooklyn", "york", "philadelphia", "toronto", "chicago",
+                "cleveland", "detroit", "indiana", "milwaukee", "atlanta", "charlotte",
+                "miami", "orlando", "washington", "denver", "minnesota", "oklahoma",
+                "portland", "utah", "golden state", "los angeles", "phoenix", "sacramento",
+                "dallas", "houston", "memphis", "orleans", "san antonio"],
         "nfl": ["nfl", "chiefs", "eagles", "bills", "cowboys", "49ers", "ravens",
                 "bengals", "dolphins", "lions", "chargers", "jaguars", "jets",
                 "vikings", "seahawks", "packers", "patriots", "broncos", "raiders",
                 "steelers", "colts", "browns", "titans", "saints", "falcons",
                 "panthers", "buccaneers", "cardinals", "rams", "bears", "giants",
-                "commanders", "texans", "football", "super bowl", "touchdown"],
+                "commanders", "texans", "football", "super bowl", "touchdown",
+                # Cities
+                "kansas city", "buffalo", "cincinnati", "jacksonville", "baltimore",
+                "pittsburgh", "tampa bay", "carolina", "arizona", "seattle", "francisco",
+                "las vegas"],
         "mlb": ["mlb", "yankees", "dodgers", "astros", "braves", "mets", "phillies",
                 "padres", "rangers", "orioles", "rays", "twins", "mariners", "cubs",
                 "cardinals", "red sox", "guardians", "brewers", "diamondbacks",
@@ -141,11 +154,58 @@ class MarketDiscovery:
             return team2, team1
         
         return None, None
+
+    def _parse_datetime(self, value: Any) -> datetime | None:
+        """Parse Kalshi timestamps that may be epoch seconds, ms, or ISO strings."""
+        if not value:
+            return None
+        if isinstance(value, (int, float)):
+            timestamp = float(value)
+            if timestamp > 1_000_000_000_000:
+                timestamp = timestamp / 1000.0
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        return None
+
+    def _parse_price(self, market: dict, keys: list[str], fallback: float = 0.5) -> float:
+        """Parse a price from a market dict, normalizing cents to dollars."""
+        for key in keys:
+            value = market.get(key)
+            if value is None:
+                continue
+            try:
+                price = float(value)
+            except (TypeError, ValueError):
+                continue
+            if price > 1.0:
+                price = price / 100.0
+            return max(0.0, min(1.0, price))
+        return fallback
+
+    def _parse_volume(self, market: dict) -> float:
+        """Parse volume fields with fallbacks for older/newer API shapes."""
+        for key in ("volume_24h", "volume"):
+            value = market.get(key)
+            if value is not None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    pass
+        volume_yes = market.get("volume_yes", 0)
+        volume_no = market.get("volume_no", 0)
+        try:
+            return float(volume_yes) + float(volume_no)
+        except (TypeError, ValueError):
+            return 0.0
     
     async def discover_kalshi_markets(
         self,
         sports: list[str] | None = None,
-        min_volume: int = 100,
+        min_volume: int = 0, # Default to 0 to find all markets, filtering happens later
         hours_ahead: int = 48,
         include_live: bool = True
     ) -> list[DiscoveredMarket]:
@@ -220,10 +280,76 @@ class MarketDiscovery:
             
             markets = all_markets
             logger.info(f"Fetched {len(markets)} markets from Kalshi Sports category")
+
+            existing_tickers = {m.get("ticker") for m in markets if m.get("ticker")}
+            leg_tickers: set[str] = set()
+
+            # Collect underlying leg markets from multi-leg (MVE) markets
+            for market in markets:
+                title = market.get("title", "")
+                subtitle = market.get("subtitle", "")
+                yes_sub = market.get("yes_sub_title", "")
+                no_sub = market.get("no_sub_title", "")
+                text_blob = " ".join([title, subtitle, yes_sub, no_sub]).strip()
+
+                sport = self._detect_sport(text_blob)
+                if not sport:
+                    ticker_upper = (market.get("ticker") or "").upper()
+                    if "NBA" in ticker_upper:
+                        sport = "nba"
+                    elif "NFL" in ticker_upper:
+                        sport = "nfl"
+                    elif "MLB" in ticker_upper:
+                        sport = "mlb"
+                    elif "NHL" in ticker_upper:
+                        sport = "nhl"
+
+                if not sport:
+                    continue
+                if sports and sport not in sports:
+                    continue
+
+                legs = market.get("mve_selected_legs") or []
+                for leg in legs:
+                    leg_ticker = leg.get("market_ticker")
+                    if leg_ticker and leg_ticker not in existing_tickers:
+                        leg_tickers.add(leg_ticker)
+
+            if leg_tickers:
+                extra_markets = []
+                leg_list = list(leg_tickers)
+                logger.info(f"Fetching {len(leg_list)} underlying MVE leg markets")
+                for i in range(0, len(leg_list), 200):
+                    batch = leg_list[i:i + 200]
+                    params = {
+                        "tickers": ",".join(batch),
+                        "limit": len(batch)
+                    }
+                    response = await client.get(
+                        f"{kalshi_api_base}/markets",
+                        params=params,
+                        timeout=30.0
+                    )
+                    if response.status_code != 200:
+                        logger.warning(
+                            f"Kalshi API returned status {response.status_code} for leg batch {i // 200 + 1}"
+                        )
+                        continue
+                    data = response.json()
+                    extra_markets.extend(data.get("markets", []))
+                    await asyncio.sleep(0.1)
+
+                if extra_markets:
+                    markets.extend(extra_markets)
+                    logger.info(f"Added {len(extra_markets)} leg markets (total {len(markets)})")
             
             for market in markets:
                 ticker = market.get("ticker", "")
                 title = market.get("title", "")
+                subtitle = market.get("subtitle", "")
+                yes_sub = market.get("yes_sub_title", "")
+                no_sub = market.get("no_sub_title", "")
+                text_blob = " ".join([title, subtitle, yes_sub, no_sub]).strip()
                 status = market.get("status", "")
                 
                 # Skip non-open markets
@@ -250,7 +376,7 @@ class MarketDiscovery:
                     sport = "nba"
                 else:
                     # Detect sport from title or ticker
-                    sport = self._detect_sport(title)
+                    sport = self._detect_sport(text_blob or title)
                 
                 if not sport:
                     # Try to detect from ticker (e.g., NBA24_LAL_BOS_W_241230)
@@ -272,11 +398,13 @@ class MarketDiscovery:
                     continue
                 
                 # Check timing
-                close_ts = market.get("close_ts", 0)
-                event_start_ts = market.get("event_start_ts", 0)
-                
-                if close_ts:
-                    end_date = datetime.fromtimestamp(close_ts, tz=timezone.utc)
+                close_ts = market.get("close_ts")
+                close_time = market.get("close_time")
+                event_start_ts = market.get("event_start_ts")
+                event_start_time = market.get("event_start_time")
+
+                end_date = self._parse_datetime(close_ts) or self._parse_datetime(close_time)
+                if end_date:
                     
                     # Skip if already ended
                     if end_date < now:
@@ -286,50 +414,100 @@ class MarketDiscovery:
                     if end_date > cutoff and not include_live:
                         continue
                 else:
-                    # Stricter filter: Sports markets must have a closing time
-                    # This filters out markets with missing timestamps (often stale/invalid)
-                    continue
+                    # Permissive fallback: If status is open/active, treat as valid.
+                    # We can use current time + 24h as a placeholder end_date
+                    end_date = now + timedelta(hours=24)
                     
                 game_start_time = None
-                if event_start_ts:
-                    game_start_time = datetime.fromtimestamp(event_start_ts, tz=timezone.utc)
+                if event_start_ts or event_start_time:
+                    game_start_time = (
+                        self._parse_datetime(event_start_ts)
+                        or self._parse_datetime(event_start_time)
+                    )
                 
                 # Get prices
-                yes_price = float(market.get("yes_price", 0.5))
-                no_price = float(market.get("no_price", 0.5))
+                yes_price = self._parse_price(
+                    market,
+                    [
+                        "yes_ask_dollars",
+                        "yes_bid_dollars",
+                        "last_price_dollars",
+                        "yes_ask",
+                        "yes_bid",
+                        "last_price",
+                        "yes_price",
+                    ],
+                    fallback=0.5
+                )
+                no_price = self._parse_price(
+                    market,
+                    [
+                        "no_ask_dollars",
+                        "no_bid_dollars",
+                        "no_ask",
+                        "no_bid",
+                        "no_price",
+                    ],
+                    fallback=1.0 - yes_price
+                )
                 
                 # Calculate spread from yes/no prices
                 spread = abs(yes_price - (1 - no_price))
                 
                 # Volume as liquidity proxy
-                volume = market.get("volume_yes", 0) + market.get("volume_no", 0)
+                volume = self._parse_volume(market)
                 if volume < min_volume:
                     continue
                 
                 # Extract teams from title
+                home_team = None
+                away_team = None
+                
                 if is_special_nba and special_home and special_away:
                     home_team, away_team = special_home, special_away
                 else:
-                    home_team, away_team = self._extract_teams(title, sport)
-                
+                    home_team, away_team = self._extract_teams(text_blob or title, sport)
+                    
+                # Fallback: if vs extraction failed, try to match known cities/teams from keywords
+                if not home_team or not away_team:
+                     # Simple heuristic: find all known sport keywords in the title
+                     found_teams = []
+                     text_lower = title.lower()
+                     if sport in self.SPORT_KEYWORDS:
+                         for kw in self.SPORT_KEYWORDS[sport]:
+                             # Don't match the sport name itself or generic terms
+                             if kw not in [sport, "basketball", "football", "baseball", "hockey"] and kw in text_lower:
+                                 found_teams.append(kw.title())
+                     
+                     if len(found_teams) >= 2:
+                         # Assume first is away, second is home? Or just pair them.
+                         # This allows matching "Detroit, Denver" to finding the game.
+                         away_team = found_teams[0]
+                         home_team = found_teams[1]
+
+                parlay_legs = market.get("mve_selected_legs") or []
+                is_parlay = len(parlay_legs) > 1 or "MULTIGAME" in ticker or "parlay" in title.lower() or "combo" in title.lower()
+
                 discovered_market = DiscoveredMarket(
                     condition_id=ticker,  # Use ticker as condition_id for Kalshi
                     token_id_yes=f"{ticker}_YES",  # Synthetic token IDs
                     token_id_no=f"{ticker}_NO",
                     question=title,
-                    description=market.get("subtitle", ""),
                     sport=sport,
-                    home_team=home_team,
-                    away_team=away_team,
-                    game_start_time=game_start_time,
-                    end_date=end_date,
                     volume_24h=float(volume),
                     liquidity=float(volume * yes_price),  # Approximate liquidity
                     current_price_yes=yes_price,
                     current_price_no=no_price,
                     spread=spread,
+                    description=subtitle or f"{yes_sub} {no_sub}".strip(),
+                    home_team=home_team,
+                    away_team=away_team,
+                    game_start_time=game_start_time,
+                    end_date=end_date,
                     ticker=ticker,
-                    platform="kalshi"
+                    platform="kalshi",
+                    is_parlay=is_parlay,
+                    parlay_legs=parlay_legs or None
                 )
                 
                 discovered.append(discovered_market)
@@ -362,7 +540,7 @@ class MarketDiscovery:
         # Always use Kalshi logic
         return await self.discover_kalshi_markets(
             sports=sports,
-            min_volume=int(min_liquidity / 10),  # Adjust threshold for Kalshi
+            min_volume=0,  # Force 0 to find all markets, regardless of liquidity (filtering happens in strategy)
             hours_ahead=hours_ahead,
             include_live=include_live
         )
