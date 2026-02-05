@@ -83,6 +83,36 @@ export default function History() {
   const winCount = filteredPositions.filter(p => (p.realized_pnl_usdc ?? 0) > 0).length;
   const winRate = filteredPositions.length > 0 ? (winCount / filteredPositions.length) * 100 : 0;
 
+  // Calculate average trade duration
+  const formatDuration = (openedAt: string, closedAt: string | null): string => {
+    if (!closedAt) return '---';
+    const ms = new Date(closedAt).getTime() - new Date(openedAt).getTime();
+    if (ms < 0) return '---';
+    const totalMinutes = Math.floor(ms / 60000);
+    if (totalMinutes < 60) return `${totalMinutes}m`;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours < 24) return `${hours}h ${minutes}m`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ${hours % 24}h`;
+  };
+
+  const avgDuration = useMemo(() => {
+    const withDuration = filteredPositions.filter(p => p.closed_at);
+    if (withDuration.length === 0) return '---';
+    const totalMs = withDuration.reduce((sum, p) => {
+      return sum + (new Date(p.closed_at!).getTime() - new Date(p.opened_at).getTime());
+    }, 0);
+    const avgMs = totalMs / withDuration.length;
+    const avgMinutes = Math.floor(avgMs / 60000);
+    if (avgMinutes < 60) return `${avgMinutes}m`;
+    const hours = Math.floor(avgMinutes / 60);
+    const minutes = avgMinutes % 60;
+    if (hours < 24) return `${hours}h ${minutes}m`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ${hours % 24}h`;
+  }, [filteredPositions]);
+
   // Export CSV handler
   const handleExportCSV = () => {
     if (filteredPositions.length === 0) return;
@@ -130,7 +160,7 @@ export default function History() {
     { label: 'Total Trades', value: String(filteredPositions.length), icon: Target },
     { label: 'Win Rate', value: `${winRate.toFixed(1)}%`, icon: Trophy },
     { label: 'Total P&L', value: `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`, positive: totalPnl >= 0, icon: TrendingUp },
-    { label: 'Avg Duration', value: '---', icon: Clock },
+    { label: 'Avg Duration', value: avgDuration, icon: Clock },
   ];
 
   // Generate P&L chart data from filtered positions
@@ -366,7 +396,7 @@ export default function History() {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <span className="text-sm font-mono-numbers text-muted-foreground">
-                            ---
+                            {formatDuration(position.opened_at, position.closed_at ?? null)}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right">

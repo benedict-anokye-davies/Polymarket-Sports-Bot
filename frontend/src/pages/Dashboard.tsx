@@ -26,28 +26,29 @@ export default function Dashboard() {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const data = await apiClient.getDashboardStats();
 
-        // Only update state if component is still mounted
+        // Fetch dashboard stats and bot status in parallel
+        const [data, botStatus] = await Promise.allSettled([
+          apiClient.getDashboardStats(),
+          apiClient.getBotStatus(),
+        ]);
+
         if (!isMounted) return;
 
-        setStats(data);
-        setError(null);
+        if (data.status === 'fulfilled') {
+          setStats(data.value);
+          setError(null);
+        } else {
+          setError(data.reason instanceof Error ? data.reason.message : 'Failed to load dashboard');
+          setStats(null);
+        }
 
-        // Check trading status
-        try {
-          const botStatus = await apiClient.getBotStatus();
-          if (isMounted) {
-            setIsPaperTrading(botStatus.paper_trading ?? false);
-          }
-        } catch (e) {
-          // Default to live trading
+        if (botStatus.status === 'fulfilled') {
+          setIsPaperTrading(botStatus.value.paper_trading ?? false);
         }
       } catch (err) {
         if (!isMounted) return;
-
         setError(err instanceof Error ? err.message : 'Failed to load dashboard');
-        // Set default values on error
         setStats(null);
       } finally {
         if (isMounted) {

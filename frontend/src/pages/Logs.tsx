@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, RefreshCw, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, RefreshCw, Loader2, ChevronLeft, ChevronRight, Download, Play, Pause } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -31,10 +31,18 @@ export default function Logs() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   useEffect(() => {
     fetchLogs();
   }, [levelFilter, page]);
+
+  // Auto-refresh every 5 seconds when enabled
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(fetchLogs, 5000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, levelFilter, page]);
 
   const fetchLogs = async () => {
     try {
@@ -54,6 +62,27 @@ export default function Logs() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchLogs();
+  };
+
+  const handleExportLogs = () => {
+    if (filteredLogs.length === 0) return;
+    const headers = ['Timestamp', 'Level', 'Module', 'Message'];
+    const rows = filteredLogs.map(log => [
+      log.timestamp,
+      log.level,
+      log.module,
+      `"${log.message.replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `bot-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
   };
 
   const filteredLogs = logs.filter((log) => {
@@ -99,14 +128,38 @@ export default function Logs() {
               />
             </div>
 
-            <Button 
-              variant="outline" 
-              size="icon" 
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "border-border gap-1.5",
+                autoRefresh ? "bg-primary/10 text-primary border-primary/20" : "hover:bg-muted"
+              )}
+              onClick={() => setAutoRefresh(!autoRefresh)}
+            >
+              {autoRefresh ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              {autoRefresh ? 'Live' : 'Auto'}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon"
               className="border-border hover:bg-muted"
               onClick={handleRefresh}
               disabled={refreshing}
             >
               <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border hover:bg-muted"
+              onClick={handleExportLogs}
+              disabled={filteredLogs.length === 0}
+              title="Export logs as CSV"
+            >
+              <Download className="w-4 h-4" />
             </Button>
           </div>
         </Card>

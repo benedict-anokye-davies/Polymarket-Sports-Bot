@@ -16,6 +16,7 @@ import {
   BarChart,
   Bar,
   Legend,
+  Cell,
 } from 'recharts';
 
 interface PerformanceMetrics {
@@ -274,11 +275,17 @@ export default function Analytics() {
                       <Tooltip 
                         formatter={(value: number) => [formatCurrency(value), 'P&L']}
                       />
-                      <Bar 
-                        dataKey="pnl" 
-                        fill="hsl(var(--primary))"
+                      <Bar
+                        dataKey="pnl"
                         radius={[4, 4, 0, 0]}
-                      />
+                      >
+                        {dailyPnL.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={entry.pnl >= 0 ? 'hsl(160, 84%, 39%)' : 'hsl(0, 72%, 51%)'}
+                          />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
