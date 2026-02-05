@@ -110,42 +110,61 @@ class AccountManager:
     
     async def get_client_for_account(self, account_id: UUID):
         """
-        Get or create a KalshiClient for the specified account.
+        Get or create a trading client for specific account.
+        Supports Kalshi platform.
         
         Args:
-            account_id: Account ID to get client for
-            
+            account_id: UUID of the account
+        
         Returns:
             KalshiClient instance
         """
         # Check cache first
         if account_id in self._clients_cache:
             return self._clients_cache[account_id]
-            
-        # Get credentials from DB
-        from src.db.crud.account import AccountCRUD
-        credentials = await AccountCRUD.get_decrypted_credentials(self.db, account_id)
-        
-        if not credentials:
-            return None
-            
-        # Create client
+
+        from src.models import TradingAccount
         from src.services.kalshi_client import KalshiClient
+        from src.core.encryption import decrypt_credential
         
-        # Check for API key (Kalshi)
-        if "api_key" in credentials:
-             # Kalshi
-             client = KalshiClient(
-                api_key=credentials["api_key"],
-                private_key_pem=credentials.get("private_key") or credentials.get("api_secret")
-             )
-        else:
-            # Fallback or Polymarket (not supported but safe to return None)
+        # Manually fetch account to ensure we get credentials for THIS account
+        # (AccountCRUD.get_decrypted_credentials works on USER ID which fetches primary only)
+        stmt = select(TradingAccount).where(TradingAccount.id == account_id)
+        result = await self.db.execute(stmt)
+        account = result.scalar_one_or_none()
+        
+        if not account:
+            logger.error(f"Account {account_id} not found")
             return None
         
-        # Cache it
-        self._clients_cache[account_id] = client
-        return client
+        try:
+            platform = account.platform or "kalshi"
+            environment = getattr(account, 'environment', 'production')
+            
+            if platform != "kalshi":
+                 logger.error(f"Platform {platform} is not supported.")
+                 return None
+
+            # Create Kalshi client
+            api_key = decrypt_credential(account.api_key_encrypted) if account.api_key_encrypted else None
+            api_secret = decrypt_credential(account.api_secret_encrypted) if account.api_secret_encrypted else None
+            
+            if not api_key or not api_secret:
+                logger.error(f"No API credentials found for Kalshi account {account_id}")
+                return None
+            
+            client = KalshiClient(
+                api_key=api_key,
+                private_key_pem=api_secret,
+            )
+            # logger.debug(f"Created KalshiClient for account {account_id} ({environment})")
+            
+            self._clients_cache[account_id] = client
+            return client
+            
+        except Exception as e:
+            logger.error(f"Failed to create client for account {account_id}: {e}")
+            return None
 
     async def get_active_accounts(self) -> list:
         """
@@ -255,97 +274,71 @@ class AccountManager:
             primary_account_id=primary_id,
         )
     
-        """
-        Get or create a trading client for specific account.
-        Supports Kalshi platform.
-        
-        Args:
-            account_id: UUID of the account
-        
-        Returns:
-            Configured KalshiClient or None
-        """
-        from src.models import TradingAccount
-        from src.services.kalshi_client import KalshiClient
-        from src.core.encryption import decrypt_credential
-        
-        if account_id in self._clients_cache:
-            return self._clients_cache[account_id]
-        
-        stmt = select(TradingAccount).where(TradingAccount.id == account_id)
-        result = await self.db.execute(stmt)
-        account = result.scalar_one_or_none()
-        
-        if not account:
-            logger.error(f"Account {account_id} not found")
-            return None
-        
-        try:
-            platform = account.platform or "kalshi"
-            environment = getattr(account, 'environment', 'production')
-            
-            if platform != "kalshi":
-                 logger.error(f"Platform {platform} is not supported.")
-                 return None
 
-            # Create Kalshi client
-            api_key = decrypt_credential(account.api_key_encrypted) if account.api_key_encrypted else None
-            api_secret = decrypt_credential(account.api_secret_encrypted) if account.api_secret_encrypted else None
-            
-            if not api_key or not api_secret:
-                logger.error(f"No API credentials found for Kalshi account {account_id}")
-                return None
-            
-            client = KalshiClient(
-                api_key=api_key,
-                private_key_pem=api_secret,
-            )
-            logger.debug(f"Created KalshiClient for account {account_id} ({environment})")
-            
-            self._clients_cache[account_id] = client
-            return client
-            
-        except Exception as e:
-            logger.error(f"Failed to create client for account {account_id}: {e}")
-            return None
     
     async def get_all_balances(self) -> list[dict]:
         """
-        Get balances for all active accounts.
-        
+        Get balances for all active accounts in parallel.
+
         Returns:
             List of dicts with account_id, name, balance
         """
         accounts = await self.get_active_accounts()
-        balances = []
-        
-        for account in accounts:
+
+        async def _fetch_balance(account) -> dict:
             try:
                 client = await self.get_client_for_account(account.id)
                 if client:
                     balance = await client.get_balance()
-                    # Handle different key names: Polymarket uses 'balance', Kalshi uses 'available_balance'
-                    balance_value = 0
+                    balance_value: float = 0
                     if isinstance(balance, dict):
-                        balance_value = balance.get("balance") or balance.get("available_balance") or balance.get("total_balance") or 0
+                        balance_value = float(
+                            balance.get("balance")
+                            or balance.get("available_balance")
+                            or balance.get("total_balance")
+                            or 0
+                        )
                     else:
-                        balance_value = balance or 0
-                    balances.append({
+                        balance_value = float(balance or 0)
+                    return {
                         "account_id": str(account.id),
                         "account_name": account.account_name or "Primary",
-                        "balance": float(balance_value),
+                        "balance": balance_value,
                         "allocation_pct": float(account.allocation_pct or 100),
                         "is_primary": account.is_primary,
-                    })
+                    }
+                return {
+                    "account_id": str(account.id),
+                    "account_name": account.account_name or "Primary",
+                    "balance": None,
+                    "error": "Failed to create client",
+                }
             except Exception as e:
                 logger.error(f"Failed to get balance for account {account.id}: {e}")
-                balances.append({
+                return {
                     "account_id": str(account.id),
                     "account_name": account.account_name or "Primary",
                     "balance": None,
                     "error": str(e),
+                }
+
+        results = await asyncio.gather(
+            *[_fetch_balance(acc) for acc in accounts],
+            return_exceptions=True
+        )
+
+        balances = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                balances.append({
+                    "account_id": str(accounts[i].id),
+                    "account_name": accounts[i].account_name or "Primary",
+                    "balance": None,
+                    "error": str(result),
                 })
-        
+            else:
+                balances.append(result)
+
         return balances
     
     async def set_account_allocation(

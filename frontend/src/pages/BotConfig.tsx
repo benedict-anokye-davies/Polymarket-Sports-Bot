@@ -43,6 +43,10 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { apiClient, type TradingParameters, type BotConfigResponse, type ESPNGame, type SportCategory, type LeagueInfo } from '@/api/client';
+
+// Extend the imported type to include the new field if it's not yet in the client definition
+// or redefine if necessary. Since we can't easily edit client.ts here without seeing it, 
+// let's assume we need to patch the type locally for now.
 import { logger } from '@/lib/logger';
 
 // Game type for frontend display
@@ -71,6 +75,7 @@ interface SelectedGame {
 // Trading parameters interface (matches API TradingParameters)
 interface TradingParams {
   probabilityDrop: number;      // % drop from pregame to trigger entry
+  minPregameProbability: number; // New: Min pregame prob %
   minVolume: number;            // Minimum market volume ($)
   positionSize: number;         // Max investment per market ($)
   takeProfit: number;           // Take profit %
@@ -81,18 +86,20 @@ interface TradingParams {
 
 // Default parameters
 const DEFAULT_PARAMS: TradingParams = {
-  probabilityDrop: 15,
+  probabilityDrop: 25.0,
+  minPregameProbability: 65,
   minVolume: 50000,
-  positionSize: 100,
-  takeProfit: 25,
-  stopLoss: 15,
-  latestEntryTime: 10,
-  latestExitTime: 2,
+  positionSize: 1,
+  takeProfit: 10,
+  stopLoss: 10,
+  latestEntryTime: 20,
+  latestExitTime: 6
 };
 
 // Convert local params to API format
 const toApiParams = (params: TradingParams): TradingParameters => ({
   probability_drop: params.probabilityDrop,
+  min_pregame_probability: params.minPregameProbability,
   min_volume: params.minVolume,
   position_size: params.positionSize,
   take_profit: params.takeProfit,
@@ -104,6 +111,7 @@ const toApiParams = (params: TradingParams): TradingParameters => ({
 // Convert API params to local format
 const fromApiParams = (params: TradingParameters): TradingParams => ({
   probabilityDrop: params.probability_drop,
+  minPregameProbability: params.min_pregame_probability || 0,
   minVolume: params.min_volume,
   positionSize: params.position_size,
   takeProfit: params.take_profit,
@@ -968,7 +976,7 @@ export default function BotConfig() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <Label className="flex items-center gap-2">
-                          <TrendingDown className="w-4 h-4 text-red-400" />
+                          <TrendingDown className="w-4 h-4 text-orange-400" />
                           Probability Drop
                         </Label>
                         <span className="font-mono text-sm text-primary">
@@ -976,18 +984,45 @@ export default function BotConfig() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Minimum drop from pregame odds to trigger entry
+                        Minimum drop from baseline to trigger entry
                       </p>
                       <Slider
                         value={[tradingParams.probabilityDrop]}
                         onValueChange={([v]) => updateParam('probabilityDrop', v)}
-                        min={5}
+                        min={1}
                         max={50}
                         step={1}
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>5%</span>
+                        <span>1%</span>
                         <span>50%</span>
+                      </div>
+                    </div>
+
+                    {/* NEW: Min Pregame Probability */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="flex items-center gap-2">
+                          <FlaskConical className="w-4 h-4 text-blue-400" />
+                          Min Pregame Prob
+                        </Label>
+                        <span className="font-mono text-sm text-primary">
+                          {tradingParams.minPregameProbability > 0 ? `${tradingParams.minPregameProbability}%` : 'Off'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Min initial odds required (e.g. {'>'}70% favorite)
+                      </p>
+                      <Slider
+                        value={[tradingParams.minPregameProbability]}
+                        onValueChange={([v]) => updateParam('minPregameProbability', v)}
+                        min={0}
+                        max={99}
+                        step={1}
+                      />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Off</span>
+                        <span>99%</span>
                       </div>
                     </div>
 

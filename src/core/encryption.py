@@ -5,6 +5,7 @@ Uses Fernet symmetric encryption for sensitive data like private keys.
 
 import base64
 import hashlib
+import logging
 import os
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -13,6 +14,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from src.config import get_settings
 from src.core.exceptions import ValidationError
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -95,8 +98,8 @@ def decrypt_credential(encrypted_value: str) -> str:
         decrypted = fernet.decrypt(encrypted_value.encode())
         return decrypted.decode()
     except InvalidToken:
-        pass
-    
+        logger.debug("PBKDF2 decryption failed, trying legacy key derivation")
+
     # Fall back to legacy SHA-256 key for backward compatibility
     try:
         key = _derive_key_legacy(settings.secret_key)

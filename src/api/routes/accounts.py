@@ -67,9 +67,15 @@ class SetPrimaryRequest(BaseModel):
     account_id: UUID
 
 
+class AllocationItem(BaseModel):
+    """Single account allocation entry."""
+    account_id: str
+    allocation_pct: float = Field(ge=0, le=100)
+
+
 class AllocationUpdateRequest(BaseModel):
     """Request to update allocation percentages."""
-    allocations: list[dict]
+    allocations: list[AllocationItem]
 
 
 @router.get("/summary", response_model=AccountSummaryResponse)
@@ -164,28 +170,16 @@ async def create_account(
             detail="Kalshi accounts require api_key and api_secret"
         )
     
-    # Validate RSA key format using KalshiClient
-    is_valid, error_msg = KalshiClient.validate_rsa_key(request.api_secret)
+    # Validate RSA key format using KalshiClient (returns 3-tuple)
+    is_valid, error_msg, _ = KalshiClient.validate_rsa_key(request.api_secret)
     if not is_valid:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid RSA private key: {error_msg}"
         )
-    
-    encrypted_key = None
-    if request.private_key:
-        encrypted_key = encrypt_credential(request.private_key)
-    
-    encrypted_api_key = None
-    encrypted_api_secret = None
-    encrypted_api_passphrase = None
-    
-    if request.api_key:
-        encrypted_api_key = encrypt_credential(request.api_key)
-    if request.api_secret:
-        encrypted_api_secret = encrypt_credential(request.api_secret)
-    if request.api_passphrase:
-        encrypted_api_passphrase = encrypt_credential(request.api_passphrase)
+
+    encrypted_api_key = encrypt_credential(request.api_key) if request.api_key else None
+    encrypted_api_secret = encrypt_credential(request.api_secret) if request.api_secret else None
     
     # Use savepoint to ensure atomic primary flag update + account creation
     async with db.begin_nested():
@@ -304,27 +298,21 @@ async def update_allocations(
     
     Expects list of {account_id, allocation_pct} objects.
     """
-    total_pct = sum(a.get("allocation_pct", 0) for a in request.allocations)
+    total_pct = sum(a.allocation_pct for a in request.allocations)
     if abs(total_pct - 100) > 0.01:
         raise HTTPException(
             status_code=400,
             detail=f"Allocations must sum to 100% (got {total_pct}%)"
         )
-    
+
     from sqlalchemy import update
-    
+
     # Update all allocations atomically within a savepoint
     async with db.begin_nested():
         for allocation in request.allocations:
-            account_id = UUID(allocation["account_id"])
-            pct = allocation["allocation_pct"]
-            
-            if pct < 0 or pct > 100:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Allocation must be between 0 and 100 (got {pct})"
-                )
-            
+            account_id = UUID(allocation.account_id)
+            pct = allocation.allocation_pct
+
             stmt = (
                 update(TradingAccount)
                 .where(TradingAccount.id == account_id)

@@ -421,7 +421,20 @@ class BotRunner:
             self.latest_entry_time_minutes = 10
             self.latest_exit_time_minutes = 2
             logger.info("No trading parameters in config, using defaults")
-        
+
+        # Validate trading parameter ranges
+        self.entry_threshold = max(0.01, min(0.99, self.entry_threshold))
+        self.take_profit = max(0.01, min(0.99, self.take_profit))
+        self.stop_loss = max(0.01, min(0.99, self.stop_loss))
+        self.position_size = max(0.01, min(10000.0, self.position_size))
+        self.min_volume = max(0.0, self.min_volume)
+        if self.latest_exit_time_minutes >= self.latest_entry_time_minutes:
+            logger.warning(
+                f"Exit cutoff ({self.latest_exit_time_minutes}min) >= entry cutoff "
+                f"({self.latest_entry_time_minutes}min), adjusting exit to entry - 1"
+            )
+            self.latest_exit_time_minutes = max(1, self.latest_entry_time_minutes - 1)
+
         # Ensure all selected sports are in enabled_sports
         for sport in selected_sports:
             if sport not in self.enabled_sports:
@@ -530,9 +543,21 @@ class BotRunner:
                 }
             )
         
+        # Close trading client to release HTTP connections
+        if hasattr(self.trading_client, 'close'):
+            try:
+                await self.trading_client.close()
+            except Exception as e:
+                logger.warning(f"Error closing trading client: {e}")
+
         self.state = BotState.STOPPED
         self.tracked_games.clear()
         self.token_to_game.clear()
+
+        # Remove from singleton cache to free memory
+        if self.user_id and self.user_id in _bot_instances:
+            del _bot_instances[self.user_id]
+
         logger.info("Trading bot stopped")
     
     async def _discovery_loop(self) -> None:
@@ -974,6 +999,9 @@ class BotRunner:
             # Convert percentage 5.5 -> 0.055
             overrides['entry_threshold_drop'] = float(self.entry_threshold) / 100.0
             
+        if hasattr(self, 'min_pregame_probability') and self.min_pregame_probability:
+            overrides['min_pregame_probability'] = float(self.min_pregame_probability)
+
         # Update TradingEngine's db session with current loop session
         # This is necessary because TradingEngine was initialized with a request-scoped
         # session that may be stale by the time the trading loop runs
@@ -2473,13 +2501,26 @@ async def get_bot_runner(
     return _bot_instances[user_id]
 
 
+def remove_bot_runner(user_id: UUID) -> None:
+    """
+    Remove bot runner instance for a user, freeing memory.
+    Should be called after bot is stopped.
+
+    Args:
+        user_id: User ID
+    """
+    if user_id in _bot_instances:
+        del _bot_instances[user_id]
+        logger.info(f"Removed bot instance for user {user_id}")
+
+
 def get_bot_status(user_id: UUID) -> dict | None:
     """
     Get bot status for a user without creating instance.
-    
+
     Args:
         user_id: User ID
-    
+
     Returns:
         Status dict or None if not running
     """

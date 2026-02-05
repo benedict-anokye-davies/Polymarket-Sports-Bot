@@ -1683,6 +1683,22 @@ export class WebSocketClient {
 }
 
 // =============================================================================
+// Trading Parameters (P1-019)
+// =============================================================================
+
+// Trading parameters
+export interface TradingParameters {
+  probability_drop: number;
+  min_pregame_probability?: number;
+  min_volume: number;
+  position_size: number;
+  take_profit: number;
+  stop_loss: number;
+  latest_entry_time: number;
+  latest_exit_time: number;
+}
+
+// =============================================================================
 // Analytics Types (P1-019)
 // =============================================================================
 

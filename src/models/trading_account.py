@@ -125,7 +125,7 @@ class TradingAccount(Base):
     
     user: Mapped["User"] = relationship(
         "User",
-        back_populates="trading_account"
+        back_populates="trading_accounts"
     )
     
     def __repr__(self) -> str:

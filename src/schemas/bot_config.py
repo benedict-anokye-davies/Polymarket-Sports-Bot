@@ -10,10 +10,16 @@ from decimal import Decimal
 class TradingParameters(BaseModel):
     """Trading parameters for bot configuration"""
     probability_drop: float = Field(
-        default=15.0,
+        default=25.0,
         ge=1.0,
         le=50.0,
         description="Minimum probability drop from pregame to trigger entry (%)"
+    )
+    min_pregame_probability: float = Field(
+        default=65.0,
+        ge=0.0,
+        le=99.0,
+        description="Minimum pregame probability required to consider trading (%)"
     )
     min_volume: float = Field(
         default=50000.0,
@@ -22,31 +28,31 @@ class TradingParameters(BaseModel):
         description="Minimum market volume to enter ($)"
     )
     position_size: float = Field(
-        default=100.0,
-        ge=10.0,
+        default=1.0,
+        ge=1.0,
         le=10000.0,
         description="Maximum amount to invest per market ($)"
     )
     take_profit: float = Field(
-        default=25.0,
+        default=10.0,
         ge=5.0,
         le=200.0,
         description="Take profit percentage (%)"
     )
     stop_loss: float = Field(
-        default=15.0,
+        default=10.0,
         ge=5.0,
         le=50.0,
         description="Stop loss percentage (%)"
     )
     latest_entry_time: int = Field(
-        default=10,
+        default=20,
         ge=0,
         le=60,
         description="No new positions after this many minutes remaining"
     )
     latest_exit_time: int = Field(
-        default=2,
+        default=6,
         ge=0,
         le=30,
         description="Must close positions by this many minutes remaining"

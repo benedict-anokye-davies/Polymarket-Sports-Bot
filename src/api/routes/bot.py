@@ -859,6 +859,10 @@ async def get_live_espn_games(
                 
                 start_time = event.get("date")
                 
+                # Filter out finished games - we only want live or upcoming for selection
+                if is_finished or status_type.get("completed", False):
+                    continue
+                
                 games.append({
                     'id': event.get("id", ""),
                     'homeTeam': home_team['name'] if home_team else 'TBD',

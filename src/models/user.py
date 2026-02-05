@@ -64,10 +64,9 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc)
     )
     
-    trading_account: Mapped["TradingAccount"] = relationship(
+    trading_accounts: Mapped[list["TradingAccount"]] = relationship(
         "TradingAccount",
         back_populates="user",
-        uselist=False,
         cascade="all, delete-orphan"
     )
     sport_configs: Mapped[list["SportConfig"]] = relationship(

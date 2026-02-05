@@ -368,6 +368,23 @@ class TradingEngine:
         current_yes = market.current_price_yes
         baseline_no = market.baseline_price_no or (Decimal("1") - baseline_yes)
         current_no = market.current_price_no or (Decimal("1") - current_yes)
+
+        # New: Check Pregame Probability Threshold
+        # ----------------------------------------
+        # Check overrides first (passed from bot runner)
+        min_pregame_prob = config.overrides.get("min_pregame_probability") if hasattr(config, "overrides") and config.overrides else None
+        
+        # If not in overrides, check config attribute
+        if min_pregame_prob is None:
+             min_pregame_prob = getattr(config, "min_pregame_probability", None)
+             
+        if min_pregame_prob and min_pregame_prob > 0:
+            # Baseline price is 0-1 (Decimal), threshold is 0-100 (float)
+            # Use baseline_yes for Home team concept (usually YES side)
+            baseline_pct = float(baseline_yes) * 100
+            if baseline_pct < min_pregame_prob:
+                # logger.debug(f"Entry set aside: Baseline {baseline_pct:.1f}% < Min Pregame {min_pregame_prob}%")
+                return None
         
         yes_drop = (baseline_yes - current_yes) / baseline_yes if baseline_yes > 0 else Decimal("0")
         no_drop = (baseline_no - current_no) / baseline_no if baseline_no > 0 else Decimal("0")

@@ -11,7 +11,7 @@ import logging
 import time
 import uuid as uuid_mod
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode, quote
 
 import httpx
 from cryptography.hazmat.primitives import hashes
@@ -41,10 +41,12 @@ class KalshiClient:
             private_key_pem: RSA private key in PEM format
         """
         self.api_key = api_key
-        # Auto-format/clean the key before loading
-        valid, _, formatted_key = self.validate_rsa_key(private_key_pem)
-        key_to_load = formatted_key if valid and formatted_key else private_key_pem
-        
+        # Validate and format the key before loading
+        valid, error_msg, formatted_key = self.validate_rsa_key(private_key_pem)
+        if not valid:
+            raise ValueError(f"Invalid RSA private key: {error_msg}")
+        key_to_load = formatted_key or private_key_pem
+
         self.private_key = load_pem_private_key(
             key_to_load.encode(),
             password=None,
@@ -238,9 +240,8 @@ class KalshiClient:
         
         # Add any additional filters (e.g. series_ticker, tickers, event_ticker)
         for k, v in kwargs.items():
-            params += f"&{k}={v}"
-            
-        return await self._authenticated_request("GET", f"/markets{params}")
+            params += f"&{quote(str(k))}={quote(str(v))}"
+
         return await self._authenticated_request("GET", f"/markets{params}")
 
     async def get_market(self, ticker: str) -> Dict:
@@ -286,7 +287,18 @@ class KalshiClient:
         data = await self._authenticated_request("GET", f"/portfolio/positions?status={status}")
         
         # Normalize positions if present
-        positions = data.get("positions", [])
+        # Handle both "positions" and "market_positions" keys as API varies
+        raw_positions = data.get("positions") or data.get("market_positions") or []
+        
+        # Filter out 0-balance positions (phantom/zombie trades)
+        positions = [p for p in raw_positions if p.get("position", 0) != 0]
+        
+        # Ensure consistent structure for return
+        if "market_positions" in data:
+            data["market_positions"] = positions
+        else:
+            data["positions"] = positions
+
         for pos in positions:
             # Convert known cent fields to dollars
             for field in ["fees", "cost_basis", "realized_pnl", "market_exposure"]:
