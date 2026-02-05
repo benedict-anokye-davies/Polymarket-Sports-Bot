@@ -124,10 +124,11 @@ export default function History() {
       'Exit Price',
       'Size (USDC)',
       'Realized P&L',
+      'Duration',
       'Opened At',
       'Closed At',
     ];
-    
+
     const rows = filteredPositions.map(p => [
       p.team || p.token_id,
       p.side,
@@ -135,6 +136,7 @@ export default function History() {
       (p.current_price ?? p.entry_price).toFixed(4),
       p.entry_cost_usdc.toFixed(2),
       (p.realized_pnl_usdc ?? 0).toFixed(2),
+      formatDuration(p.opened_at, p.closed_at ?? null),
       new Date(p.opened_at).toISOString(),
       p.closed_at ? new Date(p.closed_at).toISOString() : '',
     ]);

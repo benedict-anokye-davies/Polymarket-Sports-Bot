@@ -446,41 +446,45 @@ class AccountManager:
     async def get_account_summary(self) -> dict:
         """
         Get summary of all accounts with balances and allocations.
-        
+
+        Uses get_all_balances() which internally fetches active accounts,
+        then reuses the cached accounts to avoid a duplicate DB query.
+
         Returns:
             dict with total_balance, accounts list, allocation_valid
         """
-        accounts = await self.get_active_accounts()
+        # get_all_balances() calls get_active_accounts() internally and
+        # populates self._accounts_cache, so we avoid fetching accounts twice
         balances = await self.get_all_balances()
-        
+        accounts = self._accounts_cache
+
         balance_map = {b["account_id"]: b for b in balances}
-        
+
         total_balance = sum(
             b.get("balance", 0) or 0
             for b in balances
-            if b.get("balance") is not None
         )
-        
+
         total_allocation = sum(
             float(acc.allocation_pct or 0)
             for acc in accounts
         )
-        
+
         account_details = []
         for acc in accounts:
             balance_info = balance_map.get(str(acc.id), {})
             account_details.append({
                 "id": str(acc.id),
                 "name": acc.account_name or "Primary",
-                "platform": acc.platform or "polymarket",
-                "environment": getattr(acc, 'environment', 'production'),  # Kalshi demo/production
+                "platform": acc.platform or "kalshi",
+                "environment": getattr(acc, 'environment', 'production'),
                 "is_primary": acc.is_primary,
                 "is_active": acc.is_active,
                 "allocation_pct": float(acc.allocation_pct or 0),
-                "balance": balance_info.get("balance"),
+                "balance": balance_info.get("balance", 0.0),
                 "error": balance_info.get("error"),
             })
-        
+
         return {
             "total_balance": round(total_balance, 2),
             "total_accounts": len(accounts),
@@ -665,11 +669,14 @@ class AccountManager:
                 self._record_error(account_id, "Failed to get client")
                 return
             
+            # Kalshi API expects: ticker, side, yes_no, price, size
+            # token_id here is the market ticker for Kalshi
             order_result = await client.place_order(
-                token_id=token_id,
+                ticker=token_id,
                 side=side,
+                yes_no="yes",
                 price=price,
-                size=size
+                size=int(size)
             )
             
             order_id = order_result.get("id") or order_result.get("orderID")

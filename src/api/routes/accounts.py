@@ -2,6 +2,7 @@
 Accounts API endpoints - multi-account management.
 """
 
+import logging
 from decimal import Decimal
 from typing import Optional, Literal
 from uuid import UUID
@@ -17,6 +18,8 @@ from src.services.account_manager import AccountManager
 from src.services.kalshi_client import KalshiClient
 from src.core.encryption import encrypt_credential, decrypt_credential
 from src.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -390,7 +393,11 @@ async def get_account_balance(
             "balance": float(balance.get("balance", 0)) if isinstance(balance, dict) else float(balance or 0),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to get balance for account {account_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve account balance. Please check your credentials."
+        )
 
 
 @router.post("/{account_id}/test-connection")
@@ -418,60 +425,52 @@ async def test_account_connection(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     
+    # Safe diagnostics - no key metadata exposed to client
     diagnostics = {
         "account_id": str(account_id),
         "platform": account.platform or "kalshi",
         "environment": getattr(account, 'environment', 'production'),
         "has_api_key": bool(account.api_key_encrypted),
         "has_api_secret": bool(account.api_secret_encrypted),
-        "has_private_key": False,
-        "has_funder_address": False,
     }
-    
+
     if account.platform == "kalshi":
         try:
             from src.services.kalshi_client import KalshiClient
-            
+
             api_key = decrypt_credential(account.api_key_encrypted) if account.api_key_encrypted else None
             api_secret = decrypt_credential(account.api_secret_encrypted) if account.api_secret_encrypted else None
-            
-            diagnostics["api_key_length"] = len(api_key) if api_key else 0
-            diagnostics["api_secret_length"] = len(api_secret) if api_secret else 0
-            diagnostics["api_secret_has_begin_line"] = "-----BEGIN" in (api_secret or "")
-            diagnostics["api_secret_has_end_line"] = "-----END" in (api_secret or "")
-            diagnostics["api_secret_newline_count"] = (api_secret or "").count('\n')
-            
+
             if not api_key or not api_secret:
                 return {
                     "success": False,
                     "error": "Missing API credentials",
                     "diagnostics": diagnostics
                 }
-            
+
             # Try to create client and fetch balance
-            env = getattr(account, 'environment', 'production')
             client = KalshiClient(
                 api_key=api_key,
                 private_key_pem=api_secret,
             )
-            
+
             balance = await client.get_balance()
             await client.close()
-            
+
             return {
                 "success": True,
                 "balance": balance,
                 "diagnostics": diagnostics
             }
-            
+
         except Exception as e:
             import traceback
             logger.error(f"Kalshi connection test failed: {e}\n{traceback.format_exc()}")
+            # Only expose safe error info - no internal details
             diagnostics["error_type"] = type(e).__name__
-            diagnostics["error_message"] = str(e)
             return {
                 "success": False,
-                "error": str(e),
+                "error": "Connection test failed. Check your API key and RSA private key.",
                 "diagnostics": diagnostics
             }
     else:

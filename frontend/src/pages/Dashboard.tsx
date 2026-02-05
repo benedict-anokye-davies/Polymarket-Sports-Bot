@@ -191,7 +191,7 @@ export default function Dashboard() {
                             </span>
                             <div>
                               <p className="text-sm font-medium text-foreground">{activity.category}</p>
-                              <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              <p className="text-xs text-muted-foreground truncate max-w-[400px]" title={activity.message}>
                                 {activity.message}
                               </p>
                             </div>

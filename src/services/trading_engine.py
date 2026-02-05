@@ -213,27 +213,45 @@ class TradingEngine:
     async def _get_exit_price(self, token_id: str) -> float:
         """
         Get current price for exit from Kalshi.
+
+        Tries live API first, then falls back to last known price from
+        the sport_configs/tracked market data. Returns None-safe fallback
+        only as a last resort.
         """
-        # For Kalshi, try to get market data
+        # For Kalshi, try to get market data from API
         try:
             data = await self.client.get_market(token_id)
             market = data.get("market", data)
-            
-            # Get yes_price (cents) and convert to dollars (0-1)
-            # API returns e.g. 45 for 45 cents
-            # Get yes_price (cents or dollars)
-            price_raw = market.get("yes_price", 50)
-            
-            # Normalize to 0-1 range
-            # If > 1, assume cents (e.g. 45 -> 0.45)
-            # If <= 1, assume dollars (e.g. 0.45 -> 0.45)
-            if float(price_raw) > 1:
-                return float(price_raw) / 100.0
-            return float(price_raw)
+
+            # Try yes_ask first (more accurate for selling), then yes_price
+            price_raw = market.get("yes_ask") or market.get("yes_price")
+            if price_raw is not None:
+                # Normalize to 0-1 range
+                # If > 1, assume cents (e.g. 45 -> 0.45)
+                # If <= 1, assume dollars (e.g. 0.45 -> 0.45)
+                if float(price_raw) > 1:
+                    return float(price_raw) / 100.0
+                return float(price_raw)
         except Exception as e:
-            logger.warning(f"Failed to get exit price for {token_id}: {e}")
-            # Fallback: return current market price from tracked data
-            return 0.5
+            logger.warning(f"Failed to get exit price for {token_id} from API: {e}")
+
+        # Fallback: check tracked market data in database
+        try:
+            from src.db.crud.tracked_market import TrackedMarketCRUD
+            tracked = await TrackedMarketCRUD.get_by_condition_id(
+                self.db, self._user_id_uuid, token_id
+            )
+            if tracked and tracked.current_price_yes is not None:
+                return float(tracked.current_price_yes)
+        except Exception as e:
+            logger.debug(f"Could not get tracked market price for {token_id}: {e}")
+
+        # Last resort fallback - log as error since we have no real price data
+        logger.error(
+            f"No price data available for {token_id}, using 0.5 fallback. "
+            f"This may result in inaccurate P&L calculations."
+        )
+        return 0.5
     
     def _get_effective_config(self, market: TrackedMarket, overrides: dict[str, Any] | None = None) -> EffectiveConfig | None:
         """

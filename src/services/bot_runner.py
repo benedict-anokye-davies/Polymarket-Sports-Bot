@@ -248,7 +248,8 @@ class BotRunner:
             )
             
             if config.enabled:
-                self.enabled_sports.append(sport_key)
+                if sport_key not in self.enabled_sports:
+                    self.enabled_sports.append(sport_key)
                 # Use config thresholds (first enabled sport sets defaults)
                 if config.entry_threshold_drop and self.entry_threshold == 0.05:
                     self.entry_threshold = float(config.entry_threshold_drop)
@@ -256,8 +257,15 @@ class BotRunner:
                     self.take_profit = float(config.take_profit_pct)
                 if config.stop_loss_pct and self.stop_loss == 0.10:
                     self.stop_loss = float(config.stop_loss_pct)
-        
-        # Sort enabled sports by priority (lower number = higher priority)
+
+        # Deduplicate and sort enabled sports by priority (lower number = higher priority)
+        seen = set()
+        deduped = []
+        for s in self.enabled_sports:
+            if s not in seen:
+                seen.add(s)
+                deduped.append(s)
+        self.enabled_sports = deduped
         self.enabled_sports.sort(
             key=lambda s: self.sport_stats.get(s, SportStats(sport=s)).priority
         )
@@ -299,28 +307,24 @@ class BotRunner:
         """
         Load user-selected games from BOTH sources:
         1. TrackedMarket table (games selected in Markets page)
-        2. Bot config store (games configured in Bot Config page)
-        
+        2. Bot config from database (games configured in Bot Config page)
+
         This ensures games selected in either location are tracked.
         Also updates enabled_sports to include all sports from selected games.
-        
+
         Args:
             user_id: User ID to load config for
         """
-        from src.api.routes.bot import _bot_configs
         from src.db.crud.tracked_market import TrackedMarketCRUD
-        
-        user_id_str = str(user_id)
+
         self.user_selected_games.clear()
         selected_sports: set[str] = set()
-        
+
         # SOURCE 1: Load from TrackedMarket database (Markets page selections)
         try:
-            # Need a fresh db session for this query
-            from src.db.database import async_session_factory
             async with async_session_factory() as db:
                 db_selected = await TrackedMarketCRUD.get_selected_for_user(db, user_id)
-                
+
                 for market in db_selected:
                     # Use condition_id as game_id for consistency
                     game_id = market.espn_event_id or market.condition_id
@@ -346,9 +350,15 @@ class BotRunner:
                         )
         except Exception as e:
             logger.warning(f"Could not load TrackedMarket selections: {e}")
-        
-        # SOURCE 2: Load from bot config store (Bot Config page)
-        config = _bot_configs.get(user_id_str, {})
+
+        # SOURCE 2: Load from bot config in database (avoids circular import with bot.py routes)
+        config: dict = {}
+        try:
+            async with async_session_factory() as db:
+                config = await GlobalSettingsCRUD.get_bot_config(db, user_id) or {}
+        except Exception as e:
+            logger.warning(f"Could not load bot config from DB: {e}")
+
         games = config.get("games", [])
         
         # Fallback to single game if "games" array not present
@@ -572,27 +582,27 @@ class BotRunner:
             try:
                 async with async_session_factory() as db:
                     logger.info(f"Running market discovery for {self.platform}...")
-                
+
                     # Skip discovery if no games selected by user
                     if not self.user_selected_games:
                         logger.debug("No user-selected games to track")
                         await asyncio.sleep(self.DISCOVERY_INTERVAL)
                         continue
-                
+
                     # Use Kalshi market discovery
                     markets = await discovery_service.discover_kalshi_markets(
                         sports=self.enabled_sports,
                         hours_ahead=168,  # Look ahead 7 days
                         include_live=True
                     )
-                
+
                     logger.info(f"Discovered {len(markets)} sports markets")
-                    
+
                     # 1. Direct Ticker Matching (Bypass ESPN Search)
                     for game_id, config in list(self.user_selected_games.items()):
                         if game_id in self.tracked_games:
                             continue
-                            
+
                         target_ticker = config.get("market_ticker")
                         if target_ticker:
                             matched = next((m for m in markets if m.ticker == target_ticker), None)
@@ -600,7 +610,7 @@ class BotRunner:
                                 logger.info(f"Direct Match Found for Ticker {target_ticker}")
                                 # Create Synthetic Game Object
                                 fake_game = {
-                                    "id": game_id, 
+                                    "id": game_id,
                                     "name": f"{matched.away_team} at {matched.home_team}",
                                     "shortName": f"{matched.away_team} @ {matched.home_team}",
                                     "competitions": [{
@@ -608,12 +618,12 @@ class BotRunner:
                                             {"homeAway": "home", "team": {"displayName": matched.home_team, "name": matched.home_team}},
                                             {"homeAway": "away", "team": {"displayName": matched.away_team, "name": matched.away_team}}
                                         ],
-                                        "status": {"type": {"state": "pre", "name": "STATUS_SCHEDULED"}}, 
+                                        "status": {"type": {"state": "pre", "name": "STATUS_SCHEDULED"}},
                                         "date": matched.game_start_time.isoformat() if matched.game_start_time else datetime.now().isoformat()
                                     }]
                                 }
                                 await self._start_tracking_game(
-                                    db, # Use existing session from context manager
+                                    db,
                                     event_id=game_id,
                                     sport=matched.sport,
                                     home_team=matched.home_team or "Home",
@@ -626,38 +636,38 @@ class BotRunner:
                     # 2. Match markets to ESPN games - ONLY for user-selected games
                     for sport in self.enabled_sports:
                         games = await self.espn_service.get_live_games(sport)
-                    
+
                         for game in games:
                             event_id = game.get("id")
-                        
+
                             if event_id in self.tracked_games:
                                 continue  # Already tracking
-                        
+
                             # Try to match to a market
                             competitors = game.get("competitions", [{}])[0].get("competitors", [])
                             if len(competitors) < 2:
                                 continue
-                        
+
                             home = next((c for c in competitors if c.get("homeAway") == "home"), None)
                             away = next((c for c in competitors if c.get("homeAway") == "away"), None)
-                        
+
                             if not home or not away:
                                 continue
-                        
+
                             home_name = home.get("team", {}).get("displayName", "")
                             away_name = away.get("team", {}).get("displayName", "")
-                        
+
                             # Find matching market
                             matched_market = await self._find_matching_market(
                                 markets, home_name, away_name, sport
                             )
-                        
+
                             if matched_market:
                                 # Check if this market is user-selected (by ESPN ID or Condition ID)
                                 user_game_config = self.user_selected_games.get(event_id)
                                 if not user_game_config:
                                     user_game_config = self.user_selected_games.get(matched_market.condition_id)
-                                
+
                                 # If still not found, skip (unless we want to auto-track everything, but sticking to user selection for now)
                                 if not user_game_config:
                                     continue
@@ -665,10 +675,10 @@ class BotRunner:
                                 selected_side = user_game_config.get("selected_side", "home")
 
                                 await self._start_tracking_game(
-                                    db, event_id, sport, home_name, away_name, 
+                                    db, event_id, sport, home_name, away_name,
                                     matched_market, game, selected_side=selected_side
                                 )
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -678,16 +688,17 @@ class BotRunner:
                     str(e),
                     "discovery_loop"
                 )
-                # Log to activity database
+                # Log to activity database using a fresh session
                 if self.user_id:
                     try:
-                        await ActivityLogCRUD.error(
-                            db,
-                            self.user_id,
-                            "DISCOVERY",
-                            f"Market discovery failed: {str(e)[:200]}",
-                            {"error_type": type(e).__name__, "loop": "discovery"}
-                        )
+                        async with async_session_factory() as error_db:
+                            await ActivityLogCRUD.error(
+                                error_db,
+                                self.user_id,
+                                "DISCOVERY",
+                                f"Market discovery failed: {str(e)[:200]}",
+                                {"error_type": type(e).__name__, "loop": "discovery"}
+                            )
                     except Exception as log_err:
                         logger.debug(f"Suppressed logging error: {log_err}")
             
@@ -704,29 +715,30 @@ class BotRunner:
                 async with async_session_factory() as db:
                     # Use GameTrackerService to update all games
                     finished_games = await self.game_tracker.update_all_games()
-                
+
                     # Update local tracked games map in case the service modified it (unlikely but safe)
                     self.tracked_games = self.game_tracker.tracked_games
-                
+
                     for game in finished_games:
                         # Log finished game
                         logger.info(f"Game finished: {game.home_team} vs {game.away_team}")
                         await self._handle_game_finished(db, game)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in ESPN poll loop: {e}")
-                # Log to activity database
+                # Log to activity database using a fresh session
                 if self.user_id:
                     try:
-                        await ActivityLogCRUD.warning(
-                            db,
-                            self.user_id,
-                            "ESPN",
-                            f"ESPN polling error: {str(e)[:200]}",
-                            {"error_type": type(e).__name__, "loop": "espn_poll"}
-                        )
+                        async with async_session_factory() as error_db:
+                            await ActivityLogCRUD.warning(
+                                error_db,
+                                self.user_id,
+                                "ESPN",
+                                f"ESPN polling error: {str(e)[:200]}",
+                                {"error_type": type(e).__name__, "loop": "espn_poll"}
+                            )
                     except Exception as log_err:
                         logger.debug(f"Suppressed logging error: {log_err}")
             
@@ -734,51 +746,52 @@ class BotRunner:
 
     async def _price_poll_loop(self) -> None:
         """
-        Poll Kalshi for price updates on tracked markets.
-        
-        Runs every DISCOVERY_INTERVAL seconds (reusing interval or usually ~5-10s).
+        Poll Kalshi for price updates on tracked markets in parallel.
+
+        Runs every PRICE_POLL_INTERVAL seconds.
         Crucial for Kalshi since we don't have WebSocket price feeds.
+        Uses asyncio.gather for parallel HTTP requests instead of sequential polling.
         """
         PRICE_POLL_INTERVAL = 10.0
-        
+
+        async def _fetch_and_update_price(event_id: str, game) -> None:
+            """Fetch price for a single market and update tracked game state."""
+            try:
+                market_data = await self.trading_client.get_market(game.market.ticker)  # type: ignore
+
+                if not market_data:
+                    return
+
+                # Extract market info (Kalshi wraps in "market" key usually)
+                data = market_data.get("market", market_data)
+
+                # Kalshi returns prices in cents (1-99). Normalize to 0-1.
+                yes_ask = data.get("yes_ask", 0)
+
+                # Update TrackedGame state
+                game.current_price = float(yes_ask) / 100.0 if yes_ask > 0 else None
+
+                # Update DB model-like market object attached to game
+                if game.market:
+                    game.market.current_price_yes = Decimal(str(game.current_price)) if game.current_price is not None else None
+                    game.market.current_price_no = Decimal(str(1.0 - game.current_price)) if game.current_price is not None else None
+
+            except Exception as e:
+                logger.warning(f"Failed to fetch price for {game.market.ticker}: {e}")
+
         while not self._stop_event.is_set():
             try:
-                # Iterate over tracked games and update prices
-                # Use list() to create a copy of items to avoid modification during iteration issues
+                # Build list of price fetch tasks for all tracked games with markets
+                tasks = []
                 for event_id, game in list(self.tracked_games.items()):
-                    # Skip if no market associated
                     if not game.market or not game.market.ticker:
                         continue
-                        
-                    try:
-                        # Fetch latest market data
-                        # Type ignore because we know self.trading_client is KalshiClient in this flow
-                        # but typed as TradingClient protocol which might not expose get_market
-                        market_data = await self.trading_client.get_market(game.market.ticker) # type: ignore
-                        
-                        if not market_data:
-                            continue
-                            
-                        # Extract market info (Kalshi wraps in "market" key usually)
-                        data = market_data.get("market", market_data)
-                        
-                        # Update price fields
-                        # Kalshi returns prices in cents (1-99). Normalize to 0-1.
-                        yes_ask = data.get("yes_ask", 0)
-                        yes_bid = data.get("yes_bid", 0)
-                        
-                        # Update TrackedGame state
-                        game.current_price = float(yes_ask) / 100.0 if yes_ask > 0 else None
-                        
-                        # Update DB model-like market object attached to game
-                        if game.market:
-                            game.market.current_price_yes = Decimal(str(game.current_price)) if game.current_price is not None else None
-                            # Assuming single-outcome or binary, NO price is inverse or from no_ask
-                            game.market.current_price_no = Decimal(str(1.0 - game.current_price)) if game.current_price is not None else None
-                        
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch price for {game.market.ticker}: {e}")
-                
+                    tasks.append(_fetch_and_update_price(event_id, game))
+
+                # Execute all price fetches in parallel
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:

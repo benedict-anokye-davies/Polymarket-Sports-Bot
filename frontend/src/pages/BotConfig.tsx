@@ -133,6 +133,7 @@ export default function BotConfig() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Always use live trading mode (no paper trading - Kalshi has no demo)
   const simulationMode = false;
@@ -182,6 +183,25 @@ export default function BotConfig() {
     setSuccessMessage(`Added direct ticker: ${ticker}`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
+
+  // Warn user about unsaved changes before leaving the page
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  // Mark changes as unsaved when trading params change (after initial load)
+  const [configLoaded, setConfigLoaded] = useState(false);
+  useEffect(() => {
+    if (configLoaded) {
+      setHasUnsavedChanges(true);
+    }
+  }, [tradingParams, selectedGames]);
 
   // Check if games were passed from Markets page
   useEffect(() => {
@@ -275,8 +295,10 @@ export default function BotConfig() {
         // without the game data, so we'll let the user re-select from the available games
         if (config.parameters) setTradingParams(fromApiParams(config.parameters));
         // Simulation mode removed - always live trading for Kalshi
+        setConfigLoaded(true);
       } catch (err) {
         // Using defaults when no config exists
+        setConfigLoaded(true);
       }
     };
     loadConfig();
@@ -518,6 +540,7 @@ export default function BotConfig() {
         s.side === 'home' ? s.game.homeTeam : s.game.awayTeam
       ).join(', ');
       setSuccessMessage(`Configuration saved (${modeStr}) betting on: ${teamsStr}`);
+      setHasUnsavedChanges(false);
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
@@ -581,6 +604,7 @@ export default function BotConfig() {
         ).join(', ');
         setSuccessMessage(`Bot started ${modeStr} betting on: ${teamsStr}`);
       }
+      setHasUnsavedChanges(false);
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to toggle bot');

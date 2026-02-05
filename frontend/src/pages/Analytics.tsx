@@ -151,7 +151,7 @@ export default function Analytics() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${(metrics?.total_pnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+              <div className={`text-2xl font-bold ${(metrics?.total_pnl ?? 0) >= 0 ? 'text-profit' : 'text-loss'}`}>
                 {formatCurrency(metrics?.total_pnl ?? 0)}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -196,7 +196,7 @@ export default function Analytics() {
               <TrendingDown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-500">
+              <div className="text-2xl font-bold text-loss">
                 -{metrics?.max_drawdown?.toFixed(1) ?? 0}%
               </div>
               <p className="text-xs text-muted-foreground">
@@ -224,7 +224,7 @@ export default function Analytics() {
                 <div className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={equityCurve}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" />
                       <XAxis 
                         dataKey="timestamp" 
                         tickFormatter={(v) => new Date(v).toLocaleDateString()}
@@ -262,7 +262,7 @@ export default function Analytics() {
                 <div className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={dailyPnL}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" />
                       <XAxis 
                         dataKey="date" 
                         tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -317,7 +317,7 @@ export default function Analytics() {
                             {sport.total_trades} trades | {formatPercent(sport.win_rate)} win rate
                           </p>
                         </div>
-                        <div className={`text-lg font-semibold ${sport.total_pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        <div className={`text-lg font-semibold ${sport.total_pnl >= 0 ? 'text-profit' : 'text-loss'}`}>
                           {formatCurrency(sport.total_pnl)}
                         </div>
                       </div>
@@ -342,19 +342,19 @@ export default function Analytics() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Average Win</span>
-                <span className="font-medium text-green-500">{formatCurrency(metrics?.avg_win ?? 0)}</span>
+                <span className="font-medium text-profit">{formatCurrency(metrics?.avg_win ?? 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Average Loss</span>
-                <span className="font-medium text-red-500">-{formatCurrency(metrics?.avg_loss ?? 0)}</span>
+                <span className="font-medium text-loss">-{formatCurrency(metrics?.avg_loss ?? 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Largest Win</span>
-                <span className="font-medium text-green-500">{formatCurrency(metrics?.largest_win ?? 0)}</span>
+                <span className="font-medium text-profit">{formatCurrency(metrics?.largest_win ?? 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Largest Loss</span>
-                <span className="font-medium text-red-500">-{formatCurrency(metrics?.largest_loss ?? 0)}</span>
+                <span className="font-medium text-loss">-{formatCurrency(metrics?.largest_loss ?? 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Avg Trade Duration</span>
@@ -370,25 +370,25 @@ export default function Analytics() {
             <CardContent className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Current Streak</span>
-                <span className={`font-medium ${(metrics?.current_streak ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                <span className={`font-medium ${(metrics?.current_streak ?? 0) >= 0 ? 'text-profit' : 'text-loss'}`}>
                   {metrics?.current_streak ?? 0} {(metrics?.current_streak ?? 0) >= 0 ? 'wins' : 'losses'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Max Win Streak</span>
-                <span className="font-medium text-green-500">{metrics?.max_win_streak ?? 0}</span>
+                <span className="font-medium text-profit">{metrics?.max_win_streak ?? 0}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Max Lose Streak</span>
-                <span className="font-medium text-red-500">{metrics?.max_lose_streak ?? 0}</span>
+                <span className="font-medium text-loss">{metrics?.max_lose_streak ?? 0}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Gross Profit</span>
-                <span className="font-medium text-green-500">{formatCurrency(metrics?.gross_profit ?? 0)}</span>
+                <span className="font-medium text-profit">{formatCurrency(metrics?.gross_profit ?? 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Gross Loss</span>
-                <span className="font-medium text-red-500">-{formatCurrency(metrics?.gross_loss ?? 0)}</span>
+                <span className="font-medium text-loss">-{formatCurrency(metrics?.gross_loss ?? 0)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Calmar Ratio</span>
