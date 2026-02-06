@@ -1289,11 +1289,17 @@ class BotRunner:
             exit_message = "Emergency stop activated"
         else:
             # Build overrides from frontend config
+            # NOTE: self.take_profit and self.stop_loss are ALREADY decimals (e.g., 0.15 for 15%)
+            # They were converted from percentage in _load_user_selected_games
             overrides = {}
             if hasattr(self, 'take_profit') and self.take_profit:
-                overrides['take_profit_pct'] = float(self.take_profit) / 100.0
+                overrides['take_profit_pct'] = float(self.take_profit)  # Already decimal, don't divide again!
             if hasattr(self, 'stop_loss') and self.stop_loss:
-                overrides['stop_loss_pct'] = float(self.stop_loss) / 100.0
+                overrides['stop_loss_pct'] = float(self.stop_loss)  # Already decimal, don't divide again!
+            
+            logger.debug(
+                f"Exit evaluation using: take_profit={self.take_profit:.2%}, stop_loss={self.stop_loss:.2%}"
+            )
 
             # Delegate to TradingEngine for standard exit conditions
             exit_signal = await self.trading_engine.evaluate_exit(
