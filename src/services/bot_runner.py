@@ -1072,11 +1072,28 @@ class BotRunner:
                 logger.warning(f"Slippage too high for {game.home_team} vs {game.away_team}")
                 return
 
+            # ========== CRITICAL: LIVE-ONLY TRADING ENFORCEMENT ==========
+            # Final validation: ONLY execute if game is LIVE (status = "in")
+            # This is the last line of defense before money is at risk
+            if game.game_status != "in":
+                logger.warning(
+                    f"BLOCKED pre-game entry: {game.home_team} vs {game.away_team} "
+                    f"game_status='{game.game_status}' (must be 'in' for live trading)"
+                )
+                return
+            
+            logger.info(
+                f"LIVE TRADE EXECUTION: {game.home_team} vs {game.away_team} "
+                f"status='{game.game_status}' period={game.period} clock={game.clock}"
+            )
+            # =============================================================
+
             # Execute entry
             await self._execute_entry_order(
                 db, game, token_id, side, price, position_size,
                 reason, confidence_score, confidence_breakdown
             )
+
     
     async def _execute_entry_order(
         self,
