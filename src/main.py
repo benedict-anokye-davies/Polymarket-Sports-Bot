@@ -174,12 +174,12 @@ async def lifespan(app: FastAPI):
         from src.db.crud.global_settings import GlobalSettingsCRUD
         from src.db.crud.account import AccountCRUD
         from src.api.routes.bot import _create_bot_dependencies, get_bot_runner
-        
+
         async with async_session_factory() as startup_db:
             # Find users with bot enabled
             enabled_settings = await GlobalSettingsCRUD.get_all_enabled(startup_db)
             logger.info(f"Found {len(enabled_settings)} users with bot enabled for auto-start")
-            
+
             for settings in enabled_settings:
                 user_id = settings.user_id
                 try:
@@ -187,15 +187,27 @@ async def lifespan(app: FastAPI):
                     if not credentials:
                         logger.warning(f"Skipping auto-start for user {user_id}: No credentials")
                         continue
-                        
+
                     tc, te, es = await _create_bot_dependencies(startup_db, user_id, credentials)
                     runner = await get_bot_runner(user_id, tc, te, es)
                     await runner.initialize(startup_db, user_id)
-                    
-                    # Start in background task (we don't have BackgroundTasks here, use asyncio.create_task)
-                    asyncio.create_task(runner.start(startup_db))
+
+                    # Start in background task with its own database session.
+                    # Do NOT pass startup_db - it will be closed when the
+                    # async with block exits. The runner.start() method and its
+                    # background loops already create their own sessions via
+                    # async_session_factory().
+                    async def _auto_start_bot(bot_runner, uid):
+                        """Wrapper that gives the bot its own session for the start() call."""
+                        try:
+                            async with async_session_factory() as bot_db:
+                                await bot_runner.start(bot_db)
+                        except Exception as start_err:
+                            logger.error(f"Bot runner crashed for user {uid}: {start_err}")
+
+                    asyncio.create_task(_auto_start_bot(runner, user_id))
                     logger.info(f"Auto-started bot runner for user {user_id}")
-                    
+
                 except Exception as user_err:
                     logger.error(f"Failed to auto-start bot for user {user_id}: {user_err}")
     except Exception as e:

@@ -291,16 +291,46 @@ class AnalyticsService:
     async def get_sport_breakdown(self) -> list[SportPerformance]:
         """Get performance breakdown by sport."""
         from src.models import Position
+        from sqlalchemy import case
         
         query = (
             select(
                 Position.sport,
                 func.count(Position.id).label("total"),
                 func.sum(
-                    func.case(
-                        (Position.exit_price > Position.entry_price, 1),
-                    ).else_(0)
+                    case(
+                        [(Position.exit_price > Position.entry_price, 1)],
+                        else_=0
+                    )
                 ).label("wins"),
+                # Sum for NFL
+                func.sum(
+                    case(
+                        [(Position.market_id.ilike("%NFL%"), Position.market_exposure)],
+                        else_=0
+                    )
+                ),
+                # Sum for NBA
+                func.sum(
+                    case(
+                        [(Position.market_id.ilike("%NBA%"), Position.market_exposure)],
+                        else_=0
+                    )
+                ),
+                # Sum for MLB
+                func.sum(
+                    case(
+                        [(Position.market_id.ilike("%MLB%"), Position.market_exposure)],
+                        else_=0
+                    )
+                ),
+                # Sum for NHL
+                func.sum(
+                    case(
+                        [(Position.market_id.ilike("%NHL%"), Position.market_exposure)],
+                        else_=0
+                    )
+                )
             )
             .where(
                 and_(

@@ -592,7 +592,7 @@ class BotRunner:
                     # Use Kalshi market discovery
                     markets = await discovery_service.discover_kalshi_markets(
                         sports=self.enabled_sports,
-                        hours_ahead=168,  # Look ahead 7 days
+                        hours_ahead=48,  # Look ahead 48 hours (today/tomorrow)
                         include_live=True
                     )
 
@@ -1544,7 +1544,7 @@ class BotRunner:
             for position in open_positions:
                 # Get the tracked market data
                 tracked_market = await TrackedMarketCRUD.get_by_condition_id(
-                    db, position.condition_id
+                    db, self.user_id, position.condition_id
                 )
                 
                 if not tracked_market:
@@ -1567,9 +1567,16 @@ class BotRunner:
                     spread=0.02
                 )
                 
-                # Create tracked game entry
-                event_id = tracked_market.espn_event_id or f"recovered_{position.id}"
-                
+                # Create tracked game entry.
+                # Prefer real ESPN event ID. Fall back to condition_id to avoid
+                # synthetic keys that can cause duplicate tracking when the
+                # discovery loop later finds the real ESPN event ID.
+                event_id = (
+                    tracked_market.espn_event_id
+                    or tracked_market.condition_id
+                    or f"recovered_{position.id}"
+                )
+
                 tracked = TrackedGame(
                     espn_event_id=event_id,
                     sport=tracked_market.sport,
@@ -1581,7 +1588,7 @@ class BotRunner:
                     has_position=True,
                     position_id=position.id
                 )
-                
+
                 self.tracked_games[event_id] = tracked
                 self.game_tracker.add_game(tracked)
                 self.token_to_game[market.token_id_yes] = event_id
@@ -2341,7 +2348,27 @@ class BotRunner:
         """
         # Get baseline price
         baseline = market.current_price_yes
-        
+
+        # Prevent duplicate tracking: check if this market's token is already
+        # tracked under a different key (e.g. recovered position using
+        # condition_id as key, now being discovered with real ESPN event_id).
+        existing_key = self.token_to_game.get(market.token_id_yes)
+        if existing_key and existing_key != event_id and existing_key in self.tracked_games:
+            old_game = self.tracked_games[existing_key]
+            logger.info(
+                f"Upgrading tracked game key from {existing_key} to {event_id} "
+                f"for {home_team} vs {away_team}"
+            )
+            # Migrate the existing entry to the new (real) event_id,
+            # preserving position state
+            old_game.espn_event_id = event_id
+            self.tracked_games[event_id] = old_game
+            del self.tracked_games[existing_key]
+            self.game_tracker.remove_game(existing_key)
+            self.game_tracker.add_game(old_game)
+            self.token_to_game[market.token_id_yes] = event_id
+            return  # Already tracking - just upgraded the key
+
         tracked = TrackedGame(
             espn_event_id=event_id,
             sport=sport,
@@ -2352,7 +2379,7 @@ class BotRunner:
             current_price=baseline,
             selected_side=selected_side
         )
-        
+
         if event_id not in self.tracked_games:
             self.tracked_games[event_id] = tracked
             self.game_tracker.add_game(tracked)
@@ -2394,31 +2421,58 @@ class BotRunner:
     ) -> None:
         """
         Handle a game that has finished.
-        
+
         Closes any open positions and removes from tracking.
+        Only removes from tracking if exit was successful or no position exists.
         """
         # Close any open position
         if game.has_position and game.position_id:
-            await self._evaluate_exit(db, game)
-        
-        # Remove from tracking
+            try:
+                await self._evaluate_exit(db, game)
+            except Exception as e:
+                logger.error(
+                    f"Failed to exit position for finished game "
+                    f"{game.home_team} vs {game.away_team}: {e}"
+                )
+                await discord_notifier.notify_error(
+                    "Game Finished Exit Failed",
+                    f"{game.home_team} vs {game.away_team}: {e}",
+                    "game_finished_exit"
+                )
+
+            # Verify position was actually closed before removing from tracking
+            if game.has_position and game.position_id:
+                # Re-check from database in case _evaluate_exit updated it
+                try:
+                    position = await PositionCRUD.get_by_id(db, game.position_id)
+                    if position and position.status == "open":
+                        logger.warning(
+                            f"Position {game.position_id} still open after game finished. "
+                            f"Keeping in tracking for retry on next cycle."
+                        )
+                        return  # Don't remove - will retry on next cleanup cycle
+                except Exception as check_err:
+                    logger.error(f"Could not verify position status: {check_err}")
+                    return  # Don't remove if we can't verify
+
+        # Position is closed (or never existed) - safe to remove from tracking
         if game.espn_event_id in self.tracked_games:
             del self.tracked_games[game.espn_event_id]
             self.game_tracker.remove_game(game.espn_event_id)
-            
+
         if game.market.token_id_yes in self.token_to_game:
             del self.token_to_game[game.market.token_id_yes]
-        
+
         # Unsubscribe from WebSocket
         if self.websocket:
             await self.websocket.unsubscribe(game.market.condition_id)
-        
+
         # Update database
         await TrackedMarketCRUD.deactivate(
             db,
             condition_id=game.market.condition_id
         )
-        
+
         logger.info(
             f"Stopped tracking finished game: {game.home_team} vs {game.away_team}"
         )

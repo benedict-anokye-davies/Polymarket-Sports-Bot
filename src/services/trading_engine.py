@@ -335,6 +335,17 @@ class TradingEngine:
         entry_signal = self._check_price_conditions(market, config)
         
         if entry_signal:
+            # CHECK: Single position per team limit
+            # This ensures "one bet per team" as requested by user.
+            target_team_name = entry_signal.get("team")
+            if target_team_name:
+                open_team_count = await PositionCRUD.count_open_for_team(
+                    self.db, self._user_id_uuid, target_team_name
+                )
+                if open_team_count > 0:
+                    logger.debug(f"Entry blocked: Already have an open position for team {target_team_name}")
+                    return None
+
             # Calculate confidence score
             confidence_result = self._calculate_confidence(
                 market, game_state, config
@@ -411,12 +422,21 @@ class TradingEngine:
         absolute = config.absolute_entry_price
         
         if yes_drop >= threshold or current_yes <= absolute:
+            # CHECK: Single position per team limit
+            team_name = market.home_team
+            if team_name:
+                open_team_positions = 0
+                # We need access to DB here, but _check_price_conditions is synchronous.
+                # I'll move this check to evaluate_entry instead.
+                pass
+
             return {
                 "side": "YES",
                 "token_id": market.token_id_yes,
                 "price": float(current_yes),
                 "reason": f"YES price drop: {float(yes_drop)*100:.1f}% (threshold: {float(threshold)*100:.1f}%)",
                 "position_size": float(config.default_position_size_usdc),
+                "team": market.home_team
             }
         
         if no_drop >= threshold or current_no <= absolute:
@@ -426,6 +446,7 @@ class TradingEngine:
                 "price": float(current_no),
                 "reason": f"NO price drop: {float(no_drop)*100:.1f}% (threshold: {float(threshold)*100:.1f}%)",
                 "position_size": float(config.default_position_size_usdc),
+                "team": market.away_team
             }
         
         return None

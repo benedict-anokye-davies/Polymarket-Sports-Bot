@@ -281,6 +281,26 @@ class MarketDiscovery:
             markets = all_markets
             logger.info(f"Fetched {len(markets)} markets from Kalshi Sports category")
 
+            # TARGETED DISCOVERY: NBA specific series
+            # As per user/investigation, NBA games are under KXNBAGAME, KXNBASPREAD, KXNBATOTAL
+            # and may be "unopened" or "active" but not showing in broad "Sports" query sometimes.
+            if sports and "nba" in sports:
+                nba_series_list = ["KXNBAGAME", "KXNBASPREAD", "KXNBATOTAL"]
+                logger.info(f"Fetching targeted NBA series: {nba_series_list}")
+                
+                for series in nba_series_list:
+                    # Try fetching with no status filter to get everything (open, unopened, active)
+                    try:
+                        p = {"series_ticker": series, "limit": 100}
+                        resp = await client.get(f"{kalshi_api_base}/markets", params=p, timeout=10.0)
+                        if resp.status_code == 200:
+                            s_data = resp.json()
+                            s_markets = s_data.get("markets", [])
+                            logger.info(f"Fetched {len(s_markets)} markets for series {series}")
+                            markets.extend(s_markets)
+                    except Exception as e:
+                        logger.warning(f"Error fetching series {series}: {e}")
+
             existing_tickers = {m.get("ticker") for m in markets if m.get("ticker")}
             leg_tickers: set[str] = set()
 

@@ -266,6 +266,27 @@ class PositionCRUD:
             )
         )
         return result.scalar() or 0
+
+    @staticmethod
+    async def count_open_for_team(
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        team_name: str
+    ) -> int:
+        """
+        Counts open positions for a specific team name.
+        """
+        if not team_name:
+            return 0
+            
+        result = await db.execute(
+            select(func.count(Position.id)).where(
+                Position.user_id == user_id,
+                Position.team == team_name,
+                Position.status == "open"
+            )
+        )
+        return result.scalar() or 0
     
     @staticmethod
     async def get_win_rate(db: AsyncSession, user_id: uuid.UUID) -> float:
