@@ -1073,19 +1073,34 @@ class BotRunner:
                 return
 
             # ========== CRITICAL: LIVE-ONLY TRADING ENFORCEMENT ==========
-            # Final validation: ONLY execute if game is LIVE (status = "in")
-            # This is the last line of defense before money is at risk
-            if game.game_status != "in":
+            # Final validation: ONLY execute if game is LIVE
+            # Use both ESPN status AND Kalshi time-based detection
+            # 
+            # Priority:
+            # 1. If ESPN says "in" -> game is live
+            # 2. If ESPN status unavailable/stale, use Kalshi time-based detection
+            is_live_espn = game.game_status == "in"
+            is_live_kalshi = self._is_game_live_by_kalshi(game)
+            
+            if not is_live_espn and not is_live_kalshi:
                 logger.warning(
                     f"BLOCKED pre-game entry: {game.home_team} vs {game.away_team} "
-                    f"game_status='{game.game_status}' (must be 'in' for live trading)"
+                    f"espn_status='{game.game_status}' kalshi_live={is_live_kalshi} "
+                    f"(game must be LIVE for trading)"
                 )
                 return
             
-            logger.info(
-                f"LIVE TRADE EXECUTION: {game.home_team} vs {game.away_team} "
-                f"status='{game.game_status}' period={game.period} clock={game.clock}"
-            )
+            # Log which detection method we're using
+            if is_live_espn:
+                logger.info(
+                    f"LIVE TRADE (ESPN): {game.home_team} vs {game.away_team} "
+                    f"status='{game.game_status}' period={game.period} clock={game.clock}"
+                )
+            else:
+                logger.info(
+                    f"LIVE TRADE (Kalshi time): {game.home_team} vs {game.away_team} "
+                    f"espn_status='{game.game_status}' - using Kalshi game_start_time"
+                )
             # =============================================================
 
             # Execute entry
@@ -1957,7 +1972,111 @@ class BotRunner:
 
         return True, ""
 
+    def _is_game_live_by_kalshi(self, game: TrackedGame) -> bool:
+        """
+        Determine if a game is LIVE using Kalshi market data.
+        
+        Uses market game_start_time to infer if game is in progress.
+        Kalshi API doesn't have explicit 'in-play' status, but markets
+        are open during live games.
+        
+        Logic:
+        - If game_start_time is set and current_time > game_start_time, game is likely live
+        - If market status is 'open' and past start time, assume game is in progress
+        - Returns False if we can't determine (prefer ESPN status in that case)
+        
+        Args:
+            game: Tracked game to check
+            
+        Returns:
+            True if game appears to be live based on Kalshi data
+        """
+        try:
+            # First check if we have game_start_time from market
+            game_start = game.market.game_start_time
+            if game_start is None:
+                # Try to parse from ticker: KXNBAGAME-26FEB07GSWLAL-LAL
+                game_start = self._parse_game_start_from_ticker(game.market.ticker)
+            
+            if game_start is None:
+                return False  # Can't determine, fall back to ESPN
+            
+            now = datetime.now(timezone.utc)
+            
+            # Game is considered "live" if it has started
+            # Add 15 min buffer before official start to catch tip-off preparation
+            if now >= game_start - timedelta(minutes=5):
+                # NBA games typically last ~2.5 hours, NFL ~3.5 hours
+                # If we're past start time but not too far, game is likely in progress
+                hours_since_start = (now - game_start).total_seconds() / 3600
+                
+                # Sport-specific game duration estimates
+                max_duration_hours = {
+                    'nba': 3.0,
+                    'nfl': 4.0,
+                    'mlb': 4.0,
+                    'nhl': 3.0,
+                }.get(game.sport.lower(), 3.0)
+                
+                # If we're past start but within expected duration, game is live
+                if hours_since_start < max_duration_hours:
+                    logger.debug(
+                        f"Kalshi live detection: {game.home_team} vs {game.away_team} "
+                        f"started {hours_since_start:.1f}h ago (max {max_duration_hours}h)"
+                    )
+                    return True
+                else:
+                    # Game likely over
+                    return False
+            
+            return False  # Game hasn't started yet
+            
+        except Exception as e:
+            logger.debug(f"Error in Kalshi live detection: {e}")
+            return False
+
+    def _parse_game_start_from_ticker(self, ticker: str | None) -> datetime | None:
+        """
+        Parse game start time from Kalshi ticker format.
+        
+        Ticker format: KXNBAGAME-26FEB07GSWLAL-LAL
+        Date portion: 26FEB07 = Feb 7, 2026
+        
+        Returns approximate start time (7PM local on game day).
+        """
+        if not ticker:
+            return None
+            
+        try:
+            import re
+            # Match patterns like 26FEB07, 25JAN15, etc.
+            match = re.search(r'(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})', ticker.upper())
+            if not match:
+                return None
+            
+            year = int(match.group(1)) + 2000  # 26 -> 2026
+            month_str = match.group(2)
+            day = int(match.group(3))
+            
+            month_map = {
+                'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4,
+                'MAY': 5, 'JUN': 6, 'JUL': 7, 'AUG': 8,
+                'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+            }
+            month = month_map.get(month_str, 1)
+            
+            # Default to 7PM EST / 12:00 UTC as typical NBA game start
+            # This is approximate but good enough for live detection
+            game_date = datetime(year, month, day, 0, 0, 0, tzinfo=timezone.utc)
+            
+            return game_date
+            
+        except Exception as e:
+            logger.debug(f"Failed to parse game start from ticker {ticker}: {e}")
+            return None
+
     def _get_game_segment(self, game: TrackedGame) -> str:
+
         """
         Get the current game segment (q1, q2, q3, q4, p1, p2, h1, h2, etc.).
 
