@@ -19,7 +19,7 @@ import logging
 import asyncio
 
 from src.config import get_settings
-from src.db.database import init_db, engine
+from src.db.database import init_db, engine, async_session_factory
 # Import all models so they register with Base.metadata before init_db() creates tables
 from src.models.trading_account import TradingAccount
 from src.models import (
@@ -169,6 +169,38 @@ async def lifespan(app: FastAPI):
     
     log_system_event("startup", {"environment": "debug" if app_settings.debug else "production"})
     
+    # Auto-start bot runners for users who have bot_enabled=True
+    try:
+        from src.db.crud.global_settings import GlobalSettingsCRUD
+        from src.db.crud.account import AccountCRUD
+        from src.api.routes.bot import _create_bot_dependencies, get_bot_runner
+        
+        async with async_session_factory() as startup_db:
+            # Find users with bot enabled
+            enabled_settings = await GlobalSettingsCRUD.get_all_enabled(startup_db)
+            logger.info(f"Found {len(enabled_settings)} users with bot enabled for auto-start")
+            
+            for settings in enabled_settings:
+                user_id = settings.user_id
+                try:
+                    credentials = await AccountCRUD.get_decrypted_credentials(startup_db, user_id)
+                    if not credentials:
+                        logger.warning(f"Skipping auto-start for user {user_id}: No credentials")
+                        continue
+                        
+                    tc, te, es = await _create_bot_dependencies(startup_db, user_id, credentials)
+                    runner = await get_bot_runner(user_id, tc, te, es)
+                    await runner.initialize(startup_db, user_id)
+                    
+                    # Start in background task (we don't have BackgroundTasks here, use asyncio.create_task)
+                    asyncio.create_task(runner.start(startup_db))
+                    logger.info(f"Auto-started bot runner for user {user_id}")
+                    
+                except Exception as user_err:
+                    logger.error(f"Failed to auto-start bot for user {user_id}: {user_err}")
+    except Exception as e:
+        logger.error(f"Bot auto-start orchestration failed: {e}")
+
     yield
     
     # Graceful shutdown
