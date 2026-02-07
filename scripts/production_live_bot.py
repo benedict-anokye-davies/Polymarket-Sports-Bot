@@ -243,6 +243,22 @@ class KalshiProductionBot:
             return False, f"Future game date: {market.get('open_date')} (Today CST: {today})"
         if (today - game_date).days > 1:
             return False, "Old game"
+        
+        # 1b. Game Duration Check - Reject games that started more than 3 hours ago
+        # NBA games typically last 2.5 hours. If a game started 3+ hours ago, it's likely finished.
+        open_time_str = market.get("open_time")
+        if open_time_str:
+            try:
+                from datetime import datetime
+                # Parse ISO format: 2026-02-07T20:00:00Z
+                open_time = datetime.fromisoformat(open_time_str.replace('Z', '+00:00'))
+                now_utc = datetime.now(timezone.utc)
+                hours_since_start = (now_utc - open_time).total_seconds() / 3600
+                
+                if hours_since_start > 3.0:
+                    return False, f"Game likely finished (started {hours_since_start:.1f}h ago)"
+            except Exception:
+                pass  # If parsing fails, continue with other checks
 
         # 2. Volume Check
         # Dashboard shows "Notional Volume" = Contracts * $1 Face Value.
@@ -384,8 +400,8 @@ class KalshiProductionBot:
 
                 logger.info(f"🕒 Cycle Start (CST: {get_cst_now()}) | Vol>${CONFIG['min_volume_dollars']/1000:.0f}k | Drop>{CONFIG['drop_threshold']:.0%}")
                 
-                # 1. Discovery (Quick Scan) - status=active means game is in-progress
-                found_markets = await self.client.get_markets(series_ticker="KXNBAGAME", status="active", limit=100)
+                # 1. Discovery (Quick Scan) - Note: Kalshi doesn't support status=active, use open
+                found_markets = await self.client.get_markets(series_ticker="KXNBAGAME", status="open", limit=100)
                 markets = found_markets.get("markets", [])
                 
                 logger.info(f"🔎 Scanning {len(markets)} Markets...")
