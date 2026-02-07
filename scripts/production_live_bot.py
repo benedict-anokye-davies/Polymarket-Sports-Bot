@@ -196,7 +196,7 @@ class KalshiProductionBot:
         
         # Get Markets
         try:
-            resp = await self.client.get_markets(series_ticker="KXNBAGAME", limit=200, status="active")
+            resp = await self.client.get_markets(series_ticker="KXNBAGAME", limit=200, status="open")
             markets = resp.get("markets", [])
         except Exception as e:
             logger.error(f"Failed to fetch markets: {e}")
