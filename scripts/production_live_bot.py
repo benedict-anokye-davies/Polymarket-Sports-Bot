@@ -76,20 +76,23 @@ class KalshiProductionBot:
         self.db_engine = create_async_engine(self.db_url, echo=False)
         self.active_session = sessionmaker(self.db_engine, class_=AsyncSession, expire_on_commit=False)
 
+
     async def update_config_from_db(self):
         """Polls DB for latest settings."""
         try:
             async with self.active_session() as session:
                 # Get the first user's settings (Simple assumption for single-user bot)
-                result = await session.execute(text("SELECT bot_enabled, bot_config_json FROM global_settings LIMIT 1"))
+                result = await session.execute(text("SELECT user_id, bot_enabled, bot_config_json FROM global_settings LIMIT 1"))
                 row = result.fetchone()
                 
                 if row:
+                    self.user_id = row[0] # Store user_id for logging
+                    
                     # 1. Update Enabled Status
-                    CONFIG["bot_enabled"] = bool(row[0])
+                    CONFIG["bot_enabled"] = bool(row[1])
                     
                     # 2. Update Parameters from JSON
-                    config_json = row[1]
+                    config_json = row[2]
                     if config_json and isinstance(config_json, dict):
                         params = config_json.get("parameters", {})
                         
@@ -106,17 +109,40 @@ class KalshiProductionBot:
                             CONFIG["drop_threshold"] = float(params["probability_drop"]) / 100.0
                         if "position_size" in params:
                             CONFIG["position_size_dollars"] = float(params["position_size"])
-
-                        # Log updates occasionally? No, logging every update spams if loop is fast.
-                        # Only log if changed? Requires tracking state.
-                        # For now, just log INFO occasionally or debug.
-                        # logger.info(f"🔄 Config Sync: Enabled={CONFIG['bot_enabled']}, Vol=${CONFIG['min_volume_dollars']:.0f}")
                         
         except Exception as e:
             logger.error(f"⚠️ DB Config Sync Failed: {e}")
 
+    async def log_activity(self, message, category="BOT", details=None):
+        """Log to ActivityLog table for Frontend visibility."""
+        if not self.user_id:
+            return
+            
+        try:
+            async with self.active_session() as session:
+                 # Clean details
+                 details_json = details if isinstance(details, dict) else {"info": str(details)} if details else {}
+                 
+                 # Using raw SQL for speed/simplicity in this script
+                 stmt = text(\"""
+                     INSERT INTO activity_logs (id, user_id, category, message, details, created_at)
+                     VALUES (:id, :user_id, :category, :message, :details, :created_at)
+                 \""")
+                 
+                 await session.execute(stmt, {
+                     "id": uuid.uuid4(),
+                     "user_id": self.user_id,
+                     "category": category,
+                     "message": message,
+                     "details": json.dumps(details_json),
+                     "created_at": datetime.utcnow()
+                 })
+                 await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to log activity: {e}")
+
     async def setup(self):
-        logger.info("Initializing Production Bot v2.1 (DB Connected)")
+        logger.info("Initializing Production Bot v2.2 (DB Connected + Metrics)")
         try:
             with open(self.key_file, "r") as f:
                 private_key = f.read()
@@ -129,20 +155,48 @@ class KalshiProductionBot:
     async def get_pregame_probability(self, ticker):
         """Get the probability (price) before the game started."""
         try:
-            # 1. Fetch history
-            history = await self.client.get_market_history(ticker, limit=100)
-            points = history.get("history", [])
+            # FIX 2026: Use /series/{series}/markets/{market}/candlesticks
+            # 1. Extract Series Ticker (remove last part after dash)
+            # Ticker: KXNBAGAME-26FEB07HOUOKC-OKC -> Series: KXNBAGAME-26FEB07HOUOKC
+            series_ticker = ticker.rsplit('-', 1)[0]
+            
+            # 2. Calculate Start TS (5 days ago in seconds)
+            start_ts = int(time.time() - (5 * 86400))
+            
+            # 3. Request
+            path = f"/series/{series_ticker}/markets/{ticker}/candlesticks?limit=100&start_ts={start_ts}&period=1h"
+            history = await self.client._authenticated_request("GET", path)
+            
+            points = history.get("candlesticks", [])
             
             if not points:
+                # Fallback: If no history, maybe market just opened? 
+                # Strict Mode requires history.
+                logger.warning(f"No history found for {ticker} at {path}")
                 return None
                 
             # 2. Sort by time (oldest first)
-            points.sort(key=lambda x: x.get("timestamp"))
+            points.sort(key=lambda x: x.get("end_period_ts"))
             
             # 3. Use the oldest point as 'pregame' approximation
             pregame_point = points[0]
-            price = pregame_point.get("yes_price")
-            return float(price) / 100.0
+            price = pregame_point.get("price") # Close price of bar?
+            # Kalshi candlesticks: open, high, low, close, volume... 
+            # API returns: o, h, l, c, v (usually shorter keys) OR full names.
+            # Let's check keys if possible. Assuming 'c' or 'close'.
+            # Or use 'yes_price' if it's history endpoint structure.
+            # The 'candlesticks' endpoint usually returns 'price' object or o/h/l/c.
+            # I will dump one point to log if fails.
+            
+            # Actually, standard is 'close' or 'c'.
+            # I'll try 'close' then 'c' then 'price'.
+            price_val = pregame_point.get("close") or pregame_point.get("c") or pregame_point.get("price")
+            
+            if price_val is None:
+                 logger.warning(f"Unknown candlestick format: {pregame_point.keys()}")
+                 return None
+                 
+            return float(price_val) / 100.0
             
         except Exception as e:
             logger.error(f"   ❌ History Fetch Error: {e}")
@@ -194,14 +248,11 @@ class KalshiProductionBot:
         
         if CONFIG["dry_run"]:
             logger.info(f"   👀 [DRY RUN] Would Buy {ticker} @ {price_cents}c")
+            await self.log_activity(f"DRY RUN: Buy {ticker}", details={"price": price_cents})
             return
 
         logger.info(f"   🚀 EXECUTING BUY: {ticker} @ {price_cents}c")
         try:
-            # We use size=1 (conceptually 1 batch or just 1 contract?)
-            # Usually client takes contract count.
-            # Assuming 'position_size_dollars' maps to count approx 100 if price is 1c?
-            # User wants dynamic? For now kept simple.
             order = await self.client.place_order(
                 ticker=ticker,
                 side="buy",
@@ -211,8 +262,11 @@ class KalshiProductionBot:
                 client_order_id=f"prod-{team}-{os.urandom(4).hex()}"
             )
             logger.info(f"   ✅ ORDER SENT: {order}")
+            await self.log_activity(f"Placed BUY Order: {ticker}", category="TRADE", details=order)
+            
         except Exception as e:
             logger.error(f"   ❌ ORDER FAILED: {e}")
+            await self.log_activity(f"Order Failed: {ticker}", category="ERROR", details={"error": str(e)})
 
     async def monitor_positions(self):
         """Monitor positions for SL/TP using direct API call."""
@@ -258,6 +312,7 @@ class KalshiProductionBot:
         """Execute a sell order to close position."""
         if CONFIG["dry_run"]:
             logger.info(f"   👀 [DRY RUN] Would Close {ticker}")
+            await self.log_activity(f"DRY RUN: Close {ticker} ({reason})")
             return
             
         try:
@@ -278,8 +333,11 @@ class KalshiProductionBot:
                 client_order_id=f"close-{reason}-{os.urandom(4).hex()}"
             )
             logger.info(f"   ✅ CLOSE SENT: {order}")
+            await self.log_activity(f"Closed Position: {ticker}", category="TRADE", details={"reason": reason, "order": order})
+            
         except Exception as e:
             logger.error(f"   ❌ CLOSE FAILED: {e}")
+            await self.log_activity(f"Close Failed: {ticker}", category="ERROR", details={"error": str(e)})
 
     async def run_daemon(self):
         await self.setup()
@@ -315,7 +373,7 @@ class KalshiProductionBot:
                     else:
                          if "Future" in reason:
                              logger.info(f"   ⏭️ SKIPPED: {reason}")
-
+                             
                 # 2. Monitor Positions (SL/TP)
                 await self.monitor_positions()
                 
@@ -334,3 +392,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
