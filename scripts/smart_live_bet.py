@@ -107,33 +107,35 @@ def check_parameters(market, pregame_prob=None):
 
     return True, "All parameters met"
 
+from datetime import datetime, timedelta, timezone
+
 def is_game_live(market):
-    """Check if game is actually live (started) and not in the far future."""
-    # Kalshi format: "2026-02-08T00:00:00Z"
-    # We can also check status "active", but we want to avoid "active" future games.
-    # Ticker often has date: KXNBAGAME-26FEB08...
-    
+    """Check if game is actually live (started) and not in the future, using US/Central time."""
     ticker = market.get("ticker", "")
     try:
-        # Extract date from ticker: 26FEB08
+        # Extract date from ticker: KXNBAGAME-26FEB08... -> 26FEB08
         parts = ticker.split("-")
         if len(parts) >= 2:
             date_str = parts[1] # "26FEB08"
-            # Parse date
-            game_date = datetime.strptime(date_str, "%y%b%d")
-            # Set to current year if needed (ticker has year '26')
+            # Parse game date (Naive, implies local game date)
+            game_date = datetime.strptime(date_str, "%y%b%d").date()
             
-            now = datetime.now()
-            # Simple check: If game date is > today + 1 day, skip.
-            # Actually, "Live" means it started today (or late last night).
-            # If game_date day > now day, it's a future game.
+            # Get current time in US Central (CST = UTC-6)
+            # We construct explicit timezone to avoid dependency issues with zoneinfo/tzdata in minimal containers
+            cst_offset = timezone(timedelta(hours=-6))
+            now_cst = datetime.now(cst_offset)
+            today_cst = now_cst.date()
             
-            # Note: active markets might be for "Winner" which settles later, 
-            # but if we want LIVE games, we want games happening NOW.
+            # STRICT DATE CHECK based on Client Requirements (CST Time)
+            # If game date is in the future relative to CST, it is NOT live.
+            if game_date > today_cst:
+                return False, f"Future game date: {date_str} (Today CST: {today_cst})"
             
-            # We will filter out any game scheduled for "tomorrow" or later.
-            if game_date.date() > now.date():
-                return False, f"Future game date: {date_str}"
+            # If game date is in the past (yesterday), it might be late night game finishing up.
+            # But typically we only want to bet on "today's" games or active ones.
+            # If it is much older (e.g. > 1 day), skip.
+            if (today_cst - game_date).days > 1:
+                 return False, f"Old game date: {date_str}"
                 
     except Exception as e:
         print(f"    ⚠️ Date parse error: {e}")
