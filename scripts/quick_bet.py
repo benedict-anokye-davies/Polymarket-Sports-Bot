@@ -16,8 +16,15 @@ async def place_bets():
     
     print(f"Got credentials for account")
         
+    # Check for direct file overrides (Docker injection)
+    key_file = "/app/kalshi.key"
+    if os.path.exists(key_file):
+        print(f"Reading private key from {key_file}")
+        with open(key_file, "r") as f:
+            private_key = f.read()
+        api_key = "813faefe-becc-4647-807a-295dcf69fcad" # Hardcoded from user input
     # Check for direct env var overrides
-    if os.environ.get("KALSHI_API_KEY") and os.environ.get("KALSHI_PRIVATE_KEY"):
+    elif os.environ.get("KALSHI_API_KEY") and os.environ.get("KALSHI_PRIVATE_KEY"):
         print("Using credentials from Environment Variables")
         api_key = os.environ.get("KALSHI_API_KEY")
         private_key = os.environ.get("KALSHI_PRIVATE_KEY")
