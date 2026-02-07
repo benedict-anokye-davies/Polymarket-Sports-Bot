@@ -253,7 +253,7 @@ class KalshiProductionBot:
         if pregame_prob is None:
             return False, "No pregame data found. STRICT MODE violation."
             
-        current_prob = float(yes_ask) / 100.0
+        current_prob = float(market.get("yes_ask", 0)) / 100.0
         drop = pregame_prob - current_prob
         
         if drop > CONFIG["drop_threshold"]:
