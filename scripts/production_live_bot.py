@@ -227,6 +227,11 @@ class KalshiProductionBot:
         """The Core Limit Logic."""
         ticker = market.get("ticker", "")
         
+        # 0. Market Status Check - Reject finished/settled markets
+        market_status = market.get("status", "")
+        if market_status in ("finalized", "closed", "settled"):
+            return False, f"Game Finished (status: {market_status})"
+        
         # 1. Timezone Check
         game_date = parse_ticker_date(ticker)
         if not game_date:
