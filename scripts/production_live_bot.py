@@ -190,20 +190,30 @@ class KalshiProductionBot:
             
             # 3. Use the oldest point as 'pregame' approximation
             pregame_point = points[0]
-            price = pregame_point.get("price") # Close price of bar?
-            # Kalshi candlesticks: open, high, low, close, volume... 
-            # API returns: o, h, l, c, v (usually shorter keys) OR full names.
-            # Let's check keys if possible. Assuming 'c' or 'close'.
-            # Or use 'yes_price' if it's history endpoint structure.
-            # The 'candlesticks' endpoint usually returns 'price' object or o/h/l/c.
-            # I will dump one point to log if fails.
             
-            # Actually, standard is 'close' or 'c'.
-            # I'll try 'close' then 'c' then 'price'.
-            price_val = pregame_point.get("close") or pregame_point.get("c") or pregame_point.get("price")
+            # Kalshi Series Candlesticks have nested structure: 
+            # 'price': {'open': ..., 'close': ...}
+            # 'yes_ask': {'open': ..., 'close': ...}
             
+            price_val = None
+            
+            # Try 'price' (Last Trade) first
+            price_obj = pregame_point.get("price")
+            if isinstance(price_obj, dict):
+                price_val = price_obj.get("close")
+            
+            # Fallback to 'yes_ask' (Offer) if price is missing
             if price_val is None:
-                 logger.warning(f"Unknown candlestick format: {pregame_point.keys()}")
+                ask_obj = pregame_point.get("yes_ask")
+                if isinstance(ask_obj, dict):
+                    price_val = ask_obj.get("close")
+            
+            # Fallback to flat 'close'
+            if price_val is None:
+                price_val = pregame_point.get("close") or pregame_point.get("c")
+
+            if price_val is None:
+                 logger.warning(f"Unknown candlestick format keys: {pregame_point.keys()}")
                  return None
                  
             return float(price_val) / 100.0
