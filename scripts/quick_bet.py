@@ -23,6 +23,8 @@ async def place_bets():
         with open(key_file, "r") as f:
             private_key = f.read()
         api_key = "813faefe-becc-4647-807a-295dcf69fcad" # Hardcoded from user input
+        
+        # Don't try DB lookup if we have file credentials
     # Check for direct env var overrides
     elif os.environ.get("KALSHI_API_KEY") and os.environ.get("KALSHI_PRIVATE_KEY"):
         print("Using credentials from Environment Variables")
