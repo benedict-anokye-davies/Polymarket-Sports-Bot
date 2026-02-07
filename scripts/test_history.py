@@ -48,16 +48,38 @@ async def main():
     except Exception as e:
         print("FAILED:", e)
 
-    # 3. Series / Markets / Candlesticks ?
-    # Need series ticker. 'KXNBAGAME-26FEB07HOUOKC' ?
+    # 3. Series Candlesticks probing
     series_ticker = "KXNBAGAME-26FEB07HOUOKC"
-    print(f"\n3. GET /series/{series_ticker}/markets/{ticker}/candlesticks")
-    try:
-        path = f"/series/{series_ticker}/markets/{ticker}/candlesticks?limit=100"
-        res = await client._authenticated_request("GET", path)
-        print("SUCCESS:", res.keys())
-    except Exception as e:
-        print("FAILED:", e)
+    ticker = "KXNBAGAME-26FEB07HOUOKC-OKC"
+    base_path = f"/series/{series_ticker}/markets/{ticker}/candlesticks"
+
+    import time
+    start = int(time.time() - 86400*5)
+
+    variations = [
+        {"start_ts": start, "limit": 100},
+        {"start_time": start, "limit": 100},
+        {"begin_ts": start, "limit": 100},
+        {"start": start, "limit": 100},
+        {"min_ts": start, "limit": 100},
+        # Maybe period is required?
+        {"start_ts": start, "limit": 100, "period": "1h"},
+    ]
+
+    print(f"\n3. Probing {base_path} ...")
+    
+    for v in variations:
+        print(f"Testing params: {v}")
+        try:
+            res = await client._authenticated_request("GET", base_path, params=v)
+            print("SUCCESS!", res.keys())
+            if "candlesticks" in res:
+                print(f"Found {len(res['candlesticks'])} candles")
+            break
+        except Exception as e:
+            print(f"FAILED: {e}")
+            # Try to print response text if possible (client logs it)
+
 
     # 4. Get Market Details (Verify Ticker)
     print("\n4. GET /markets/{ticker}")
