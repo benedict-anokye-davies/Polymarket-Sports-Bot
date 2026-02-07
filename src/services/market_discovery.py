@@ -283,41 +283,30 @@ class MarketDiscovery:
 
             # TARGETED DISCOVERY: NBA specific series with proper filters
             # NBA games are in KXNBAGAME, KXNBASPREAD, KXNBATOTAL series
-            # Key fixes:
-            #   1. Query BOTH "open" AND "unopened" statuses (pregame markets sit in 'unopened')
-            #   2. Use time-window filtering (min_close_ts/max_close_ts) to get tonight's games
-            #   3. Always query these series for NBA, not relying on "Sports" category
+            # Key insight: Kalshi returns status="active" for live games, not "open" or "unopened"
+            # So we query WITHOUT status filter to get all markets, then filter locally
             if sports is None or "nba" in sports:
                 nba_series_list = ["KXNBAGAME", "KXNBASPREAD", "KXNBATOTAL"]
                 logger.info(f"Fetching targeted NBA series: {nba_series_list}")
                 
-                # Time window: now to 24 hours ahead (covers tonight's games)
-                min_close_ts = int(now.timestamp())
-                max_close_ts = int((now + timedelta(hours=24)).timestamp())
-                
-                # Query both 'open' and 'unopened' statuses
-                statuses_to_query = ["open", "unopened"]
-                
                 for series in nba_series_list:
-                    for status in statuses_to_query:
-                        try:
-                            p = {
-                                "series_ticker": series,
-                                "status": status,
-                                "min_close_ts": min_close_ts,
-                                "max_close_ts": max_close_ts,
-                                "limit": 100
-                            }
-                            resp = await client.get(f"{kalshi_api_base}/markets", params=p, timeout=10.0)
-                            if resp.status_code == 200:
-                                s_data = resp.json()
-                                s_markets = s_data.get("markets", [])
-                                if s_markets:
-                                    logger.info(f"Fetched {len(s_markets)} {status} markets for {series}")
-                                    markets.extend(s_markets)
-                        except Exception as e:
-                            logger.warning(f"Error fetching series {series} status {status}: {e}")
-                        await asyncio.sleep(0.05)  # Rate limiting between calls
+                    try:
+                        # Query WITHOUT status filter to get all markets (active, open, unopened)
+                        # Also no time filter since close_ts may be empty for some markets
+                        p = {
+                            "series_ticker": series,
+                            "limit": 200  # Get more markets to ensure we find tonight's games
+                        }
+                        resp = await client.get(f"{kalshi_api_base}/markets", params=p, timeout=15.0)
+                        if resp.status_code == 200:
+                            s_data = resp.json()
+                            s_markets = s_data.get("markets", [])
+                            if s_markets:
+                                logger.info(f"Fetched {len(s_markets)} markets for series {series}")
+                                markets.extend(s_markets)
+                    except Exception as e:
+                        logger.warning(f"Error fetching series {series}: {e}")
+                    await asyncio.sleep(0.05)  # Rate limiting between calls
 
             existing_tickers = {m.get("ticker") for m in markets if m.get("ticker")}
             leg_tickers: set[str] = set()
