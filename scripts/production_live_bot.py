@@ -384,8 +384,8 @@ class KalshiProductionBot:
 
                 logger.info(f"🕒 Cycle Start (CST: {get_cst_now()}) | Vol>${CONFIG['min_volume_dollars']/1000:.0f}k | Drop>{CONFIG['drop_threshold']:.0%}")
                 
-                # 1. Discovery (Quick Scan)
-                found_markets = await self.client.get_markets(series_ticker="KXNBAGAME", status="open", limit=100)
+                # 1. Discovery (Quick Scan) - status=active means game is in-progress
+                found_markets = await self.client.get_markets(series_ticker="KXNBAGAME", status="active", limit=100)
                 markets = found_markets.get("markets", [])
                 
                 logger.info(f"🔎 Scanning {len(markets)} Markets...")
