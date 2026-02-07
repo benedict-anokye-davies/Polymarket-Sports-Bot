@@ -171,8 +171,9 @@ class KalshiProductionBot:
             # 3. Request
             # Passing params separately ensures clean encoding
             path = f"/series/{series_ticker}/markets/{ticker}/candlesticks"
-            # API Error suggests 'period_interval' is the param name
-            params = {"limit": 100, "start_ts": start_ts, "end_ts": now_ts, "period_interval": "1h"}
+            # API Error suggests 'period_interval' is the param name and wants INT (minutes?)
+            # Error was: parsing "1h": invalid syntax
+            params = {"limit": 100, "start_ts": start_ts, "end_ts": now_ts, "period_interval": 60}
             
             history = await self.client._authenticated_request("GET", path, params=params)
             
