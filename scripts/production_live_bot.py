@@ -267,14 +267,111 @@ class KalshiProductionBot:
         except Exception as e:
             logger.error(f"   ❌ ORDER FAILED: {e}")
 
-    async def close(self):
-        if self.client:
-            await self.client.close()
+    async def monitor_positions(self):
+        """Monitor open positions for Stop Loss / Take Profit."""
+        try:
+            # Fetch current positions
+            portfolio = await self.client.get_positions()
+            positions = portfolio.get("market_positions", [])
+            
+            for pos in positions:
+                ticker = pos.get("ticker")
+                entry_cost = pos.get("cost_basis", 0) / 100.0 # Convert to dollars if needed, checks API spec
+                count = pos.get("position", 0)
+                
+                if count <= 0: continue
+                
+                # Get current market price
+                market_resp = await self.client.get_market(ticker)
+                market = market_resp.get("market", market_resp)
+                
+                # Sell price is the 'yes_bid' (best price we can sell into immediately)
+                current_bid = market.get("yes_bid", 0)
+                current_price = current_bid / 100.0
+                
+                # Calculate PnL %
+                # Approx average price per contract
+                avg_entry = (entry_cost / count) if count > 0 else 0
+                if avg_entry == 0: continue
+                
+                pnl_pct = (current_price - avg_entry) / avg_entry
+                
+                logger.info(f"   Positions: {ticker} | Entry: {avg_entry:.2f} | Current: {current_price:.2f} | PnL: {pnl_pct:.1%}")
+                
+                # TAKE PROFIT
+                if pnl_pct >= CONFIG.get("take_profit_pct", 0.10):
+                    logger.info(f"   💰 TAKE PROFIT TRIGGERED: {ticker} (+{pnl_pct:.1%})")
+                    await self.close_position(ticker, count, "take_profit")
+                    
+                # STOP LOSS
+                elif pnl_pct <= -CONFIG.get("stop_loss_pct", 0.10):
+                    logger.info(f"   🛑 STOP LOSS TRIGGERED: {ticker} ({pnl_pct:.1%})")
+                    await self.close_position(ticker, count, "stop_loss")
+                    
+        except Exception as e:
+            logger.error(f"Position monitor error: {e}")
+
+    async def close_position(self, ticker, count, reason):
+        """Execute a sell order to close position."""
+        if CONFIG["dry_run"]:
+            logger.info(f"   👀 [DRY RUN] Would Close {ticker}")
+            return
+            
+        try:
+            # Sell 'yes' position
+            logger.info(f"   📉 CLOSING {ticker} ({reason})...")
+            # We sell into the bid (market sell essentially)
+            # Fetch market again to ensure fresh price or just place limitsell 1c
+            # Kalshi limit orders: To dump immediately, sell at 1c? No, sell at bid.
+            # Best practice: get top bid.
+            m = await self.client.get_market(ticker)
+            bid = m.get("market", m).get("yes_bid", 0)
+            
+            if bid == 0:
+                logger.warning(f"   ⚠️ Cannot close {ticker}: No Liquidity (Bid 0)")
+                return
+
+            await self.client.place_order(
+                ticker=ticker,
+                side="sell",
+                yes_no="yes",
+                price=bid, # Sell into the bid
+                size=count,
+                client_order_id=f"close-{reason}-{os.urandom(4).hex()}"
+            )
+            logger.info(f"   ✅ Position Closed: {ticker}")
+        except Exception as e:
+            logger.error(f"   ❌ Failed to close position: {e}")
+
+    async def run_daemon(self):
+        """Continuous execution loop."""
+        logger.info(f"🚀 DAEMON STARTED (CST: {get_cst_now()})")
+        logger.info("   Press Ctrl+C to stop.")
+        
+        while True:
+            try:
+                logger.info(f"\n--- Cycle Start: {get_cst_now().strftime('%H:%M:%S')} ---")
+                
+                # 1. Scan Markets
+                await self.run_cycle()
+                
+                # 2. Monitor Positions (SL/TP)
+                await self.monitor_positions()
+                
+                logger.info("   Sleeping 60s...")
+                await asyncio.sleep(60)
+                
+            except KeyboardInterrupt:
+                logger.info("   🛑 Manual Stop")
+                break
+            except Exception as e:
+                logger.error(f"   ⚠️ Cycle Error: {e}")
+                await asyncio.sleep(60) # Wait before retry
 
 async def main():
     bot = KalshiProductionBot()
     if await bot.connect():
-        await bot.run_cycle()
+        await bot.run_daemon()
         await bot.close()
 
 if __name__ == "__main__":
