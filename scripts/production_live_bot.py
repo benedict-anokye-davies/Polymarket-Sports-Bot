@@ -265,6 +265,13 @@ class KalshiProductionBot:
             return False, "No pregame data found. STRICT MODE violation."
             
         current_prob = float(market.get("yes_ask", 0)) / 100.0
+        
+        # 3b. Price Sanity Check - If prob is 95%+ or 5%- the outcome is decided (game over)
+        if current_prob >= 0.95:
+            return False, f"Game already decided (current price {current_prob:.0%})"
+        if current_prob <= 0.05:
+            return False, f"Game already decided (current price {current_prob:.0%})"
+        
         drop = pregame_prob - current_prob
         
         if drop > CONFIG["drop_threshold"]:
