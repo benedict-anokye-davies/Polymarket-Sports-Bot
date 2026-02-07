@@ -116,7 +116,7 @@ def is_game_live(market):
         # Extract date from ticker: KXNBAGAME-26FEB08... -> 26FEB08
         parts = ticker.split("-")
         if len(parts) >= 2:
-            date_str = parts[1] # "26FEB08"
+            date_str = parts[1][:7] # "26FEB08" (Ignore trailing team codes)
             # Parse game date (Naive, implies local game date)
             game_date = datetime.strptime(date_str, "%y%b%d").date()
             
