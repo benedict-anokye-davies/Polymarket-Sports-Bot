@@ -171,7 +171,8 @@ class KalshiProductionBot:
             # 3. Request
             # Passing params separately ensures clean encoding
             path = f"/series/{series_ticker}/markets/{ticker}/candlesticks"
-            params = {"limit": 100, "start_ts": start_ts, "end_ts": now_ts, "period": "1h"}
+            # API expects 'interval' (e.g. 1h), not 'period'
+            params = {"limit": 100, "start_ts": start_ts, "end_ts": now_ts, "interval": "1h"}
             
             history = await self.client._authenticated_request("GET", path, params=params)
             
@@ -381,7 +382,7 @@ class KalshiProductionBot:
                         await self.execute_trade(m, "nba")
                     else:
                          if "Future" in reason:
-                             logger.info(f"   ⏭️ SKIPPED: {reason}")
+                             logger.info(f"   ⏭️ SKIPPED: {ticker} - {reason}")
                              
                 # 2. Monitor Positions (SL/TP)
                 await self.monitor_positions()
