@@ -1,57 +1,48 @@
-
+#!/usr/bin/env python
+"""Diagnostic: Check market data for finished vs live games."""
 import asyncio
 import sys
-import os
-sys.path.append("/app")
+sys.path.insert(0, '/app')
 
-import logging
 from src.services.kalshi_client import KalshiClient
-from src.db.database import async_session_factory
-from src.db.crud.account import AccountCRUD
-import json
-
-logging.basicConfig(level=logging.INFO)
 
 async def main():
-    target_ticker = "KXMVESPORTSMULTIGAMEEXTENDED-S2026B330D2DCB50-893DD71BDDC"
-    print(f"--- Checking Status for {target_ticker} ---")
+    key = open("/app/kalshi.key").read()
+    c = KalshiClient(
+        api_key="813faefe-becc-4647-807a-295dcf69fcad", 
+        private_key_pem=key
+    )
     
-    async with async_session_factory() as db:
-        from src.db.crud.user import UserCRUD
-        user = await UserCRUD.get_by_email(db, "e2e@test.com")
-        if not user:
-            print("User not found")
-            return
-            
-        creds = await AccountCRUD.get_decrypted_credentials(db, user.id)
-        if not creds:
-            print("Creds not found")
-            return
-
-        client = KalshiClient(
-            api_key=creds["api_key"],
-            private_key_pem=creds.get("private_key") or creds.get("api_secret")
-        )
-        
+    # Compare finished game vs live game
+    tickers = [
+        "KXNBAGAME-26FEB07GSWLAL-LAL",  # GSW vs LAL - FINISHED
+        "KXNBAGAME-26FEB07DALSAS-DAL",  # DAL vs SAS - LIVE NOW
+    ]
+    
+    for ticker in tickers:
+        print(f"\n{'='*60}")
+        print(f"TICKER: {ticker}")
+        print('='*60)
         try:
-            mkt = await client.get_market(target_ticker)
+            resp = await c.get_market(ticker)
+            m = resp.get("market", resp)
             
-            # Print Key Details
-            print(f"Ticker: {mkt.get('ticker')}")
-            print(f"Status: {mkt.get('status')}")
-            print(f"Result: {mkt.get('result')}")
-            print(f"Settlement: {mkt.get('settlement_timer')}")
-            print(f"Expiration: {mkt.get('expiration_time')}")
-            print(f"Yes Price: {mkt.get('yes_price')}")
-            print(f"Volume: {mkt.get('volume')}")
+            # Print all fields that might indicate game status
+            print(f"  status:        {m.get('status')}")
+            print(f"  result:        {m.get('result')}")
+            print(f"  close_time:    {m.get('close_time')}")
+            print(f"  expiration_time: {m.get('expiration_time')}")
+            print(f"  end_time:      {m.get('end_time')}")
+            print(f"  settled:       {m.get('settled')}")
+            print(f"  winning_outcome: {m.get('winning_outcome')}")
+            print(f"  can_close_early: {m.get('can_close_early')}")
+            print(f"  market_type:   {m.get('market_type')}")
             
-            print("\nFull Details:")
-            print(json.dumps(mkt, indent=2, default=str))
+            # Print all keys for investigation
+            print(f"\n  ALL KEYS: {list(m.keys())}")
             
         except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            await client.close()
+            print(f"  ERROR: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
