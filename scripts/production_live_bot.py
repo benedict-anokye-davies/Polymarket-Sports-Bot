@@ -392,8 +392,8 @@ class KalshiProductionBot:
                         logger.info(f"✨ MATCH: {ticker} - {reason}")
                         await self.execute_trade(m, "nba")
                     else:
-                         if "Future" in reason:
-                             logger.info(f"   ⏭️ SKIPPED: {ticker} - {reason}")
+                         # Verbose logging to reassure user
+                         logger.info(f"   Using {ticker}: {reason}")
                              
                 # 2. Monitor Positions (SL/TP)
                 await self.monitor_positions()
