@@ -54,16 +54,11 @@ async def main():
     base_path = f"/series/{series_ticker}/markets/{ticker}/candlesticks"
 
     import time
-    start = int(time.time() - 86400*5)
+    now_ts = int(time.time())
+    start = now_ts - 86400*5
 
     variations = [
-        {"start_ts": start, "limit": 100},
-        {"start_time": start, "limit": 100},
-        {"begin_ts": start, "limit": 100},
-        {"start": start, "limit": 100},
-        {"min_ts": start, "limit": 100},
-        # Maybe period is required?
-        {"start_ts": start, "limit": 100, "period": "1h"},
+        {"start_ts": start, "end_ts": now_ts, "period_interval": 60, "limit": 100},
     ]
 
     print(f"\n3. Probing {base_path} ...")
@@ -72,9 +67,12 @@ async def main():
         print(f"Testing params: {v}")
         try:
             res = await client._authenticated_request("GET", base_path, params=v)
-            print("SUCCESS!", res.keys())
-            if "candlesticks" in res:
-                print(f"Found {len(res['candlesticks'])} candles")
+            print("SUCCESS! Keys:", res.keys())
+            if "candlesticks" in res and res["candlesticks"]:
+                c = res["candlesticks"][0]
+                print("First Candle:", c)
+                print("Type of 'price':", type(c.get("price")))
+                print("Type of 'close':", type(c.get("close")))
             break
         except Exception as e:
             print(f"FAILED: {e}")
