@@ -165,12 +165,13 @@ class KalshiProductionBot:
             series_ticker = ticker.rsplit('-', 1)[0]
             
             # 2. Calculate Start TS (5 days ago in seconds)
-            start_ts = int(time.time() - (5 * 86400))
+            now_ts = int(time.time())
+            start_ts = now_ts - (5 * 86400)
             
             # 3. Request
             # Passing params separately ensures clean encoding
             path = f"/series/{series_ticker}/markets/{ticker}/candlesticks"
-            params = {"limit": 100, "start_ts": start_ts}
+            params = {"limit": 100, "start_ts": start_ts, "end_ts": now_ts, "period": "1h"}
             
             history = await self.client._authenticated_request("GET", path, params=params)
             
