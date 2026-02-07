@@ -75,8 +75,8 @@ def check_parameters(market, pregame_prob=None):
     # NOTE: For tonight's demo we might relax volume if markets are thin, 
     # but let's report it honestly based on user params
     if estimated_dollar_volume < PARAMS["min_volume_dollars"]:
-        pass # Warning only for demo purposes so we verify the check logic runs
-        # return False, f"Volume ${estimated_dollar_volume:.0f} < ${PARAMS['min_volume_dollars']}"
+        print(f"    ❌ Volume ${estimated_dollar_volume:,.0f} < ${PARAMS['min_volume_dollars']:,.0f}")
+        return False, f"Volume ${estimated_dollar_volume:,.0f} < ${PARAMS['min_volume_dollars']:,.0f}" # Strict enforcement
     
     # 3. Check current probability (yes_bid/yes_ask)
     yes_bid = (market.get("yes_bid") or 0) / 100.0
