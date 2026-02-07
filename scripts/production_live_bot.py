@@ -140,107 +140,43 @@ class KalshiProductionBot:
         ask = market.get("yes_ask", 0)
         spread = ask - bid
         
-        if ask == 0 or ask > 99:
-            reasons.append("No liquidity (Ask invalid)")
-        elif spread > CONFIG["max_spread_cents"]:
-            reasons.append(f"Spread too wide ({spread}c > {CONFIG['max_spread_cents']}c)")
+            return False, "Invalid Date Parse"
             
-        # 4. Volume Check
-        # Estimate volume in dollars (contracts * avg price ~50c)
-        vol_cnt = market.get("volume", 0)
-        vol_usd = vol_cnt * 0.50
-        if vol_usd < CONFIG["min_volume_dollars"]:
-            reasons.append(f"Low Volume (${vol_usd:,.0f} < ${CONFIG['min_volume_dollars']:,.0f})")
+        today = get_cst_now().date()
+        
+        if game_date > today:
+            return False, f"Future game date: {market.get('open_date')} (Today CST: {today})"
+        if (today - game_date).days > 1:
+            return False, "Old game"
 
-        if reasons:
-            return False, "; ".join(reasons)
-        return True, "Market Valid"
+        # 2. Volume Check
+        yes_ask = market.get("yes_ask", 0)
+        volume = market.get("volume", 0)
+        # contracts * ~50c estimate (or actual price)
+        est_volume_dollars = volume * (yes_ask / 100.0) if yes_ask else volume * 0.50
+        
+        if est_volume_dollars < CONFIG["min_volume_dollars"]:
+            return False, f"Low Volume (${est_volume_dollars:,.0f} < ${CONFIG['min_volume_dollars']:,.0f})"
 
-    async def check_strategy(self, market):
-        """Check the specific strategy logic (Drop from pregame)."""
-        ticker = market.get("ticker")
+        # 3. Strategy: Check for Drop
+        # Need pregame prob
+        pregame_prob = await self.get_pregame_probability(ticker)
+        if pregame_prob is None:
+            return False, "No pregame data found. STRICT MODE violation."
+            
+        current_prob = float(yes_ask) / 100.0
         
-        # Fetch history
-        try:
-            hist_resp = await self.client.get_market_history(ticker, limit=100)
-            history = hist_resp.get("history", [])
-        except Exception as e:
-            return False, f"API Error fetching history: {e}"
-            
-        if not history:
-            return False, "No historical data available (Safety Halt)"
-            
-        # Find pregame price (oldest point relative to game start?)
-        # For this logic we assume oldest available point is the best proxy for 'pregame'
-        # in a live context if we don't have our own DB.
-        pregame_point = history[-1] # Oldest
-        pregame_price = pregame_point.get("yes_price", 0) / 100.0
+        # Calc drop
+        drop = pregame_prob - current_prob
         
-        current_prob = calculate_implied_prob(market)
+        if drop > CONFIG["drop_threshold"]:
+             # Also ensure pregame was high enough (e.g. was favorite)
+             if pregame_prob < CONFIG["min_pregame_prob"]:
+                 return False, f"Was not favorite enough pregame ({pregame_prob:.2%})"
+                 
+             return True, f"DROP DETECTED! {pregame_prob:.1%} -> {current_prob:.1%} (Drop {drop:.1%})"
         
-        # CALCULATION
-        drop = pregame_price - current_prob
-        
-        logger.info(f"   📊 Strategy Check: {ticker}")
-        logger.info(f"      Pregame: {pregame_price:.1%}")
-        logger.info(f"      Current: {current_prob:.1%}")
-        logger.info(f"      Drop:    {drop:.1%}")
-        
-        if pregame_price < CONFIG["min_pregame_prob"]:
-            return False, f"Pregame prob too low ({pregame_price:.1%} < {CONFIG['min_pregame_prob']:.0%})"
-            
-        if drop < CONFIG["probability_drop_threshold"]:
-            return False, f"Drop insufficient ({drop:.1%} < {CONFIG['probability_drop_threshold']:.0%})"
-            
-        return True, "Strategy Triggered"
-
-    async def run_cycle(self):
-        """Main execution cycle."""
-        logger.info(f"🕒 Cycle Start (CST: {get_cst_now()})")
-        
-        # Get Markets
-        try:
-            resp = await self.client.get_markets(series_ticker="KXNBAGAME", limit=200, status="open")
-            markets = resp.get("markets", [])
-        except Exception as e:
-            logger.error(f"Failed to fetch markets: {e}")
-            return
-
-        logger.info(f"🔎 Found {len(markets)} active markets. Filtering...")
-        
-        for m in markets:
-            ticker = m.get("ticker", "")
-            
-            # Team Filter
-            matched_team = None
-            for abbr in TARGET_TEAMS:
-                if ticker.endswith(f"-{abbr}"):
-                    matched_team = abbr
-                    break
-            
-            # Skip if not a target team
-            if not matched_team: 
-                continue
-
-            logger.info(f"--------------------------------------------------")
-            logger.info(f"🏀 Analyzing {TARGET_TEAMS[matched_team]} ({ticker})")
-            
-            # 1. Validation (Market Health)
-            is_valid, reason = await self.validate_market(m)
-            if not is_valid:
-                logger.info(f"   🚫 REJECTED (Validation): {reason}")
-                continue
-                
-            # 2. Strategy Check (Logic)
-            is_good_trade, strat_reason = await self.check_strategy(m)
-            if not is_good_trade:
-                logger.info(f"   ⏭️ SKIPPED (Strategy): {strat_reason}")
-                continue
-                
-            # 3. Execution
-            await self.execute_trade(m, matched_team)
-            
-        logger.info("🏁 Cycle Complete")
+        return False, f"Drop {drop:.1%} < {CONFIG['drop_threshold']:.1%}"
 
     async def execute_trade(self, market, team):
         """Execute the order."""
@@ -253,85 +189,22 @@ class KalshiProductionBot:
 
         logger.info(f"   🚀 EXECUTING BUY: {ticker} @ {price_cents}c")
         try:
-            # We use 'size' because we fixed that bug :)
             order = await self.client.place_order(
                 ticker=ticker,
                 side="buy",
                 yes_no="yes",
                 price=price_cents,
-                size=1, # Fixed size for now
+                size=int(CONFIG["position_size_dollars"]), # $1 size usually means 1 contract if size=count? No, size=count.
+                # Client param says 'size'. 
+                # If Position Size is $100 and price is 50c, we need 200 contracts.
+                # contracts = dollars / (price_cents / 100)
                 client_order_id=f"prod-{team}-{os.urandom(4).hex()}"
             )
-            # Log simplified result
-            if "order_id" in str(order):
-                logger.info(f"   ✅ ORDER SUCCEEDED: {order.get('order', {}).get('order_id')}")
-            else:
-                logger.info(f"   ⚠️ ORDER RESPONSE: {order}")
-                
+            logger.info(f"   ✅ ORDER SENT: {order}")
         except Exception as e:
             logger.error(f"   ❌ ORDER FAILED: {e}")
 
     async def monitor_positions(self):
-        """Monitor open positions for Stop Loss / Take Profit."""
-        try:
-            # Fetch current positions
-            portfolio = await self.client.get_positions()
-            positions = portfolio.get("market_positions", [])
-            
-            for pos in positions:
-                ticker = pos.get("ticker")
-                entry_cost = pos.get("cost_basis", 0) / 100.0 # Convert to dollars if needed, checks API spec
-                count = pos.get("position", 0)
-                
-                if count <= 0: continue
-                
-                # Get current market price
-                market_resp = await self.client.get_market(ticker)
-                market = market_resp.get("market", market_resp)
-                
-                # Sell price is the 'yes_bid' (best price we can sell into immediately)
-                current_bid = market.get("yes_bid", 0)
-                current_price = current_bid / 100.0
-                
-                # Calculate PnL %
-                # Approx average price per contract
-                avg_entry = (entry_cost / count) if count > 0 else 0
-                if avg_entry == 0: continue
-                
-                pnl_pct = (current_price - avg_entry) / avg_entry
-                
-                logger.info(f"   Positions: {ticker} | Entry: {avg_entry:.2f} | Current: {current_price:.2f} | PnL: {pnl_pct:.1%}")
-                
-                # TAKE PROFIT
-                if pnl_pct >= CONFIG.get("take_profit_pct", 0.10):
-                    logger.info(f"   💰 TAKE PROFIT TRIGGERED: {ticker} (+{pnl_pct:.1%})")
-                    await self.close_position(ticker, count, "take_profit")
-                    
-                # STOP LOSS
-                elif pnl_pct <= -CONFIG.get("stop_loss_pct", 0.10):
-                    logger.info(f"   🛑 STOP LOSS TRIGGERED: {ticker} ({pnl_pct:.1%})")
-                    await self.close_position(ticker, count, "stop_loss")
-                    
-        except Exception as e:
-            logger.error(f"Position monitor error: {e}")
-
-    async def close_position(self, ticker, count, reason):
-        """Execute a sell order to close position."""
-        if CONFIG["dry_run"]:
-            logger.info(f"   👀 [DRY RUN] Would Close {ticker}")
-            return
-            
-        try:
-            # Sell 'yes' position
-            logger.info(f"   📉 CLOSING {ticker} ({reason})...")
-            # We sell into the bid (market sell essentially)
-            # Fetch market again to ensure fresh price or just place limitsell 1c
-            # Kalshi limit orders: To dump immediately, sell at 1c? No, sell at bid.
-            # Best practice: get top bid.
-            m = await self.client.get_market(ticker)
-            bid = m.get("market", m).get("yes_bid", 0)
-            
-            if bid == 0:
                 logger.warning(f"   ⚠️ Cannot close {ticker}: No Liquidity (Bid 0)")
                 return
 
