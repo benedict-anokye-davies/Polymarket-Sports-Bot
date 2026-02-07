@@ -240,13 +240,14 @@ class KalshiProductionBot:
             return False, "Old game"
 
         # 2. Volume Check
-        # User sees "Notional Volume" on Dashboard (Contracts * $1), not Risk Volume (Contracts * Price).
-        # We switch to Notional Volume to match User Expectation and capture liquid events even if price is low.
+        # Dashboard shows "Notional Volume" = Contracts * $1 Face Value.
+        # The API 'volume' field returns contracts traded. Each contract has a $1 max payout.
+        # To approximate Dashboard: volume * 100 (treating API as cents, Dashboard as dollars).
         volume = market.get("volume", 0)
-        notional_volume = float(volume) # 1 contract = $1 max payout
+        dashboard_volume = float(volume) * 100  # Approximate Dashboard Value
         
-        if notional_volume < CONFIG["min_volume_dollars"]:
-            return False, f"Low Volume (${notional_volume:,.0f} < ${CONFIG['min_volume_dollars']:,.0f})"
+        if dashboard_volume < CONFIG["min_volume_dollars"]:
+            return False, f"Low Volume (${dashboard_volume:,.0f} < ${CONFIG['min_volume_dollars']:,.0f})"
 
         # 3. Strategy: Check for Drop
         pregame_prob = await self.get_pregame_probability(ticker)
