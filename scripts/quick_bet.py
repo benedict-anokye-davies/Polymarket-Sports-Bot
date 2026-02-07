@@ -14,22 +14,28 @@ async def place_bets():
     
     print("=== QUICK NBA BET PLACER ===")
     
-    async with async_session_factory() as db:
-        result = await db.execute(select(TradingAccount).limit(1))
-        account = result.scalar_one_or_none()
+    print(f"Got credentials for account")
         
-        if not account:
-            print("No account!")
-            return
+    # Check for direct env var overrides
+    if os.environ.get("KALSHI_API_KEY") and os.environ.get("KALSHI_PRIVATE_KEY"):
+        print("Using credentials from Environment Variables")
+        api_key = os.environ.get("KALSHI_API_KEY")
+        private_key = os.environ.get("KALSHI_PRIVATE_KEY")
+    else:
+        async with async_session_factory() as db:
+            result = await db.execute(select(TradingAccount).limit(1))
+            account = result.scalar_one_or_none()
             
-        api_key = decrypt_credential(account.api_key_encrypted) if account.api_key_encrypted else None
-        private_key = decrypt_credential(account.api_secret_encrypted) if account.api_secret_encrypted else None
-        
-        if not api_key or not private_key:
-            print("Missing credentials!")
-            return
+            if not account:
+                print("No account!")
+                return
+                
+            api_key = decrypt_credential(account.api_key_encrypted) if account.api_key_encrypted else None
+            private_key = decrypt_credential(account.api_secret_encrypted) if account.api_secret_encrypted else None
             
-        print(f"Got credentials for account")
+    if not api_key or not private_key:
+        print("Missing credentials!")
+        return
         
         client = KalshiClient(api_key=api_key, private_key_pem=private_key)
         
