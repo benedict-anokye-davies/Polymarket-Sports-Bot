@@ -232,23 +232,22 @@ class KalshiProductionBot:
         if market_status in ("finalized", "closed", "settled"):
             return False, f"Game Finished (status: {market_status})"
         
-        # 0b. Blacklist - Games that finished but market still shows as active
-        # These are manually identified finished games from today
-        FINISHED_GAMES_BLACKLIST = [
-            "KXNBAGAME-26FEB07GSWLAL",  # GSW vs LAL - finished ~18:00 CST
-            "KXNBAGAME-26FEB07HOUOKC",  # HOU vs OKC - finished ~20:30 CST
-            "KXNBAGAME-26FEB07WASBKN",  # WAS vs BKN - finished
-            "KXNBAGAME-26FEB07MEMPOR",  # MEM vs POR - finished
-            "KXNBAGAME-26FEB07PHIPHX",  # PHI vs PHX - finished
-            "KXNBAGAME-26FEB07DENCHI",  # DEN vs CHI - finished
-            "KXNBAGAME-26FEB07UTAORL",  # UTA vs ORL - finished
-            "KXNBAGAME-26FEB07CHAATL",  # CHA vs ATL - finished
-            "KXNBAGAME-26FEB07CLESAC",  # CLE vs SAC - finished
+        # 0b. WHITELIST - Only trade on games we KNOW are currently IN-PROGRESS
+        # This prevents trading on pre-game markets (like GSW/LAL which hasn't started)
+        # and finished games. Update this list based on real-time game status.
+        LIVE_GAMES_WHITELIST = [
+            "KXNBAGAME-26FEB07DALSAS",  # DAL vs SAS - Currently LIVE (Q1)
+            # Add more tickers here as games become live
         ]
         
-        for blacklisted in FINISHED_GAMES_BLACKLIST:
-            if ticker.startswith(blacklisted):
-                return False, f"Blacklisted (game finished)"
+        is_live = False
+        for live_game in LIVE_GAMES_WHITELIST:
+            if ticker.startswith(live_game):
+                is_live = True
+                break
+        
+        if not is_live:
+            return False, f"Not in live games whitelist"
         
         # 1. Timezone Check
         game_date = parse_ticker_date(ticker)
