@@ -168,8 +168,11 @@ class KalshiProductionBot:
             start_ts = int(time.time() - (5 * 86400))
             
             # 3. Request
-            path = f"/series/{series_ticker}/markets/{ticker}/candlesticks?limit=100&start_ts={start_ts}&period=1h"
-            history = await self.client._authenticated_request("GET", path)
+            # Passing params separately ensures clean encoding
+            path = f"/series/{series_ticker}/markets/{ticker}/candlesticks"
+            params = {"limit": 100, "start_ts": start_ts}
+            
+            history = await self.client._authenticated_request("GET", path, params=params)
             
             points = history.get("candlesticks", [])
             
@@ -205,6 +208,7 @@ class KalshiProductionBot:
         except Exception as e:
             logger.error(f"   ❌ History Fetch Error: {e}")
             return None
+
 
     async def check_strategy(self, market):
         """The Core Limit Logic."""
