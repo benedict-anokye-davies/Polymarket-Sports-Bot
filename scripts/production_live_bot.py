@@ -362,15 +362,15 @@ class KalshiProductionBot:
                 # 2. Monitor Positions (SL/TP)
                 await self.monitor_positions()
                 
-                logger.info("   Sleeping 60s...")
-                await asyncio.sleep(60)
+                logger.info("   Sleeping 3s...")
+                await asyncio.sleep(3)
                 
             except KeyboardInterrupt:
                 logger.info("   🛑 Manual Stop")
                 break
             except Exception as e:
                 logger.error(f"   ⚠️ Cycle Error: {e}")
-                await asyncio.sleep(60) # Wait before retry
+                await asyncio.sleep(3) # Wait before retry
 
 async def main():
     bot = KalshiProductionBot()
