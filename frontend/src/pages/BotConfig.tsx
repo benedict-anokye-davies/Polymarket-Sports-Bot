@@ -134,6 +134,9 @@ export default function BotConfig() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  
+  // AUTO-TRADE-ALL MODE: When enabled, bot trades ANY market matching parameters
+  const [autoTradeAll, setAutoTradeAll] = useState(false);
 
   // Always use live trading mode (no paper trading - Kalshi has no demo)
   const simulationMode = false;
@@ -494,8 +497,9 @@ export default function BotConfig() {
 
   // Save configuration to API
   const handleSave = useCallback(async () => {
-    if (selectedGamesCount === 0) {
-      setError('Please select at least one game');
+    // Only require game selection if not in auto mode
+    if (selectedGamesCount === 0 && !autoTradeAll) {
+      setError('Please select at least one game or enable Auto-Trade Mode');
       return;
     }
 
@@ -504,6 +508,21 @@ export default function BotConfig() {
     setSuccessMessage(null);
 
     try {
+      // If in auto mode, we don't need specific games selected
+      if (autoTradeAll) {
+        await apiClient.saveBotConfig({
+          sport: selectedLeague,
+          game: null, // No specific game needed
+          parameters: toApiParams(tradingParams),
+          simulation_mode: simulationMode,
+          auto_trade_all: true,
+        });
+        setSuccessMessage(`Auto-Trade Mode enabled - Bot will trade ANY team matching your parameters`);
+        setHasUnsavedChanges(false);
+        setTimeout(() => setSuccessMessage(null), 5000);
+        return;
+      }
+
       // Get all selected games with their side preferences
       const allSelectedGames = Object.values(selectedGames);
       const firstSelection = allSelectedGames[0];
@@ -547,12 +566,13 @@ export default function BotConfig() {
     } finally {
       setIsSaving(false);
     }
-  }, [selectedGames, tradingParams, simulationMode]);
+  }, [selectedGames, tradingParams, simulationMode, autoTradeAll, selectedLeague]);
 
   // Toggle bot on/off
   const handleToggleBot = useCallback(async () => {
-    if (selectedGamesCount === 0) {
-      setError('Please select at least one game');
+    // Only require game selection if not in auto mode
+    if (selectedGamesCount === 0 && !autoTradeAll) {
+      setError('Please select at least one game or enable Auto-Trade Mode');
       return;
     }
 
@@ -560,6 +580,30 @@ export default function BotConfig() {
     setError(null);
 
     try {
+      // Handle Auto-Trade Mode
+      if (autoTradeAll) {
+        await apiClient.saveBotConfig({
+          sport: selectedLeague,
+          game: null,
+          parameters: toApiParams(tradingParams),
+          simulation_mode: simulationMode,
+          auto_trade_all: true,
+        });
+        
+        if (botEnabled) {
+          await apiClient.stopBot();
+          setBotEnabled(false);
+          setSuccessMessage('Bot stopped');
+        } else {
+          await apiClient.startBot();
+          setBotEnabled(true);
+          setSuccessMessage(`Bot started in AUTO-TRADE MODE - betting on ANY team matching your parameters!`);
+        }
+        setHasUnsavedChanges(false);
+        setTimeout(() => setSuccessMessage(null), 5000);
+        return;
+      }
+      
       // First save the config with simulation mode and selected sides
       const allSelectedGames = Object.values(selectedGames);
       const firstSelection = allSelectedGames[0];
@@ -587,6 +631,7 @@ export default function BotConfig() {
           additional_games: additionalGames.length > 0 ? additionalGames : undefined,
           parameters: toApiParams(tradingParams),
           simulation_mode: simulationMode,
+          auto_trade_all: false,
         });
       }
 
@@ -611,7 +656,7 @@ export default function BotConfig() {
     } finally {
       setIsLoading(false);
     }
-  }, [botEnabled, selectedGames, tradingParams, simulationMode]);
+  }, [botEnabled, selectedGames, tradingParams, simulationMode, autoTradeAll, selectedLeague]);
 
   return (
     <DashboardLayout>
@@ -989,6 +1034,48 @@ export default function BotConfig() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* AUTO-TRADE-ALL MODE TOGGLE */}
+                <div className="p-4 rounded-lg border-2 border-primary/20 bg-primary/5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Zap className="w-5 h-5 text-yellow-500" />
+                      <div>
+                        <h3 className="text-sm font-semibold text-foreground">Auto-Trade Mode</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Automatically bet on ANY team matching your parameters
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      variant={autoTradeAll ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setAutoTradeAll(!autoTradeAll)}
+                      className={cn(
+                        "min-w-[100px]",
+                        autoTradeAll && "bg-yellow-600 hover:bg-yellow-700"
+                      )}
+                    >
+                      {autoTradeAll ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 mr-1" />
+                          Enabled
+                        </>
+                      ) : (
+                        <>
+                          <X className="w-4 h-4 mr-1" />
+                          Disabled
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  {autoTradeAll && (
+                    <div className="mt-3 p-2 bg-yellow-500/10 rounded text-xs text-yellow-600 dark:text-yellow-400">
+                      ⚡ Bot will scan ALL markets and bet on any team that meets your entry criteria.
+                      No manual game selection needed!
+                    </div>
+                  )}
+                </div>
+
                 {/* Entry Conditions */}
                 <div>
                   <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">

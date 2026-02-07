@@ -569,8 +569,24 @@ async def save_bot_config(
         "games": all_games,  # Store ALL games for multi-sport tracking
         "parameters": request.parameters.model_dump() if request.parameters else None,
         "simulation_mode": request.simulation_mode,
+        "auto_trade_all": getattr(request, 'auto_trade_all', False),  # AUTO-TRADE-ALL MODE
         "last_updated": datetime.now().isoformat()
     }
+    
+    # If auto_trade_all is enabled, update global settings
+    if getattr(request, 'auto_trade_all', False):
+        await GlobalSettingsCRUD.update(
+            db, 
+            current_user.id, 
+            {"auto_trade_all": True}
+        )
+        logger.info(f"AUTO-TRADE-ALL MODE enabled for user {current_user.id}")
+    else:
+        await GlobalSettingsCRUD.update(
+            db, 
+            current_user.id, 
+            {"auto_trade_all": False}
+        )
     
     # Persist to database for recovery after server restart
     await GlobalSettingsCRUD.save_bot_config(db, current_user.id, _bot_configs[user_id])

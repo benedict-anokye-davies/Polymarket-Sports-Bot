@@ -90,6 +90,8 @@ class BotConfigRequest(BaseModel):
     )
     parameters: Optional[TradingParameters] = Field(default=None, description="Trading parameters")
     simulation_mode: bool = Field(default=False, description="Paper trading mode - simulate trades without real money")
+    # AUTO-TRADE-ALL MODE: When enabled, bot trades ANY market matching parameters
+    auto_trade_all: bool = Field(default=False, description="Auto-trade all matching markets without manual game selection")
 
 
 class BotConfigResponse(BaseModel):

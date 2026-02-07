@@ -1345,11 +1345,13 @@ export interface GameSelection {
 
 export interface BotConfigRequest {
   sport: string;
-  game?: GameSelection;
+  game?: GameSelection | null;
   // Additional games for multi-sport support
   additional_games?: GameSelection[];
   parameters?: TradingParameters;
   simulation_mode?: boolean;
+  // AUTO-TRADE-ALL MODE: When true, bot trades ANY market matching parameters
+  auto_trade_all?: boolean;
 }
 
 export interface BotConfigResponse {

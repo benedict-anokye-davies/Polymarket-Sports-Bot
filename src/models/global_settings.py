@@ -130,6 +130,14 @@ class GlobalSettings(Base):
         default=Decimal("10.0")
     )
     
+    # AUTO-TRADE ALL MODE
+    # When enabled, bot automatically bets on ANY team that matches parameters
+    # No manual game selection needed - scans all markets automatically
+    auto_trade_all: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False
+    )
+    
     # Persistent bot configuration (selected games, parameters)
     # Stored as JSON to survive server restarts
     bot_config_json: Mapped[dict | None] = mapped_column(

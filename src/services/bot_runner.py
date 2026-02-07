@@ -126,6 +126,10 @@ class BotRunner:
         # Real money trading - no simulation
         self.max_slippage: float = 0.02
         self.order_fill_timeout: int = 60
+        
+        # AUTO-TRADE-ALL MODE: When True, bot trades ANY market matching parameters
+        # No manual game selection required
+        self.auto_trade_all: bool = False
 
         # Emergency stop flag
         self.emergency_stop: bool = False
@@ -219,6 +223,11 @@ class BotRunner:
             self.emergency_stop = bool(getattr(settings, 'emergency_stop', False))
             self.max_slippage = float(getattr(settings, 'max_slippage_pct', 0.02))
             self.order_fill_timeout = int(getattr(settings, 'order_fill_timeout_seconds', 60))
+            
+            # AUTO-TRADE-ALL MODE: Trade any market matching parameters
+            self.auto_trade_all = bool(getattr(settings, 'auto_trade_all', False))
+            if self.auto_trade_all:
+                logger.info("AUTO-TRADE-ALL MODE ENABLED: Bot will trade ANY market matching parameters")
             
             # Apply settings to trading client (only set attributes that exist)
             if hasattr(self.trading_client, 'max_slippage'):
@@ -583,9 +592,9 @@ class BotRunner:
                 async with async_session_factory() as db:
                     logger.info(f"Running market discovery for {self.platform}...")
 
-                    # Skip discovery if no games selected by user
-                    if not self.user_selected_games:
-                        logger.debug("No user-selected games to track")
+                    # Skip discovery if no games selected by user AND auto_trade_all is disabled
+                    if not self.user_selected_games and not self.auto_trade_all:
+                        logger.debug("No user-selected games to track and auto_trade_all is disabled")
                         await asyncio.sleep(self.DISCOVERY_INTERVAL)
                         continue
 
@@ -668,7 +677,19 @@ class BotRunner:
                                 if not user_game_config:
                                     user_game_config = self.user_selected_games.get(matched_market.condition_id)
 
-                                # If still not found, skip (unless we want to auto-track everything, but sticking to user selection for now)
+                                # AUTO-TRADE-ALL MODE: If enabled, automatically trade ALL markets that match parameters
+                                if not user_game_config and self.auto_trade_all:
+                                    # In auto mode, we trade ANY team that matches - pick based on which side meets criteria
+                                    # Default to home side, trading engine will evaluate both sides
+                                    user_game_config = {
+                                        "game_id": event_id,
+                                        "sport": sport,
+                                        "selected_side": "auto",  # Special value: engine will pick the best side
+                                        "auto_selected": True
+                                    }
+                                    logger.info(f"AUTO-TRADE: Auto-selecting market {matched_market.ticker} ({home_name} vs {away_name})")
+                                
+                                # If still not found and not in auto mode, skip
                                 if not user_game_config:
                                     continue
 

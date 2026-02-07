@@ -30,7 +30,9 @@
       "Bash(pip show:*)",
       "WebFetch(domain:pypi.org)",
       "WebFetch(domain:docs.kalshi.com)",
-      "Bash(GIT_TERMINAL_PROMPT=0 git push:*)"
+      "Bash(GIT_TERMINAL_PROMPT=0 git push:*)",
+      "Bash(git status:*)",
+      "Bash(tree:*)"
     ]
   }
 }
