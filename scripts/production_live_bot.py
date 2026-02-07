@@ -124,10 +124,11 @@ class KalshiProductionBot:
                  details_json = details if isinstance(details, dict) else {"info": str(details)} if details else {}
                  
                  # Using raw SQL for speed/simplicity in this script
-                 stmt = text(\"""
+                 stmt = text("""
                      INSERT INTO activity_logs (id, user_id, category, message, details, created_at)
                      VALUES (:id, :user_id, :category, :message, :details, :created_at)
-                 \""")
+                 """)
+
                  
                  await session.execute(stmt, {
                      "id": uuid.uuid4(),
