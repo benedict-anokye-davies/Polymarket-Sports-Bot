@@ -45,16 +45,13 @@ async def main():
             private_key_pem=creds.get("private_key") or creds.get("api_secret")
         )
 
-        # 2. Target Teams
+        # 2. Target Teams - Tonight's Live NBA Games (Feb 7, 2026)
         target_teams = {
-            "LAL": "Los Angeles Lakers",
+            "BOS": "Boston Celtics",
             "DET": "Detroit Pistons",
-            "ORL": "Orlando Magic",
-            "ATL": "Atlanta Hawks",
-            "TOR": "Toronto Raptors",
-            "HOU": "Houston Rockets",
-            "SAS": "San Antonio Spurs",
-            "PHX": "Phoenix Suns"
+            "MIN": "Minnesota Timberwolves",
+            "LAC": "Los Angeles Clippers",
+            "POR": "Portland Trail Blazers"
         }
         
         print(f"Targeting bets for teams: {list(target_teams.keys())}")
