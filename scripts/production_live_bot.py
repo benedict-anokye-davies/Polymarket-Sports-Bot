@@ -37,6 +37,10 @@ CONFIG = {
     # Execution
     "position_size_dollars": 1.0,
     "dry_run": False,             # Set True to simulate only
+    
+    # Risk Management (Soft Limits)
+    "stop_loss_pct": 0.20,        # 20% Stop Loss
+    "take_profit_pct": 0.20,      # 20% Take Profit
 }
 
 TARGET_TEAMS = {
