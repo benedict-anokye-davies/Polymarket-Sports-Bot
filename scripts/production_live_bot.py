@@ -36,7 +36,7 @@ CONFIG = {
     
     # Strategy
     "min_pregame_prob": 0.65,     # 65% pre-game favorite
-    "drop_threshold": 0.25,       # 25% drop required (e.g. 65% -> 40%)
+    "drop_threshold": 0.10,       # 10% drop required (lowered for testing)
     
     # Execution
     "position_size_dollars": 1.0,
