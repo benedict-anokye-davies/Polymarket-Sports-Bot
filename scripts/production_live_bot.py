@@ -240,12 +240,13 @@ class KalshiProductionBot:
             return False, "Old game"
 
         # 2. Volume Check
-        yes_ask = market.get("yes_ask", 0)
+        # User sees "Notional Volume" on Dashboard (Contracts * $1), not Risk Volume (Contracts * Price).
+        # We switch to Notional Volume to match User Expectation and capture liquid events even if price is low.
         volume = market.get("volume", 0)
-        est_volume_dollars = volume * (yes_ask / 100.0) if yes_ask else volume * 0.50
+        notional_volume = float(volume) # 1 contract = $1 max payout
         
-        if est_volume_dollars < CONFIG["min_volume_dollars"]:
-            return False, f"Low Volume (${est_volume_dollars:,.0f} < ${CONFIG['min_volume_dollars']:,.0f})"
+        if notional_volume < CONFIG["min_volume_dollars"]:
+            return False, f"Low Volume (${notional_volume:,.0f} < ${CONFIG['min_volume_dollars']:,.0f})"
 
         # 3. Strategy: Check for Drop
         pregame_prob = await self.get_pregame_probability(ticker)
