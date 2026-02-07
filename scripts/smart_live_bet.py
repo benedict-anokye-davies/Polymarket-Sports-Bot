@@ -93,14 +93,52 @@ def check_parameters(market, pregame_prob=None):
         print(f"    📉 Pregame: {pregame_prob:.1%} -> Current: {current_prob:.1%} (Drop: {drop:.1%})")
         
         if drop < PARAMS["probability_drop"]:
+            print(f"    ❌ Drop {drop:.1%} < {PARAMS['probability_drop']:.0%} required")
             return False, f"Drop {drop:.1%} < {PARAMS['probability_drop']:.0%} required"
             
         if pregame_prob < PARAMS["min_pregame_probability"]:
+            print(f"    ❌ Pregame {pregame_prob:.1%} < {PARAMS['min_pregame_probability']:.0%} min")
             return False, f"Pregame {pregame_prob:.1%} < {PARAMS['min_pregame_probability']:.0%} min"
     else:
-        print("    ⚠️ No pregame data found, skipping drop check")
+        # STRICT MODE: If we can't find history, we CANNOT verify the strategy.
+        # We must SKIP.
+        print("    ❌ No pregame data found. STRICT MODE violation.")
+        return False, "No pregame data to verify strategy"
 
     return True, "All parameters met"
+
+def is_game_live(market):
+    """Check if game is actually live (started) and not in the far future."""
+    # Kalshi format: "2026-02-08T00:00:00Z"
+    # We can also check status "active", but we want to avoid "active" future games.
+    # Ticker often has date: KXNBAGAME-26FEB08...
+    
+    ticker = market.get("ticker", "")
+    try:
+        # Extract date from ticker: 26FEB08
+        parts = ticker.split("-")
+        if len(parts) >= 2:
+            date_str = parts[1] # "26FEB08"
+            # Parse date
+            game_date = datetime.strptime(date_str, "%y%b%d")
+            # Set to current year if needed (ticker has year '26')
+            
+            now = datetime.now()
+            # Simple check: If game date is > today + 1 day, skip.
+            # Actually, "Live" means it started today (or late last night).
+            # If game_date day > now day, it's a future game.
+            
+            # Note: active markets might be for "Winner" which settles later, 
+            # but if we want LIVE games, we want games happening NOW.
+            
+            # We will filter out any game scheduled for "tomorrow" or later.
+            if game_date.date() > now.date():
+                return False, f"Future game date: {date_str}"
+                
+    except Exception as e:
+        print(f"    ⚠️ Date parse error: {e}")
+        
+    return True, "Date OK"
 
 async def place_bets():
     from src.services.kalshi_client import KalshiClient
@@ -154,6 +192,12 @@ async def place_bets():
             
         print(f"\n🏀 Analyzing {TARGET_TEAMS[matched_abbr]} ({matched_abbr})")
         print(f"   Ticker: {ticker}")
+        
+        # Date Filter
+        is_live, date_msg = is_game_live(m)
+        if not is_live:
+             print(f"   ⏭️ SKIPPED: {date_msg}")
+             continue
         
         # Fetch pregame/history data
         pregame_prob = await get_market_pregame_prob(client, ticker)
