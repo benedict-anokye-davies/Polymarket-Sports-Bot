@@ -68,7 +68,7 @@ async def place_bets():
                             side="buy",
                             yes_no="yes", 
                             price=yes_ask, # 1-99
-                            count=1, # Number of contracts
+                            size=1, # Number of contracts
                             client_order_id=f"demo-{team}-{os.urandom(4).hex()}"
                         )
                         print(f"  ORDER RESULT: {order}")
