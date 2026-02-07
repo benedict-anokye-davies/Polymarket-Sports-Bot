@@ -281,25 +281,43 @@ class MarketDiscovery:
             markets = all_markets
             logger.info(f"Fetched {len(markets)} markets from Kalshi Sports category")
 
-            # TARGETED DISCOVERY: NBA specific series
-            # As per user/investigation, NBA games are under KXNBAGAME, KXNBASPREAD, KXNBATOTAL
-            # and may be "unopened" or "active" but not showing in broad "Sports" query sometimes.
-            if sports and "nba" in sports:
+            # TARGETED DISCOVERY: NBA specific series with proper filters
+            # NBA games are in KXNBAGAME, KXNBASPREAD, KXNBATOTAL series
+            # Key fixes:
+            #   1. Query BOTH "open" AND "unopened" statuses (pregame markets sit in 'unopened')
+            #   2. Use time-window filtering (min_close_ts/max_close_ts) to get tonight's games
+            #   3. Always query these series for NBA, not relying on "Sports" category
+            if sports is None or "nba" in sports:
                 nba_series_list = ["KXNBAGAME", "KXNBASPREAD", "KXNBATOTAL"]
                 logger.info(f"Fetching targeted NBA series: {nba_series_list}")
                 
+                # Time window: now to 24 hours ahead (covers tonight's games)
+                min_close_ts = int(now.timestamp())
+                max_close_ts = int((now + timedelta(hours=24)).timestamp())
+                
+                # Query both 'open' and 'unopened' statuses
+                statuses_to_query = ["open", "unopened"]
+                
                 for series in nba_series_list:
-                    # Try fetching with no status filter to get everything (open, unopened, active)
-                    try:
-                        p = {"series_ticker": series, "limit": 100}
-                        resp = await client.get(f"{kalshi_api_base}/markets", params=p, timeout=10.0)
-                        if resp.status_code == 200:
-                            s_data = resp.json()
-                            s_markets = s_data.get("markets", [])
-                            logger.info(f"Fetched {len(s_markets)} markets for series {series}")
-                            markets.extend(s_markets)
-                    except Exception as e:
-                        logger.warning(f"Error fetching series {series}: {e}")
+                    for status in statuses_to_query:
+                        try:
+                            p = {
+                                "series_ticker": series,
+                                "status": status,
+                                "min_close_ts": min_close_ts,
+                                "max_close_ts": max_close_ts,
+                                "limit": 100
+                            }
+                            resp = await client.get(f"{kalshi_api_base}/markets", params=p, timeout=10.0)
+                            if resp.status_code == 200:
+                                s_data = resp.json()
+                                s_markets = s_data.get("markets", [])
+                                if s_markets:
+                                    logger.info(f"Fetched {len(s_markets)} {status} markets for {series}")
+                                    markets.extend(s_markets)
+                        except Exception as e:
+                            logger.warning(f"Error fetching series {series} status {status}: {e}")
+                        await asyncio.sleep(0.05)  # Rate limiting between calls
 
             existing_tickers = {m.get("ticker") for m in markets if m.get("ticker")}
             leg_tickers: set[str] = set()
@@ -372,8 +390,8 @@ class MarketDiscovery:
                 text_blob = " ".join([title, subtitle, yes_sub, no_sub]).strip()
                 status = market.get("status", "")
                 
-                # Skip non-open markets
-                if status not in ["open", "active"]:
+                # Accept open, active, AND unopened markets (pregame markets are often 'unopened')
+                if status not in ["open", "active", "unopened"]:
                     continue
                 
                 # SPECIAL HANDLING: Robust Parsing for Kalshi Multi-Game/City-Based Titles
