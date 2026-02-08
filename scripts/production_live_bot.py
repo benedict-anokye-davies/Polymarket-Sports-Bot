@@ -368,16 +368,18 @@ class KalshiProductionBot:
         try:
             # GET /portfolio/positions
             resp = await self.client._authenticated_request("GET", "/portfolio/positions")
-            positions = resp.get("market_positions") or resp.get("positions") or []
-            if isinstance(resp, list): positions = resp # Handle list direct return
+            # Kalshi returns event_positions (not market_positions)
+            positions = resp.get("event_positions") or resp.get("market_positions") or resp.get("positions") or []
+            if isinstance(resp, list): positions = resp
             
             # Update cache of open positions
             self.open_positions = set()
             self.active_order_tickers = set()
             
             for pos in positions:
-                ticker = pos.get("ticker")
-                count = abs(int(pos.get("position", 0)))
+                # Handle event_ticker or ticker field
+                ticker = pos.get("ticker") or pos.get("event_ticker")
+                count = abs(int(pos.get("position", 0) or pos.get("total_cost_shares", 0)))
                 if count == 0: continue
                 
                 self.open_positions.add(ticker)
