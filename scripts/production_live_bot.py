@@ -92,6 +92,7 @@ class KalshiProductionBot:
         self.espn = ESPNService()
         self.live_team_abbreviations = set()  # Cache of currently live teams from ESPN
         self.open_positions = set()  # Cache of current Kalshi positions (tickers)
+        self.active_order_tickers = set()  # Cache of current Kalshi open orders (tickers)
         
         # DB Setup
         self.db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@db:5432/polymarket_bot")
@@ -371,6 +372,7 @@ class KalshiProductionBot:
             
             # Update cache of open positions
             self.open_positions = set()
+            self.active_order_tickers = set()
             
             for pos in positions:
                 ticker = pos.get("ticker")
@@ -403,8 +405,20 @@ class KalshiProductionBot:
                 elif pnl_pct >= CONFIG["take_profit_pct"]:
                     logger.info(f"   💰 TAKE PROFIT TRIGGERED: {ticker} (+{pnl_pct:.1%})")
                     await self.close_position(ticker, count, "take_profit")
+
+            # 2. Fetch Open Orders for entry suppression
+            try:
+                order_data = await self.client.get_open_orders()
+                orders = order_data.get("orders", [])
+                for o in orders:
+                    status = o.get("status")
+                    if status in ["resting", "open", "pending"]:
+                        self.active_order_tickers.add(o.get("ticker"))
+            except Exception as e:
+                logger.error(f"Error fetching open orders: {e}")
                         
         except Exception as e:
+            logger.error(f"Error in monitor_positions: {e}")
             pass # Suppress transient errors in position loop
 
     async def close_position(self, ticker, count, reason):
@@ -488,7 +502,11 @@ class KalshiProductionBot:
                     
                     if is_good:
                         if ticker in self.open_positions:
-                            # Avoid spamming logs for held positions
+                            # Already hold it, skip
+                            continue
+                            
+                        if ticker in self.active_order_tickers:
+                            # Already have a pending order, skip
                             continue
                             
                         logger.info(f"✨ MATCH: {ticker} - {reason}")
