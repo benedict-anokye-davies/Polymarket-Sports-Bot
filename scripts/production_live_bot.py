@@ -28,6 +28,9 @@ logger = logging.getLogger("KalshiProductionBot")
 
 # INITIAL DEFAULT CONFIG (Will be updated from DB)
 CONFIG = {
+    # Sport Settings
+    "sport": "nba",               # Default sport
+    
     # Timezone Settings
     "timezone_offset_hours": -6,  # US Central Standard Time (CST)
     
@@ -51,20 +54,46 @@ CONFIG = {
     "bot_enabled": True           # Controlled by DB
 }
 
-# ESPN uses slightly different abbreviations than Kalshi for some teams
-# This maps ESPN abbrev -> Kalshi abbrev
-ESPN_TO_KALSHI_ABBREV = {
-    "SA": "SAS",    # San Antonio Spurs
-    "GS": "GSW",    # Golden State Warriors (ESPN sometimes uses GS)
-    "NO": "NOP",    # New Orleans Pelicans
-    "NY": "NYK",    # New York Knicks
-    "WSH": "WAS",   # Washington Wizards
-    "PHO": "PHX",   # Phoenix Suns
-    "BKN": "BKN",   # Brooklyn Nets (same)
-    # Most teams use same abbreviation
+# Mapping of ESPN sports to Kalshi Series Tickers
+# Key is the sport identifier used by the bot/frontend
+SPORT_TO_SERIES = {
+    "nba": "KXNBAGAME",
+    "nfl": "KXNFLGAME",
+    "mlb": "KXMLBGAME",
+    "nhl": "KXNHLGAME",
+    "epl": "KXEPLGAME",      # Premier League
+    "ucl": "KXUCLGAME",      # Champions League
+    "laliga": "KXLALIGAGAME", 
 }
 
-TARGET_TEAMS = {} # Populated dynamically (NBA)
+# ESPN uses slightly different abbreviations than Kalshi for some teams
+# These maps are keyed by sport
+ABBREVIATION_MAPS = {
+    "nba": {
+        "SA": "SAS",    # San Antonio Spurs
+        "GS": "GSW",    # Golden State Warriors
+        "NO": "NOP",    # New Orleans Pelicans
+        "NY": "NYK",    # New York Knicks
+        "WSH": "WAS",   # Washington Wizards
+        "PHO": "PHX",   # Phoenix Suns
+        "BKN": "BKN",   # Brooklyn Nets
+    },
+    "nfl": {
+        "WSH": "WAS",   # Commanders
+        "LAR": "RAMS",  # LA Rams (Kalshi often uses team names)
+        # Add more as discovered
+    },
+    "mlb": {
+        "WSH": "WAS",
+        "CHW": "CWS",
+    },
+    # Generic fallback: most teams use same abbreviations or names
+}
+
+# Legacy mapping for backwards compatibility
+ESPN_TO_KALSHI_ABBREV = ABBREVIATION_MAPS["nba"]
+
+TARGET_TEAMS = {} # Populated dynamically by selected sport
 
 def get_cst_now():
     """Get current time in US Central."""
@@ -72,14 +101,19 @@ def get_cst_now():
     return datetime.now(offset)
 
 def parse_ticker_date(ticker):
-    """Parses date from ticker like KXNBAGAME-26FEB08LACMIN-MIN -> 2026-02-08"""
+    """
+    Parses date from ticker like KXNBAGAME-26FEB08LACMIN-MIN -> 2026-02-08
+    Now sport-agnostic by finding the first dash.
+    """
     try:
         parts = ticker.split("-")
         if len(parts) >= 2:
-            date_part = parts[1][:7] # 26FEB08
+            # The second part always starts with the YYMMMDD date (e.g., 26FEB08)
+            date_part = parts[1][:7]
             dt = datetime.strptime(date_part, "%y%b%d")
             return dt.date()
     except Exception as e:
+        logger.debug(f"Failed to parse date from ticker {ticker}: {e}")
         return None
 
 class KalshiProductionBot:
@@ -123,6 +157,10 @@ class KalshiProductionBot:
                         if "min_volume" in params:
                             CONFIG["min_volume_dollars"] = float(params["min_volume"])
                         
+                        # NEW: Load sport if present
+                        if "sport" in config_json:
+                            CONFIG["sport"] = config_json["sport"].lower()
+                                                        
                         # Update Strategy Limits
                         if "stop_loss" in params:
                             CONFIG["stop_loss_pct"] = float(params["stop_loss"]) / 100.0
@@ -134,6 +172,10 @@ class KalshiProductionBot:
                             # User requested strict $1 limit - overriding DB value for safety
                             # CONFIG["position_size_dollars"] = float(params["position_size"])
                             CONFIG["position_size_dollars"] = 1.0
+                        
+                        # NEW: Load min_pregame_prob if present
+                        if "min_pregame_prob" in params:
+                            CONFIG["min_pregame_prob"] = float(params["min_pregame_prob"])
                         
         except Exception as e:
             logger.error(f"⚠️ DB Config Sync Failed: {e}")
@@ -489,30 +531,34 @@ class KalshiProductionBot:
                     await asyncio.sleep(10)
                     continue
 
-                logger.info(f"🕒 Cycle Start (CST: {get_cst_now()}) | Vol>${CONFIG['min_volume_dollars']/1000:.0f}k | Drop>{CONFIG['drop_threshold']:.0%}")
+                sport = CONFIG["sport"]
+                series_ticker = SPORT_TO_SERIES.get(sport, "KXNBAGAME") # Fallback to NBA
+                abbrev_map = ABBREVIATION_MAPS.get(sport, {})
+
+                logger.info(f"🕒 Cycle Start (CST: {get_cst_now()}) | Sport: {sport.upper()} ({series_ticker}) | Vol>${CONFIG['min_volume_dollars']/1000:.0f}k | Drop>{CONFIG['drop_threshold']:.0%}")
                 
                 # 0b. Fetch live games from ESPN to determine which games are actually in-progress
                 try:
-                    espn_live_games = await self.espn.get_live_games("nba")
+                    espn_live_games = await self.espn.get_live_games(sport)
                     self.live_team_abbreviations = set()
                     for game in espn_live_games:
-                        state = self.espn.parse_game_state(game, "nba")
+                        state = self.espn.parse_game_state(game, sport)
                         if state["home_team"]:
                             espn_abbrev = state["home_team"]["abbreviation"]
                             # Translate ESPN abbreviation to Kalshi format
-                            kalshi_abbrev = ESPN_TO_KALSHI_ABBREV.get(espn_abbrev, espn_abbrev)
+                            kalshi_abbrev = abbrev_map.get(espn_abbrev, espn_abbrev)
                             self.live_team_abbreviations.add(kalshi_abbrev)
                         if state["away_team"]:
                             espn_abbrev = state["away_team"]["abbreviation"]
-                            kalshi_abbrev = ESPN_TO_KALSHI_ABBREV.get(espn_abbrev, espn_abbrev)
+                            kalshi_abbrev = abbrev_map.get(espn_abbrev, espn_abbrev)
                             self.live_team_abbreviations.add(kalshi_abbrev)
                     logger.info(f"📺 ESPN: {len(espn_live_games)} live games, Teams: {self.live_team_abbreviations}")
                 except Exception as e:
-                    logger.error(f"⚠️ ESPN fetch failed: {e}. Using empty live list.")
+                    logger.error(f"⚠️ ESPN fetch failed for {sport}: {e}. Using empty live list.")
                     self.live_team_abbreviations = set()
                 
-                # 1. Discovery (Quick Scan) - Note: Kalshi doesn't support status=active, use open
-                found_markets = await self.client.get_markets(series_ticker="KXNBAGAME", status="open", limit=100)
+                # 1. Discovery (Quick Scan)
+                found_markets = await self.client.get_markets(series_ticker=series_ticker, status="open", limit=100)
                 markets = found_markets.get("markets", [])
                 
                 logger.info(f"🔎 Scanning {len(markets)} Markets...")
@@ -532,7 +578,7 @@ class KalshiProductionBot:
                             continue
                             
                         logger.info(f"✨ MATCH: {ticker} - {reason}")
-                        await self.execute_trade(m, "nba")
+                        await self.execute_trade(m, sport)
                     else:
                          # Verbose logging to reassure user
                          logger.info(f"   Using {ticker}: {reason}")
