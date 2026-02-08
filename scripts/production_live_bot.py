@@ -368,7 +368,8 @@ class KalshiProductionBot:
         try:
             # GET /portfolio/positions
             resp = await self.client._authenticated_request("GET", "/portfolio/positions")
-            positions = resp.get("market_positions", [])
+            positions = resp.get("market_positions") or resp.get("positions") or []
+            if isinstance(resp, list): positions = resp # Handle list direct return
             
             # Update cache of open positions
             self.open_positions = set()
