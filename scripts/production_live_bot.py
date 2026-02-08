@@ -369,42 +369,56 @@ class KalshiProductionBot:
             # GET /portfolio/positions
             resp = await self.client._authenticated_request("GET", "/portfolio/positions")
             
-            # Kalshi returns event_positions, each containing market_positions
+            # Map Event Timer -> Cost Basis
             event_positions = resp.get("event_positions", [])
+            event_cost_map = {}
+            for e in event_positions:
+                e_ticker = e.get("event_ticker")
+                total_cost = e.get("total_cost", 0)
+                shares = e.get("total_cost_shares", 0)
+                if e_ticker:
+                    event_cost_map[e_ticker] = (total_cost, shares)
+
+            # Process Market Positions (Top Level)
+            market_positions = resp.get("market_positions", [])
             
             # Update cache of open positions
             self.open_positions = set()
             self.active_order_tickers = set()
             
-            for event_pos in event_positions:
-                # Get market_positions within this event
-                market_positions = event_pos.get("market_positions", [])
+            for pos in market_positions:
+                ticker = pos.get("ticker")
+                count = abs(int(pos.get("position", 0)))
+                if count == 0: continue
                 
-                for pos in market_positions:
-                    ticker = pos.get("ticker")
-                    count = abs(int(pos.get("position", 0)))
-                    if count == 0: continue
+                self.open_positions.add(ticker)
+                
+                # Fetch Current Market Price (Bid to Sell)
+                m_resp = await self.client.get_market(ticker)
+                market = m_resp.get("market", m_resp)
+                current_bid_cents = market.get("yes_bid", 0)
+                
+                # Calculate Cost Basis from Event Map
+                # Ticker format: EVENT_TICKER-MARKET_SUFFIX
+                # e.g. KXNBAGAME-26FEB07GSWLAL-LAL -> Event: KXNBAGAME-26FEB07GSWLAL
+                event_ticker = ticker.rsplit('-', 1)[0]
+                
+                avg_price_cents = 0
+                if event_ticker in event_cost_map:
+                    cost, shares = event_cost_map[event_ticker]
+                    if shares > 0:
+                        avg_price_cents = cost / shares
+                
+                # Fallback if map fails
+                if avg_price_cents == 0:
+                    avg_price_cents = pos.get("avg_price", 0) or 0
+                
+                if avg_price_cents > 0:
+                    pnl_pct = (current_bid_cents - avg_price_cents) / avg_price_cents
+                else:
+                    pnl_pct = 0
                     
-                    self.open_positions.add(ticker)
-                    
-                    # Fetch Current Market Price (Bid to Sell)
-                    m_resp = await self.client.get_market(ticker)
-                    market = m_resp.get("market", m_resp)
-                    current_bid_cents = market.get("yes_bid", 0)
-                    
-                    # Calculate Cost Basis - total_cost_shares / position = avg entry
-                    total_cost = pos.get("total_cost_shares", 0)  # This is total cents paid
-                    if total_cost and count:
-                        avg_price_cents = total_cost / count
-                    else:
-                        avg_price_cents = 0
-                    
-                    if avg_price_cents > 0:
-                        pnl_pct = (current_bid_cents - avg_price_cents) / avg_price_cents
-                    else:
-                        pnl_pct = 0
-                        
-                    logger.info(f"   📊 {ticker} | Entry: {avg_price_cents:.1f}c | Bid: {current_bid_cents}c | PnL: {pnl_pct:+.1%}")
+                logger.info(f"   📊 {ticker} | Entry: {avg_price_cents:.1f}c | Bid: {current_bid_cents}c | PnL: {pnl_pct:+.1%}")
                     
                     # SL/TP Check (inside the loop)
                     if pnl_pct <= -CONFIG["stop_loss_pct"]:
