@@ -181,6 +181,14 @@ class KalshiProductionBot:
             total = balance_data.get("balance", 0)
             logger.info(f"💰 ACCOUNT BALANCE: ${available:.2f} available / ${total:.2f} total")
 
+            # Log open orders to see if funds are tied up
+            orders_data = await self.client.get_open_orders()
+            orders = orders_data.get("orders", [])
+            if orders:
+                logger.info(f"📋 OPEN ORDERS: {len(orders)} pending. Tickers: {[o.get('ticker') for o in orders]}")
+            else:
+                logger.info("📋 OPEN ORDERS: None. (Funds should be available if > $0)")
+
             logger.info(f"🔧 CONFIRMED CONFIG: Position Size ${CONFIG['position_size_dollars']} | Drop Threshold {CONFIG['drop_threshold']:.1%}")
         except Exception as e:
             logger.error(f"❌ Failed to load credentials from {self.key_file}: {e}")
