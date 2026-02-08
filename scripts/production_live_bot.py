@@ -148,8 +148,8 @@ class KalshiProductionBot:
                  
                  # Using raw SQL for speed/simplicity in this script
                  stmt = text("""
-                     INSERT INTO activity_logs (id, user_id, category, message, details, created_at)
-                     VALUES (:id, :user_id, :category, :message, :details, :created_at)
+                     INSERT INTO activity_logs (id, user_id, category, level, message, details, created_at)
+                     VALUES (:id, :user_id, :category, :level, :message, :details, :created_at)
                  """)
 
                  
@@ -157,6 +157,7 @@ class KalshiProductionBot:
                      "id": uuid.uuid4(),
                      "user_id": self.user_id,
                      "category": category,
+                     "level": "INFO",  # Default level
                      "message": message,
                      "details": json.dumps(details_json),
                      "created_at": datetime.utcnow()
