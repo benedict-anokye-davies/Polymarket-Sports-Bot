@@ -31,34 +31,45 @@ async def main():
     logger.info("✅ Connected to Kalshi")
 
     try:
-        # 1. Fetch all resting/pending orders
+        # 1. Fetch all orders (try with and without resting status)
         logger.info("🔍 Fetching all open orders...")
         resp = await client._authenticated_request("GET", "/portfolio/orders")
         orders = resp.get("orders", [])
         
-        # Filter for cancelable statuses
-        to_cancel = [o for o in orders if o.get("status") in ["resting", "open", "pending"]]
-        
-        if not to_cancel:
-            logger.info("✨ No open orders found to cancel.")
+        if not orders:
+            logger.info("   No orders found at /portfolio/orders. Trying ?status=resting...")
+            resp = await client._authenticated_request("GET", "/portfolio/orders?status=resting")
+            orders = resp.get("orders", [])
+
+        if not orders:
+            logger.info("✨ Still no orders found. Nothing to cancel.")
             return
 
-        logger.info(f"🛑 Found {len(to_cancel)} cancelable orders. Starting cleanup...")
+        logger.info(f"📋 Found {len(orders)} total orders in portfolio.")
         
-        # 2. Cancel them!
-        for i, order in enumerate(to_cancel):
+        # 2. Cancel everything that's not already filled/canceled
+        cancelled_count = 0
+        for i, order in enumerate(orders):
             order_id = order.get("order_id")
             ticker = order.get("ticker")
-            try:
-                await client.cancel_order(order_id)
-                logger.info(f"   [{i+1}/{len(to_cancel)}] Cancelled: {order_id} ({ticker})")
-            except Exception as e:
-                logger.error(f"   [{i+1}/{len(to_cancel)}] FAILED to cancel {order_id}: {e}")
+            status = order.get("status", "unknown")
+            
+            # Log statuses for debugging
+            if i < 5: logger.info(f"   Sample Order: {order_id} | Status: {status} | Ticker: {ticker}")
+
+            if status not in ["filled", "executed", "canceled", "cancelled", "expired"]:
+                try:
+                    await client.cancel_order(order_id)
+                    cancelled_count += 1
+                    if cancelled_count % 10 == 0:
+                        logger.info(f"   Progress: Cancelled {cancelled_count} orders...")
+                except Exception as e:
+                    logger.error(f"   FAILED to cancel {order_id}: {e}")
             
             # Small sleep to avoid rate limiting
-            await asyncio.sleep(0.1)
+            if i % 5 == 0: await asyncio.sleep(0.05)
 
-        logger.info("✅ ORDER CLEANUP COMPLETE.")
+        logger.info(f"✅ ORDER CLEANUP COMPLETE. Cancelled {cancelled_count} orders.")
         
         # 3. Verify final balance
         balance_data = await client.get_balance()
