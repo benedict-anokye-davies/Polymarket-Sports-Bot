@@ -419,14 +419,14 @@ class KalshiProductionBot:
                     pnl_pct = 0
                     
                 logger.info(f"   📊 {ticker} | Entry: {avg_price_cents:.1f}c | Bid: {current_bid_cents}c | PnL: {pnl_pct:+.1%}")
-                    
-                    # SL/TP Check (inside the loop)
-                    if pnl_pct <= -CONFIG["stop_loss_pct"]:
-                        logger.info(f"   🛑 STOP LOSS TRIGGERED: {ticker} ({pnl_pct:.1%})")
-                        await self.close_position(ticker, count, "stop_loss")
-                    elif pnl_pct >= CONFIG["take_profit_pct"]:
-                        logger.info(f"   💰 TAKE PROFIT TRIGGERED: {ticker} (+{pnl_pct:.1%})")
-                        await self.close_position(ticker, count, "take_profit")
+                
+                # SL/TP Check (inside the loop)
+                if pnl_pct <= -CONFIG["stop_loss_pct"]:
+                    logger.info(f"   🛑 STOP LOSS TRIGGERED: {ticker} ({pnl_pct:.1%})")
+                    await self.close_position(ticker, count, "stop_loss")
+                elif pnl_pct >= CONFIG["take_profit_pct"]:
+                    logger.info(f"   💰 TAKE PROFIT TRIGGERED: {ticker} (+{pnl_pct:.1%})")
+                    await self.close_position(ticker, count, "take_profit")
 
             # 2. Fetch Open Orders for entry suppression
             try:
