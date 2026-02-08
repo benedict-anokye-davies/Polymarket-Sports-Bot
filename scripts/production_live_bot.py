@@ -387,12 +387,13 @@ class KalshiProductionBot:
                 market = m_resp.get("market", m_resp)
                 current_bid_cents = market.get("yes_bid", 0)
                 
-                # Calculate Cost Basis - Kalshi returns total_cost_shares, divide by count for avg
-                total_cost_shares = pos.get("total_cost_shares", 0)
-                if total_cost_shares and count:
-                    avg_price_cents = total_cost_shares / count
+                # Calculate Cost Basis - Kalshi: total_cost (cents) / total_cost_shares (count) = avg entry
+                total_cost = pos.get("total_cost", 0)
+                shares = pos.get("total_cost_shares", 0) or count
+                if total_cost and shares:
+                    avg_price_cents = total_cost / shares
                 else:
-                    avg_price_cents = pos.get("avg_price", 0) or pos.get("average_price", 0) or 0
+                    avg_price_cents = 0
                 
                 if avg_price_cents > 0:
                     pnl_pct = (current_bid_cents - avg_price_cents) / avg_price_cents
