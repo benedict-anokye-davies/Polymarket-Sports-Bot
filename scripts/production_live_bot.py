@@ -174,6 +174,13 @@ class KalshiProductionBot:
                 private_key = f.read()
             self.client = KalshiClient(api_key=self.api_key, private_key_pem=private_key)
             logger.info("✅ Kalshi Client Connected")
+
+            # Log current balance for verification
+            balance_data = await self.client.get_balance()
+            available = balance_data.get("available_balance", 0)
+            total = balance_data.get("balance", 0)
+            logger.info(f"💰 ACCOUNT BALANCE: ${available:.2f} available / ${total:.2f} total")
+
             logger.info(f"🔧 CONFIRMED CONFIG: Position Size ${CONFIG['position_size_dollars']} | Drop Threshold {CONFIG['drop_threshold']:.1%}")
         except Exception as e:
             logger.error(f"❌ Failed to load credentials from {self.key_file}: {e}")
