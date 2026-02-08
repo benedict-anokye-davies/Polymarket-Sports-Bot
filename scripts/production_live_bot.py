@@ -173,6 +173,7 @@ class KalshiProductionBot:
                 private_key = f.read()
             self.client = KalshiClient(api_key=self.api_key, private_key_pem=private_key)
             logger.info("✅ Kalshi Client Connected")
+            logger.info(f"🔧 CONFIRMED CONFIG: Position Size ${CONFIG['position_size_dollars']} | Drop Threshold {CONFIG['drop_threshold']:.1%}")
         except Exception as e:
             logger.error(f"❌ Failed to load credentials from {self.key_file}: {e}")
             sys.exit(1)
