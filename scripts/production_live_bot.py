@@ -368,41 +368,43 @@ class KalshiProductionBot:
         try:
             # GET /portfolio/positions
             resp = await self.client._authenticated_request("GET", "/portfolio/positions")
-            # Kalshi returns event_positions (not market_positions)
-            positions = resp.get("event_positions") or resp.get("market_positions") or resp.get("positions") or []
-            if isinstance(resp, list): positions = resp
+            
+            # Kalshi returns event_positions, each containing market_positions
+            event_positions = resp.get("event_positions", [])
             
             # Update cache of open positions
             self.open_positions = set()
             self.active_order_tickers = set()
             
-            for pos in positions:
-                # Handle event_ticker or ticker field
-                ticker = pos.get("ticker") or pos.get("event_ticker")
-                count = abs(int(pos.get("position", 0) or pos.get("total_cost_shares", 0)))
-                if count == 0: continue
+            for event_pos in event_positions:
+                # Get market_positions within this event
+                market_positions = event_pos.get("market_positions", [])
                 
-                self.open_positions.add(ticker)
-                
-                # Fetch Current Market Price (Bid to Sell)
-                m_resp = await self.client.get_market(ticker)
-                market = m_resp.get("market", m_resp)
-                current_bid_cents = market.get("yes_bid", 0)
-                
-                # Calculate Cost Basis - Kalshi: total_cost (cents) / total_cost_shares (count) = avg entry
-                total_cost = pos.get("total_cost", 0)
-                shares = pos.get("total_cost_shares", 0) or count
-                if total_cost and shares:
-                    avg_price_cents = total_cost / shares
-                else:
-                    avg_price_cents = 0
-                
-                if avg_price_cents > 0:
-                    pnl_pct = (current_bid_cents - avg_price_cents) / avg_price_cents
-                else:
-                    pnl_pct = 0
+                for pos in market_positions:
+                    ticker = pos.get("ticker")
+                    count = abs(int(pos.get("position", 0)))
+                    if count == 0: continue
                     
-                logger.info(f"   📊 {ticker} | Entry: {avg_price_cents}c | Bid: {current_bid_cents}c | PnL: {pnl_pct:+.1%}")
+                    self.open_positions.add(ticker)
+                    
+                    # Fetch Current Market Price (Bid to Sell)
+                    m_resp = await self.client.get_market(ticker)
+                    market = m_resp.get("market", m_resp)
+                    current_bid_cents = market.get("yes_bid", 0)
+                    
+                    # Calculate Cost Basis - total_cost_shares / position = avg entry
+                    total_cost = pos.get("total_cost_shares", 0)  # This is total cents paid
+                    if total_cost and count:
+                        avg_price_cents = total_cost / count
+                    else:
+                        avg_price_cents = 0
+                    
+                    if avg_price_cents > 0:
+                        pnl_pct = (current_bid_cents - avg_price_cents) / avg_price_cents
+                    else:
+                        pnl_pct = 0
+                        
+                    logger.info(f"   📊 {ticker} | Entry: {avg_price_cents:.1f}c | Bid: {current_bid_cents}c | PnL: {pnl_pct:+.1%}")
                 
                 if pnl_pct <= -CONFIG["stop_loss_pct"]:
                     logger.info(f"   🛑 STOP LOSS TRIGGERED: {ticker} ({pnl_pct:.1%})")
