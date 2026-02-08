@@ -51,6 +51,19 @@ CONFIG = {
     "bot_enabled": True           # Controlled by DB
 }
 
+# ESPN uses slightly different abbreviations than Kalshi for some teams
+# This maps ESPN abbrev -> Kalshi abbrev
+ESPN_TO_KALSHI_ABBREV = {
+    "SA": "SAS",    # San Antonio Spurs
+    "GS": "GSW",    # Golden State Warriors (ESPN sometimes uses GS)
+    "NO": "NOP",    # New Orleans Pelicans
+    "NY": "NYK",    # New York Knicks
+    "WSH": "WAS",   # Washington Wizards
+    "PHO": "PHX",   # Phoenix Suns
+    "BKN": "BKN",   # Brooklyn Nets (same)
+    # Most teams use same abbreviation
+}
+
 TARGET_TEAMS = {} # Populated dynamically (NBA)
 
 def get_cst_now():
@@ -418,9 +431,14 @@ class KalshiProductionBot:
                     for game in espn_live_games:
                         state = self.espn.parse_game_state(game, "nba")
                         if state["home_team"]:
-                            self.live_team_abbreviations.add(state["home_team"]["abbreviation"])
+                            espn_abbrev = state["home_team"]["abbreviation"]
+                            # Translate ESPN abbreviation to Kalshi format
+                            kalshi_abbrev = ESPN_TO_KALSHI_ABBREV.get(espn_abbrev, espn_abbrev)
+                            self.live_team_abbreviations.add(kalshi_abbrev)
                         if state["away_team"]:
-                            self.live_team_abbreviations.add(state["away_team"]["abbreviation"])
+                            espn_abbrev = state["away_team"]["abbreviation"]
+                            kalshi_abbrev = ESPN_TO_KALSHI_ABBREV.get(espn_abbrev, espn_abbrev)
+                            self.live_team_abbreviations.add(kalshi_abbrev)
                     logger.info(f"📺 ESPN: {len(espn_live_games)} live games, Teams: {self.live_team_abbreviations}")
                 except Exception as e:
                     logger.error(f"⚠️ ESPN fetch failed: {e}. Using empty live list.")
