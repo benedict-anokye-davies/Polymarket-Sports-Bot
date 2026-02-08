@@ -91,6 +91,7 @@ class KalshiProductionBot:
         # ESPN Service for live game detection
         self.espn = ESPNService()
         self.live_team_abbreviations = set()  # Cache of currently live teams from ESPN
+        self.open_positions = set()  # Cache of current Kalshi positions (tickers)
         
         # DB Setup
         self.db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@db:5432/polymarket_bot")
@@ -353,10 +354,15 @@ class KalshiProductionBot:
             resp = await self.client._authenticated_request("GET", "/portfolio/positions")
             positions = resp.get("market_positions", [])
             
+            # Update cache of open positions
+            self.open_positions = set()
+            
             for pos in positions:
                 ticker = pos.get("ticker")
                 count = abs(int(pos.get("position", 0)))
                 if count == 0: continue
+                
+                self.open_positions.add(ticker)
                 
                 # Fetch Current Market Price (Bid to Sell)
                 m_resp = await self.client.get_market(ticker)
@@ -466,6 +472,10 @@ class KalshiProductionBot:
                     is_good, reason = await self.check_strategy(m)
                     
                     if is_good:
+                        if ticker in self.open_positions:
+                            # Avoid spamming logs for held positions
+                            continue
+                            
                         logger.info(f"✨ MATCH: {ticker} - {reason}")
                         await self.execute_trade(m, "nba")
                     else:
