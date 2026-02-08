@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 # Add app to path
 sys.path.insert(0, '/app')
 from src.services.kalshi_client import KalshiClient
+from src.services.espn_service import ESPNService
 
 # Setup Logging
 logging.basicConfig(
@@ -73,6 +74,10 @@ class KalshiProductionBot:
         self.api_key = "813faefe-becc-4647-807a-295dcf69fcad"
         self.key_file = "/app/kalshi.key"
         self.client = None
+        
+        # ESPN Service for live game detection
+        self.espn = ESPNService()
+        self.live_team_abbreviations = set()  # Cache of currently live teams from ESPN
         
         # DB Setup
         self.db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@db:5432/polymarket_bot")
@@ -232,22 +237,15 @@ class KalshiProductionBot:
         if market_status in ("finalized", "closed", "settled"):
             return False, f"Game Finished (status: {market_status})"
         
-        # 0b. WHITELIST - Only trade on games we KNOW are currently IN-PROGRESS
-        # This prevents trading on pre-game markets (like GSW/LAL which hasn't started)
-        # and finished games. Update this list based on real-time game status.
-        LIVE_GAMES_WHITELIST = [
-            "KXNBAGAME-26FEB07DALSAS",  # DAL vs SAS - Currently LIVE (Q1)
-            # Add more tickers here as games become live
-        ]
-        
-        is_live = False
-        for live_game in LIVE_GAMES_WHITELIST:
-            if ticker.startswith(live_game):
-                is_live = True
-                break
-        
-        if not is_live:
-            return False, f"Not in live games whitelist"
+        # 0b. ESPN Live Game Check - Only trade on games ESPN confirms are IN-PROGRESS
+        # Extract team abbreviation from ticker (e.g., KXNBAGAME-26FEB07DALSAS-DAL -> DAL)
+        ticker_parts = ticker.split("-")
+        if len(ticker_parts) >= 3:
+            team_abbrev = ticker_parts[-1]  # e.g., "DAL" or "SAS"
+            
+            # Check if this team is in a live game according to ESPN
+            if team_abbrev not in self.live_team_abbreviations:
+                return False, f"ESPN: Team {team_abbrev} not in live game"
         
         # 1. Timezone Check
         game_date = parse_ticker_date(ticker)
@@ -412,6 +410,21 @@ class KalshiProductionBot:
                     continue
 
                 logger.info(f"🕒 Cycle Start (CST: {get_cst_now()}) | Vol>${CONFIG['min_volume_dollars']/1000:.0f}k | Drop>{CONFIG['drop_threshold']:.0%}")
+                
+                # 0b. Fetch live games from ESPN to determine which games are actually in-progress
+                try:
+                    espn_live_games = await self.espn.get_live_games("nba")
+                    self.live_team_abbreviations = set()
+                    for game in espn_live_games:
+                        state = self.espn.parse_game_state(game, "nba")
+                        if state["home_team"]:
+                            self.live_team_abbreviations.add(state["home_team"]["abbreviation"])
+                        if state["away_team"]:
+                            self.live_team_abbreviations.add(state["away_team"]["abbreviation"])
+                    logger.info(f"📺 ESPN: {len(espn_live_games)} live games, Teams: {self.live_team_abbreviations}")
+                except Exception as e:
+                    logger.error(f"⚠️ ESPN fetch failed: {e}. Using empty live list.")
+                    self.live_team_abbreviations = set()
                 
                 # 1. Discovery (Quick Scan) - Note: Kalshi doesn't support status=active, use open
                 found_markets = await self.client.get_markets(series_ticker="KXNBAGAME", status="open", limit=100)
