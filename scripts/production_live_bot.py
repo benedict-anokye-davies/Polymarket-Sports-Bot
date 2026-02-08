@@ -40,7 +40,7 @@ CONFIG = {
     "drop_threshold": 0.10,       # 10% drop required (lowered for testing)
     
     # Execution
-    "position_size_dollars": 1.0,
+    "position_size_dollars": 1.0,  # Max USD to risk per trade
     "dry_run": False,             # Set True to simulate only
     
     # Risk Management (Soft Limits)
@@ -129,7 +129,9 @@ class KalshiProductionBot:
                         if "probability_drop" in params:
                             CONFIG["drop_threshold"] = float(params["probability_drop"]) / 100.0
                         if "position_size" in params:
-                            CONFIG["position_size_dollars"] = float(params["position_size"])
+                            # User requested strict $1 limit - overriding DB value for safety
+                            # CONFIG["position_size_dollars"] = float(params["position_size"])
+                            CONFIG["position_size_dollars"] = 1.0
                         
         except Exception as e:
             logger.error(f"⚠️ DB Config Sync Failed: {e}")
@@ -319,14 +321,20 @@ class KalshiProductionBot:
             await self.log_activity(f"DRY RUN: Buy {ticker}", details={"price": price_cents})
             return
 
-        logger.info(f"   🚀 EXECUTING BUY: {ticker} @ {price_cents}c")
+        # Calculate size based on target dollar amount
+        # position_size_dollars is total USD to spend
+        # price_cents is price per contract
+        # min 1 contract
+        contracts_to_buy = max(1, int((CONFIG["position_size_dollars"] * 100) / price_cents))
+        
+        logger.info(f"   🚀 EXECUTING BUY: {ticker} @ {price_cents}c | Size: ${CONFIG['position_size_dollars']} ({contracts_to_buy} contracts)")
         try:
             order = await self.client.place_order(
                 ticker=ticker,
                 side="buy",
                 yes_no="yes",
                 price=price_cents,
-                size=int(CONFIG["position_size_dollars"]), 
+                size=contracts_to_buy, 
                 client_order_id=f"prod-{team}-{os.urandom(4).hex()}"
             )
             logger.info(f"   ✅ ORDER SENT: {order}")
