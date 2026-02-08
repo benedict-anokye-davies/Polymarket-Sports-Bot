@@ -398,7 +398,7 @@ class KalshiProductionBot:
                 else:
                     pnl_pct = 0
                     
-                # logger.info(f"   Positions: {ticker} | Entry: {avg_price_cents}c | Bid: {current_bid_cents}c | PnL: {pnl_pct:.1%}")
+                logger.info(f"   📊 {ticker} | Entry: {avg_price_cents}c | Bid: {current_bid_cents}c | PnL: {pnl_pct:+.1%}")
                 
                 if pnl_pct <= -CONFIG["stop_loss_pct"]:
                     logger.info(f"   🛑 STOP LOSS TRIGGERED: {ticker} ({pnl_pct:.1%})")
